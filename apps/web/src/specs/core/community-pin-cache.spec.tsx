@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { pinTrackKey, useCommunityPin, useCommunityPinCache } from "@/core/caches";
 import { QueryIdentifiers } from "@/core/react-query";
-import type { Entry } from "@/entities";
+import type { Community, Entry } from "@/entities";
 
 const rankedOptions = vi.fn();
 const PINNED_ROW = { author: "alice", permlink: "a-post", stats: { is_pinned: true } };
@@ -113,7 +113,7 @@ describe("useCommunityPinCache", () => {
     const pinned = { author: "alice", permlink: "pinned-one", category: "hive-1", stats: {} } as unknown as Entry;
     const other = { author: "bob", permlink: "not-pinned", category: "hive-1", stats: {} } as unknown as Entry;
 
-    const pin = renderHook(() => useCommunityPin(pinned, { name: "hive-1" } as any), { wrapper });
+    const pin = renderHook(() => useCommunityPin(pinned, { name: "hive-1" } as Community), { wrapper });
     const otherState = renderHook(() => useCommunityPinCache(other, false), { wrapper });
     expect(otherState.result.current.data).toBe(false);
 

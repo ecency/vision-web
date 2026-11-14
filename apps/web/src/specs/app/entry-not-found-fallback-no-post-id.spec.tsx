@@ -45,7 +45,7 @@ describe("EntryNotFoundFallback with a chain entry that has no post_id", () => {
           queryKey: ["posts", "content", author, permlink],
           // What bridge.get_post returns now: the post, without post_id.
           queryFn: async () => ({ author, permlink, body: "live", created: "2026-11-14T06:40:00" })
-        }) as any
+        }) as unknown as ReturnType<typeof getPostQueryOptions>
     );
   });
 

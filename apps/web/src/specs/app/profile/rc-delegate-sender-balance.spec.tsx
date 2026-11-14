@@ -27,9 +27,20 @@ vi.mock("@/app/(dynamicPages)/profile/[username]/_components/claim-account-credi
   ClaimAccountCredit: () => null
 }));
 
+// The setters rc-info hands the delegations list.
+interface ListProps {
+  showDelegation: () => void;
+  setShowDelegationsList: (v: boolean) => void;
+  setAmountFromList: (v: string) => void;
+  setToFromList: (v: string) => void;
+  setDelegateeData: (v: unknown) => void;
+}
+
+type ActiveAccount = ReturnType<typeof useActiveAccount>;
+
 // The list's own "edit" action, as rc-delegations-list calls it on a row.
 vi.mock("@/app/(dynamicPages)/profile/[username]/_components/rc-delegations-list", () => ({
-  RcDelegationsList: (props: any) => (
+  RcDelegationsList: (props: ListProps) => (
     <button
       onClick={() => {
         props.setShowDelegationsList(false);
@@ -66,13 +77,13 @@ describe("RC delegate from another user's profile", () => {
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: { username: "alice" },
       username: "alice"
-    } as any);
+    } as unknown as ActiveAccount);
     vi.mocked(getAccountRcQueryOptions).mockImplementation(
       (username: string) =>
         ({
           queryKey: ["resource-credits", "account", username],
           queryFn: async () => rcAccount(username, username === "alice" ? ALICE_RC : BOB_RC)
-        }) as any
+        }) as unknown as ReturnType<typeof getAccountRcQueryOptions>
     );
     vi.mocked(getRcStatsQueryOptions).mockImplementation(
       () =>
@@ -87,7 +98,7 @@ describe("RC delegate from another user's profile", () => {
               claim_account_operation: { avg_cost: 1 }
             }
           })
-        }) as any
+        }) as unknown as ReturnType<typeof getRcStatsQueryOptions>
     );
   });
 
@@ -135,7 +146,10 @@ describe("RC delegate from another user's profile", () => {
     const view = await openDelegateOnBobsProfile();
     await screen.findByText(`: ${ALICE_RC}`);
 
-    vi.mocked(useActiveAccount).mockReturnValue({ activeUser: null, username: null } as any);
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: null,
+      username: null
+    } as unknown as ActiveAccount);
     view.rerender(<ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name: "bob" })} />);
 
     expect(screen.queryByPlaceholderText("transfer.amount-placeholder")).not.toBeInTheDocument();
@@ -146,7 +160,7 @@ describe("RC delegate from another user's profile", () => {
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: { username: "alice" },
       username: "alice"
-    } as any);
+    } as unknown as ActiveAccount);
     renderProfile("alice");
 
     // RC info -> outgoing list -> edit carol's delegation -> close the form.

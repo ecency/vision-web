@@ -5,15 +5,18 @@ import { QueryClient } from "@tanstack/react-query";
 import { getPostsRankedQueryOptions } from "@ecency/sdk";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { DeckTrendingColumn } from "@/app/decks/_components/columns/deck-trending-column";
+import type { ReloadableDeckGridItem } from "@/app/decks/_components/types";
+
+type Row = { id?: string };
 
 // The trending column stored bridge rows as they came. With no post_id or id on
 // them, every row had an undefined React key and the column's "new posts"
 // check (`!prev.some(vd => vd.id === id)`) saw nothing new after a reload.
 
-const received: any[][] = [];
+const received: Row[][] = [];
 
 vi.mock("@/app/decks/_components/columns/generic-deck-with-data-column", () => ({
-  GenericDeckWithDataColumn: ({ data }: { data: any[] }) => {
+  GenericDeckWithDataColumn: ({ data }: { data: Row[] }) => {
     received.push(data);
     return null;
   }
@@ -36,14 +39,14 @@ describe("DeckTrendingColumn ids", () => {
             { author: "alice", permlink: "post-a" },
             { author: "bob", permlink: "post-b" }
           ]
-        }) as any
+        }) as unknown as ReturnType<typeof getPostsRankedQueryOptions>
     );
   });
 
   it("keys every trending row by author/permlink", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     renderWithQueryClient(
-      <DeckTrendingColumn id="t" settings={{ updateIntervalMs: 0 } as any} />,
+      <DeckTrendingColumn id="t" settings={{ updateIntervalMs: 0 } as ReloadableDeckGridItem["settings"]} />,
       { queryClient }
     );
 

@@ -29,7 +29,10 @@ describe("deck Waves column without post_id", () => {
     queryClient.clear();
     vi.mocked(getAccountPostsQueryOptions).mockImplementation(
       (...key: unknown[]) =>
-        ({ queryKey: ["account-posts", ...key], queryFn: async () => [{ ...CONTAINER }] }) as any
+        ({
+          queryKey: ["account-posts", ...key],
+          queryFn: async () => [{ ...CONTAINER }]
+        }) as unknown as ReturnType<typeof getAccountPostsQueryOptions>
     );
     vi.mocked(getDiscussionQueryOptions).mockImplementation(
       (author?: string, permlink?: string) =>
@@ -42,7 +45,7 @@ describe("deck Waves column without post_id", () => {
             // A reply to a wave, not a wave: not first level.
             "carol/re-wave-a": { ...wave("carol", "re-wave-a", "2026-11-14T09:00:00"), parent_author: "alice", parent_permlink: "wave-a" }
           })
-        }) as any
+        }) as unknown as ReturnType<typeof getDiscussionQueryOptions>
     );
   });
 
@@ -57,11 +60,11 @@ describe("deck Waves column without post_id", () => {
 
 describe("isLocalEntry", () => {
   it("is false for a confirmed post the bridge served without post_id", () => {
-    expect(isLocalEntry({ post_id: undefined } as any)).toBe(false);
+    expect(isLocalEntry({ post_id: undefined })).toBe(false);
   });
 
   it("is true for a just-created wave (tempEntry stamps 1 or a uuid)", () => {
-    expect(isLocalEntry({ post_id: 1 } as any)).toBe(true);
-    expect(isLocalEntry({ post_id: "6f1c2d1e-uuid" } as any)).toBe(true);
+    expect(isLocalEntry({ post_id: 1 })).toBe(true);
+    expect(isLocalEntry({ post_id: "6f1c2d1e-uuid" })).toBe(true);
   });
 });
