@@ -5,6 +5,7 @@ import { WaveForm } from "@/features/waves";
 import { WavesListItem } from "@/app/waves/_components/waves-list-item";
 import { WaveViewDiscussion } from "@/app/waves/[author]/[permlink]/_components/wave-view-discussion";
 import { useRouter } from "next/navigation";
+import { entryKey } from "@ecency/sdk";
 
 interface Props {
   show: boolean;
@@ -23,7 +24,7 @@ export function WavesFastReplyDialog({ show, onHide, entry }: Props) {
           <span className="text-blue-dark-sky ml-1">@{entry?.author}</span>
         </div>
       </ModalHeader>
-      {entry && <WavesListItem key={entry!.post_id} interactable={false} item={entry} i={0} />}
+      {entry && <WavesListItem key={entryKey(entry!)} interactable={false} item={entry} i={0} />}
       <WaveForm
         entry={undefined}
         replySource={entry}

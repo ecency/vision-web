@@ -66,6 +66,8 @@ export const ResourceCreditsInfo = ({ account, rcPercent }: Props) => {
     setShowDelegationModal(false);
     setToFromList("");
     setAmountFromList("");
+    // Or the next fresh Delegate starts with the edited delegatee's data (#2074).
+    setDelegateeData("");
   };
 
   const showIncomingList = () => {
@@ -319,7 +321,11 @@ export const ResourceCreditsInfo = ({ account, rcPercent }: Props) => {
 
       <div>
         <Modal
-          show={showDelegationModal}
+          // Signing needs the logged in account. On logout this clears `show`, and
+          // Modal calls onHide (hideDelegation) on that open->closed transition, so
+          // the open flag, recipient and amount are reset and signing in again does
+          // not reopen the form (#2073).
+          show={showDelegationModal && !!activeUser}
           centered={true}
           onHide={hideDelegation}
           className="transfer-dialog"
@@ -329,14 +335,17 @@ export const ResourceCreditsInfo = ({ account, rcPercent }: Props) => {
             <ModalTitle />
           </ModalHeader>
           <ModalBody>
-            <ResourceCreditsDelegation
-              activeUser={activeUser}
-              resourceCredit={resourceCredit}
-              hideDelegation={hideDelegation}
-              toFromList={toFromList}
-              amountFromList={amountFromList}
-              delegateeData={delegateeData}
-            />
+            {activeUser && (
+              <ResourceCreditsDelegation
+                activeUser={activeUser}
+                hideDelegation={hideDelegation}
+                toFromList={
+                  toFromList || (account.name !== activeUser?.username ? account.name : "")
+                }
+                amountFromList={amountFromList}
+                delegateeData={delegateeData}
+              />
+            )}
           </ModalBody>
         </Modal>
 

@@ -69,12 +69,14 @@ export function EntryNotFoundFallback({ username, permlink }: Props) {
     retry: false
   });
 
-  // Handle real data arrival
+  // Handle real data arrival. The poll reads the chain under its own key, and
+  // get_post errors for a post that does not exist, so any entry it returns is
+  // the live post. (Not post_id: Hive API nodes no longer return it.)
   useEffect(() => {
-    if (polledEntry && polledEntry.post_id && polledEntry.post_id > 1) {
+    if (polledEntry && polledEntry.permlink === permlink) {
       handleSuccess(polledEntry);
     }
-  }, [polledEntry, handleSuccess]);
+  }, [polledEntry, permlink, handleSuccess]);
 
   // Track verification poll count based on actual query completions (success or error)
   const prevUpdatedAt = useRef({ data: dataUpdatedAt, error: errorUpdatedAt });

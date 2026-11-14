@@ -1,4 +1,9 @@
-import { getAccountPostsQueryOptions, getDiscussionQueryOptions, type Entry } from "@ecency/sdk";
+import {
+  entryKey,
+  getAccountPostsQueryOptions,
+  getDiscussionQueryOptions,
+  type Entry
+} from "@ecency/sdk";
 import { IdentifiableEntry, ThreadItemEntry } from "./identifiable-entry";
 import { FetchQueryOptions } from "@tanstack/query-core";
 import { ProfileFilter } from "@/enums";
@@ -19,7 +24,7 @@ export async function fetchThreads(
     )
   )) as IdentifiableEntry[];
   nextThreadContainers = nextThreadContainers?.map((c) => {
-    c.id = c.post_id;
+    c.id = entryKey(c);
     c.host = host;
     return c;
   });
@@ -48,7 +53,7 @@ export async function fetchThreads(
   return flattenThreadItems
     .map((item) => ({
       ...item,
-      id: item.post_id,
+      id: entryKey(item),
       host,
       container: nextThreadContainers[0],
       parent: flattenThreadItems.find(
@@ -58,7 +63,7 @@ export async function fetchThreads(
           i.author !== host
       )
     }))
-    .filter((i) => i.container.post_id !== i.post_id);
+    .filter((i) => i.container.id !== i.id);
 }
 
 export function threadsQuery(

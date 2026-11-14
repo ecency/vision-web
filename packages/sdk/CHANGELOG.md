@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.8.0
+
+### Minor Changes
+
+- Identify posts by author/permlink; delegate RC from the signer's balance (#2072)
+
+- [#2072](https://github.com/ecency/vision-web/pull/2072) [`877b47d`](https://github.com/ecency/vision-web/commit/877b47d839f8037affe6859f03e10a699053c725) Thanks [@feruzm](https://github.com/feruzm)! - Posts are identified by author/permlink. Hive API nodes no longer return `post_id` from bridge reads (v1 and v2), and the value was never comparable across nodes. The waves helpers compared `post_id` to drop a thread's container, so with `post_id` missing on both sides they dropped every wave. New helper `entryKey(entry)` returns `author/permlink`.
+
+  **Migration:** `Entry.id` is now typed `string` and `post_id` is optional. Wave entries from `normalizeWaveEntryFromApi`, `mapThreadItemsToWaveEntries` and `getWavesByHostQueryOptions` carry `id: entryKey(entry)`, including their `container` and `parent`, instead of a numeric `post_id`. Entries from other reads do not set `id`. To key, dedupe or compare posts, use `entryKey(entry)`, never `post_id`.
+
 ## 2.7.0
 
 ### Minor Changes

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { ListItemSkeleton, SearchListItem } from "../deck-items";
 import { Button } from "@ui/button";
-import { getPostsRankedInfiniteQueryOptions } from "@ecency/sdk";
+import { entryKey, getPostsRankedInfiniteQueryOptions } from "@ecency/sdk";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { arrowLeftSvg } from "@ui/svg";
 import { useMounted } from "@/utils/use-mounted";
@@ -49,7 +49,7 @@ export const DeckTopicsContentViewer = ({ onClose, backTitle, topic }: Props) =>
       </div>
       <div>
         {dataFlow?.map((item: any, index: number) => (
-          <div className="virtual-list-item" key={item.post_id}>
+          <div className="virtual-list-item" key={entryKey(item)}>
             <SearchListItem
               index={index + 1}
               entry={{

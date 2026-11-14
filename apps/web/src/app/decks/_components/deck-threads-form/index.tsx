@@ -10,6 +10,7 @@ import useClickAway from "react-use/lib/useClickAway";
 import { Button } from "@ui/button";
 import { Alert } from "@ui/alert";
 import { Entry } from "@/entities";
+import { entryKey } from "@ecency/sdk";
 import { useGlobalStore } from "@/core/global-store";
 import { PollsContext } from "@/features/polls";
 import { usePublishHandoffWriter } from "@/app/publish/_hooks";
@@ -132,7 +133,7 @@ export const DeckThreadsForm = ({
       if (threadHost) {
         threadItem.host = threadHost;
       }
-      threadItem.id = threadItem.post_id;
+      threadItem.id = entryKey(threadItem);
 
       setLastCreatedThreadItem(threadItem);
 

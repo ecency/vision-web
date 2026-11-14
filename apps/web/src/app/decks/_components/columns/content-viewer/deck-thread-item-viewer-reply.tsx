@@ -6,6 +6,7 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { classNameObject } from "@ui/util";
 import i18next from "i18next";
 import { WaveEntry } from "@/entities";
+import { entryKey } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 
 interface Props {
@@ -59,7 +60,7 @@ export const DeckThreadItemViewerReply = ({
         <div className="deck-thread-item-viewer-reply-sequence">
           {entry?.replies.map((reply) => (
             <DeckThreadItemViewerReply
-              key={reply.post_id}
+              key={entryKey(reply)}
               entry={reply}
               parentEntry={entry}
               incrementParentEntryCount={() => updateRepliesCount(parentEntry.children + 1)}

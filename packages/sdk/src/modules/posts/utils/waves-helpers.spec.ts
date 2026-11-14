@@ -34,7 +34,7 @@ describe('waves-helpers', () => {
   describe('normalizeWaveEntryFromApi', () => {
     const mockHost = 'host-user'
 
-    it('should normalize entry with post_id', () => {
+    it('ids an entry by author/permlink even when a post_id is present', () => {
       const entry = {
         author: 'testuser',
         permlink: 'test-post',
@@ -46,7 +46,7 @@ describe('waves-helpers', () => {
       const result = normalizeWaveEntryFromApi(entry, mockHost)
 
       expect(result).not.toBeNull()
-      expect(result?.id).toBe(12345)
+      expect(result?.id).toBe('testuser/test-post')
       expect(result?.host).toBe(mockHost)
       expect(result?.author).toBe('testuser')
       expect(result?.container).toBeDefined()
@@ -97,7 +97,7 @@ describe('waves-helpers', () => {
       const result = normalizeWaveEntryFromApi(entry, mockHost)
 
       expect(result?.container.author).toBe('container-author')
-      expect(result?.container.id).toBe(67890)
+      expect(result?.container.id).toBe('container-author/container-post')
       expect(result?.container.host).toBe(mockHost)
     })
 
@@ -111,7 +111,7 @@ describe('waves-helpers', () => {
       const result = normalizeWaveEntryFromApi(entry, mockHost)
 
       expect(result?.container.author).toBe('testuser')
-      expect(result?.container.id).toBe(12345)
+      expect(result?.container.id).toBe('testuser/test-post')
     })
 
     it('should include parent when provided', () => {
@@ -130,7 +130,7 @@ describe('waves-helpers', () => {
 
       expect(result?.parent).toBeDefined()
       expect(result?.parent?.author).toBe('parent-author')
-      expect(result?.parent?.id).toBe(11111)
+      expect(result?.parent?.id).toBe('parent-author/parent-post')
     })
 
     it('should handle entry without parent', () => {
@@ -224,20 +224,21 @@ describe('waves-helpers', () => {
       const result = mapThreadItemsToWaveEntries(items, mockContainer, mockHost)
 
       expect(result).toHaveLength(1)
-      expect(result[0].id).toBe(1)
+      expect(result[0].id).toBe('user1/post1')
       expect(result[0].host).toBe(mockHost)
       expect(result[0].container).toBe(mockContainer)
     })
 
-    it('should filter out items with same post_id as container', () => {
+    it('should filter out the container by author/permlink, not post_id', () => {
       const items = [
         {
-          author: 'user1',
-          permlink: 'post1',
-          post_id: 100, // Same as container
+          // The container itself, served by another node: a different post_id.
+          author: 'container-author',
+          permlink: 'container-post',
+          post_id: 999,
           created: '2024-01-01T00:00:00',
-          parent_author: 'container-author',
-          parent_permlink: 'container-post'
+          parent_author: '',
+          parent_permlink: 'waves'
         },
         {
           author: 'user2',
@@ -291,12 +292,12 @@ describe('waves-helpers', () => {
       expect(result[2].post_id).toBe(1) // Oldest
     })
 
-    it('should link parent items correctly', () => {
+    it('should link parent items correctly, the parent keyed by author/permlink', () => {
+      // Bridge rows: no post_id, no id.
       const items = [
         {
           author: 'parent-user',
           permlink: 'parent-post',
-          post_id: 1,
           created: '2024-01-01T00:00:00',
           parent_author: 'container-author',
           parent_permlink: 'container-post'
@@ -304,7 +305,6 @@ describe('waves-helpers', () => {
         {
           author: 'child-user',
           permlink: 'child-post',
-          post_id: 2,
           created: '2024-01-02T00:00:00',
           parent_author: 'parent-user',
           parent_permlink: 'parent-post'
@@ -314,9 +314,10 @@ describe('waves-helpers', () => {
       const result = mapThreadItemsToWaveEntries(items, mockContainer, mockHost)
 
       expect(result).toHaveLength(2)
-      const childEntry = result.find(e => e.post_id === 2)
+      const childEntry = result.find(e => e.id === 'child-user/child-post')
       expect(childEntry?.parent).toBeDefined()
       expect(childEntry?.parent?.author).toBe('parent-user')
+      expect(childEntry?.parent?.id).toBe('parent-user/parent-post')
     })
 
     it('should not link parent if parent author is host', () => {
@@ -344,5 +345,64 @@ describe('waves-helpers', () => {
       const childEntry = result.find(e => e.post_id === 2)
       expect(childEntry?.parent).toBeUndefined()
     })
+  })
+})
+
+// Hive API nodes stopped returning post_id from bridge reads (v1 and v2, every
+// public node, 2026-11). post_id was also never comparable across nodes. A wave
+// is identified by author/permlink.
+describe('waves-helpers without post_id', () => {
+  const host = 'ecency.waves'
+  const container = {
+    author: host,
+    permlink: 'waves-20261114cgy7o3',
+    host
+  } as unknown as WaveEntry
+
+  const reply = (author: string, permlink: string, created: string) =>
+    ({
+      author,
+      permlink,
+      created,
+      parent_author: host,
+      parent_permlink: 'waves-20261114cgy7o3'
+    }) as Entry
+
+  it('keeps every reply when no row carries a post_id', () => {
+    const items = [
+      reply('alice', 'wave-a', '2026-11-14T07:00:00'),
+      reply('bob', 'wave-b', '2026-11-14T08:00:00')
+    ]
+
+    const result = mapThreadItemsToWaveEntries(items, container, host)
+
+    expect(result.map((e) => e.id)).toEqual(['bob/wave-b', 'alice/wave-a'])
+  })
+
+  it('drops the container itself by author/permlink', () => {
+    const items = [
+      { ...container, created: '2026-11-14T06:40:00' } as unknown as Entry,
+      reply('alice', 'wave-a', '2026-11-14T07:00:00')
+    ]
+
+    const result = mapThreadItemsToWaveEntries(items, container, host)
+
+    expect(result.map((e) => e.id)).toEqual(['alice/wave-a'])
+  })
+
+  it('ids a normalized wave, its container and parent by author/permlink', () => {
+    const result = normalizeWaveEntryFromApi(
+      {
+        author: 'alice',
+        permlink: 'wave-a',
+        container: { author: host, permlink: 'waves-20261114cgy7o3' },
+        parent: { author: 'bob', permlink: 'wave-b' }
+      } as unknown as Parameters<typeof normalizeWaveEntryFromApi>[0],
+      host
+    )
+
+    expect(result?.id).toBe('alice/wave-a')
+    expect(result?.container.id).toBe(`${host}/waves-20261114cgy7o3`)
+    expect(result?.parent?.id).toBe('bob/wave-b')
   })
 })

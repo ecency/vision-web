@@ -126,8 +126,10 @@ export interface Entry {
   pending_payout_value: string;
   percent_hbd: number;
   permlink: string;
-  post_id: any;
-  id?: number;
+  /** Not returned by Hive API nodes any more; never use it as an identity. */
+  post_id?: any;
+  /** Client-side key, always `entryKey(entry)` (author/permlink). */
+  id?: string;
   num?: number;
   promoted: string;
   reblogs?: number;

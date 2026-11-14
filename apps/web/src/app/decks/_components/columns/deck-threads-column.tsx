@@ -18,7 +18,7 @@ import usePrevious from "react-use/lib/usePrevious";
 import { newDataComingPaginatedCondition } from "../utils";
 import { InfiniteScrollLoader } from "./helpers";
 import i18next from "i18next";
-import { getContentQueryOptions } from "@ecency/sdk";
+import { entryKey, getContentQueryOptions } from "@ecency/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import useMount from "react-use/lib/useMount";
 import useUnmount from "react-use/lib/useUnmount";
@@ -198,11 +198,11 @@ const DeckThreadsColumnComponent = ({ id, settings, draggable }: Props) => {
     >
       {(item: IdentifiableEntry, measure: Function, index: number) => (
         <>
-          {currentEditingEntry?.post_id === item.post_id && (
+          {currentEditingEntry && entryKey(currentEditingEntry) === entryKey(item) && (
             <DeckThreadEditItem entry={item} onSuccess={() => setCurrentEditingEntry(null)} />
           )}
           <ThreadItem
-            visible={item.post_id !== currentEditingEntry?.post_id}
+            visible={!currentEditingEntry || entryKey(currentEditingEntry) !== entryKey(item)}
             initialEntry={item}
             onMounted={() => measure()}
             onAppear={() => {
@@ -221,7 +221,7 @@ const DeckThreadsColumnComponent = ({ id, settings, draggable }: Props) => {
                   getContentQueryOptions(item.parent_author!, item.parent_permlink!)
                 )) as IdentifiableEntry;
                 if (entry) {
-                  entry.id = entry.post_id;
+                  entry.id = entryKey(entry);
                   entry.host = item.host;
                   setCurrentViewingEntry(entry);
                   setCurrentHighlightedEntry(`${item.author}/${item.permlink}`);
@@ -229,7 +229,9 @@ const DeckThreadsColumnComponent = ({ id, settings, draggable }: Props) => {
               } catch (e) {}
             }}
             triggerPendingStatus={
-              !currentEditingEntry && previousEditingEntry?.post_id === item.post_id
+              !currentEditingEntry &&
+              !!previousEditingEntry &&
+              entryKey(previousEditingEntry) === entryKey(item)
             }
           />
         </>

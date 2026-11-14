@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { QueryIdentifiers } from "../react-query";
-import { getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
+import { entryKey, getPostsRankedQueryOptions, QueryKeys } from "@ecency/sdk";
 import { useDataLimit } from "@/utils/data-limit";
 import { formatError } from "@/api/format-error";
 import { usePinPostMutation } from "@/api/sdk-mutations";
@@ -10,6 +10,11 @@ import { isCommunity } from "@/utils";
 import { clone } from "remeda";
 import { error, success } from "@/features/shared/feedback";
 import i18next from "i18next";
+
+/** Cache key of the pin or unpin this client just made on a post, by author/permlink. */
+export function pinTrackKey(entry: Pick<Entry, "author" | "permlink">) {
+  return [QueryIdentifiers.ENTRY_PIN_TRACK, entryKey(entry)];
+}
 
 /**
  * Whether this post is pinned in its community.
@@ -61,7 +66,7 @@ export function useCommunityPinCache(entry: Entry, canPin = true) {
   // — which the bridge does not set on feed rows. Moderators were shown "Pin"
   // for posts that were already pinned.
   const { data: pinnedByMutation } = useQuery<boolean | undefined>({
-    queryKey: [QueryIdentifiers.ENTRY_PIN_TRACK, entry.post_id],
+    queryKey: pinTrackKey(entry),
     queryFn: async () => undefined,
     enabled: false
   });
@@ -92,7 +97,7 @@ export function useCommunityPin(entry: Entry, community: Community | null | unde
         success(i18next.t("entry-menu.unpin-success"));
       }
 
-      queryClient.setQueryData([QueryIdentifiers.ENTRY_PIN_TRACK, entry.post_id], pin);
+      queryClient.setQueryData(pinTrackKey(entry), pin);
 
       queryClient.setQueryData<Entry>(
         QueryKeys.posts.entry(`/@${entry.author}/${entry.permlink}`),

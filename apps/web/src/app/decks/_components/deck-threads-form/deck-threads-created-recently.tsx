@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState } from "react";
 import { DeckThreadsContext } from "../columns/deck-threads-manager";
-import { useEntryChecking } from "../utils";
+import { isLocalEntry, useEntryChecking } from "../utils";
+import { entryKey } from "@ecency/sdk";
 import { Spinner } from "@ui/spinner";
 import { Alert } from "@ui/alert";
 import { Entry } from "@/entities";
@@ -17,8 +18,6 @@ export const DeckThreadsCreatedRecently = ({ lastEntry, setLastEntry }: Props) =
   const { reload } = useContext(DeckThreadsContext);
 
   const [intervalStarted, setIntervalStarted] = useState(false);
-
-  const isLocal = ({ post_id }: Entry) => post_id === 1 || typeof post_id === "string";
 
   useEntryChecking(lastEntry, intervalStarted, (entry) => {
     setLastEntry(entry);
@@ -41,18 +40,18 @@ export const DeckThreadsCreatedRecently = ({ lastEntry, setLastEntry }: Props) =
   return (
     <div className="deck-threads-created-recently">
       {lastEntry && (
-        <Alert appearance={!isLocal(lastEntry) ? "success" : "secondary"} key={lastEntry.post_id}>
+        <Alert appearance={!isLocalEntry(lastEntry) ? "success" : "secondary"} key={entryKey(lastEntry)}>
           <div className="flex items-center">
             <div className="icon">
-              {!isLocal(lastEntry) ? checkSvg : <Spinner className="size-4" />}
+              {!isLocalEntry(lastEntry) ? checkSvg : <Spinner className="size-4" />}
             </div>
             <div className="pl-3">
-              {!isLocal(lastEntry)
+              {!isLocalEntry(lastEntry)
                 ? i18next.t("decks.threads-form.successfully-created")
                 : i18next.t("decks.threads-form.pending")}
             </div>
           </div>
-          {!isLocal(lastEntry) && (
+          {!isLocalEntry(lastEntry) && (
             <EntryLink target="_blank" entry={lastEntry}>
               <span>{i18next.t("decks.threads-form.link-to-entry")}</span>
             </EntryLink>

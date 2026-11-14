@@ -65,7 +65,7 @@ describe('getWavesByHostQueryOptions getThreads', () => {
     expect(mockMapThreadItemsToWaveEntries).toHaveBeenCalledWith(
       [{ author: 'bob', permlink: 'w1' }],
       // A normalized copy of containerB (the response is no longer mutated in place).
-      expect.objectContaining({ ...containerB, host: HOST, id: 2 }),
+      expect.objectContaining({ ...containerB, host: HOST, id: `${HOST}/c-b` }),
       HOST
     )
   })

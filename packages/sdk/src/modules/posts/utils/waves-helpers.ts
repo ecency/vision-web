@@ -1,30 +1,28 @@
 import { Entry, WaveEntry } from "../types";
 import { getDiscussionsQueryOptions, SortOrder } from "../queries/get-discussions-query-options";
 import { CONFIG } from "@/modules/core";
-import { normalizeEntry } from "./normalize-entry";
+import { entryKey, normalizeEntry } from "./normalize-entry";
 
-type EntryWithPostId = Entry & { post_id: number };
-
-function normalizeContainer(entry: EntryWithPostId, host: string): WaveEntry {
+function normalizeContainer(entry: Entry, host: string): WaveEntry {
   return {
     ...entry,
-    id: entry.id ?? entry.post_id,
+    id: entryKey(entry),
     // The private-api waves feeds send the publish time as `timestamp`, not `created`.
     created: entry.created ?? (entry as unknown as { timestamp?: string }).timestamp,
     host
   } as WaveEntry;
 }
 
-function normalizeParent(entry: EntryWithPostId): Entry {
+function normalizeParent(entry: Entry): Entry {
   return {
     ...entry,
-    id: entry.id ?? entry.post_id
+    id: entryKey(entry)
   } as Entry;
 }
 
 export function normalizeWaveEntryFromApi(
   entry:
-    | (Entry & { post_id: number; container?: EntryWithPostId | null; parent?: EntryWithPostId | null })
+    | (Entry & { container?: Entry | null; parent?: Entry | null })
     | null
     | undefined,
   host: string
@@ -42,7 +40,7 @@ export function normalizeWaveEntryFromApi(
     // Same vote contract as every other source: no raw voter list, and the
     // vote stated as unknown unless the row was normalized for someone.
     ...(normalizeEntry(entry, "") as typeof entry),
-    id: entry.id ?? entry.post_id,
+    id: entryKey(entry),
     // The private-api waves feeds (following / tag / account) send the publish
     // time as `timestamp`, not `created`; map it so the relative time renders on
     // every card (the For You feed already carries a real `created` from Hive RPC).
@@ -109,13 +107,13 @@ export function mapThreadItemsToWaveEntries(
 
       return {
         ...item,
-        id: item.post_id,
+        id: entryKey(item),
         host,
         container,
-        parent
+        parent: parent ? normalizeParent(parent) : undefined
       } as WaveEntry;
     })
-    .filter((entry) => entry.container.post_id !== entry.post_id)
+    .filter((entry) => entryKey(entry.container) !== entry.id)
     .sort(
       (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()
     );

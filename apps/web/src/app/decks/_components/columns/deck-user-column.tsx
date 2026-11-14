@@ -12,7 +12,7 @@ import dayjs from "@/utils/dayjs";
 import { newDataComingPaginatedCondition } from "../utils";
 import { InfiniteScrollLoader } from "./helpers";
 import { Entry } from "@/entities";
-import { getAccountPostsQueryOptions } from "@ecency/sdk";
+import { entryKey, getAccountPostsQueryOptions } from "@ecency/sdk";
 import { useDataLimit } from "@/utils/data-limit";
 import i18next from "i18next";
 import useMount from "react-use/lib/useMount";
@@ -64,7 +64,7 @@ export const DeckUserColumn = ({ id, settings, draggable }: Props) => {
             dataLimit
           )
         );
-        let items = response?.map((i) => ({ ...i, id: i.post_id })) ?? [];
+        let items = response?.map((i) => ({ ...i, id: entryKey(i) })) ?? [];
         items = items.sort((a, b) => (dayjs(a.created).isAfter(dayjs(b.created)) ? -1 : 1));
 
         if (items.length === 0) {
@@ -149,7 +149,7 @@ export const DeckUserColumn = ({ id, settings, draggable }: Props) => {
           }}
           {...item}
           onAppear={() => {
-            const isLast = data[data.length - 1]?.post_id === item.post_id;
+            const isLast = data[data.length - 1]?.id === item.id;
             if (isLast && hasNextPage) {
               fetchData(item);
             }
