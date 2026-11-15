@@ -1,5 +1,6 @@
 import { traverse, TraverseDepthError } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
+import { stripAuthorMarkers } from './strip-author-markers.method'
 import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -175,6 +176,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   }
 
 
+  // The sanitize-only fallbacks below skip the DOM transforms, so any link
+  // marker left in that HTML was written by the author (#1919).
+  const untransformed = { ...renderOptions, stripAuthorMarkers: true }
+
   try {
     output = md.render(input)
 
@@ -184,6 +189,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
     const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, 'text/html')
 
+    stripAuthorMarkers(doc as any)
     traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
     output = serializer.serializeToString(doc)
@@ -191,7 +197,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     if (error instanceof TraverseDepthError) {
       // Too deep to transform. Retrying through htmlparser2 below would only
       // walk the same depth again, so take the sanitize-only output now.
-      output = sanitizeHtml(output, renderOptions)
+      output = sanitizeHtml(output, untransformed)
     } else {
       // @xmldom/xmldom is stricter than old xmldom and throws ParseError for malformed HTML
       // Instead of returning empty string (bad UX), attempt graceful recovery
@@ -220,6 +226,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
         // Now parse the well-formed HTML with @xmldom/xmldom
         const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, 'text/html')
 
+        stripAuthorMarkers(doc as any)
         traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
         output = serializer.serializeToString(doc)
@@ -227,7 +234,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
         // If DOM parsing fails, sanitize the Remarkable HTML output directly.
         // This skips the traverse() image proxy/link rewriting but preserves
         // readable HTML content instead of showing escaped tags.
-        output = sanitizeHtml(output || md.render(input), renderOptions)
+        output = sanitizeHtml(output || md.render(input), untransformed)
       }
     }
   }

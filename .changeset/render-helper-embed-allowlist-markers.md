@@ -1,0 +1,5 @@
+---
+"@ecency/render-helper": patch
+---
+
+The embed allow list and render-helper's link markers now hold on every render path. The sanitizer keeps an `<iframe>` only when `isAllowedEmbedSrc` accepts its src (an iframe with a refused src is dropped) and trims an author's `sandbox` to the tokens render-helper grants (`allow-scripts allow-same-origin allow-popups`). `iframe()` emits only sources the allow list accepts: http and protocol-relative embeds are upgraded to https, upper case YouTube `/EMBED/` is lower-cased, BitChute `/video/` and Brighteon page URLs frame their embed route, and a YouTube Shorts URL without an 11 character id shows the unsupported placeholder. Spotify `embed-podcast` paths are on the allow list. Author-written `markdown-*` classes and the `data-*` attributes render-helper sets on its own links are stripped before the transforms run, so clients routing taps on them only see links render-helper built. `<video poster>` is served through the image proxy, and dropped when it is not.

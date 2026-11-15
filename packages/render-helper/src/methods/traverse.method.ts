@@ -3,6 +3,7 @@ import { iframe } from './iframe.method'
 import { img } from './img.method'
 import { p } from './p.method'
 import { text } from './text.method'
+import { video } from './video.method'
 import { RenderOptions, SeoContext } from '../types'
 
 // Explicit nesting cap (#1920). Real posts stay far below it; past it the body
@@ -50,6 +51,9 @@ export function traverse(node: Node, forApp: boolean, depth = 0, state = { first
     }
     if (child.nodeName.toLowerCase() === 'p') {
       p(<HTMLElement>child)
+    }
+    if (child.nodeName.toLowerCase() === 'video') {
+      video(<HTMLElement>child)
     }
 
     if (child.parentNode) {

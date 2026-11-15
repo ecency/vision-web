@@ -308,7 +308,8 @@ describe('iframe() method - Iframe Sanitization', () => {
       iframe(el)
 
       expect(hasChildWithTag(parent, 'iframe')).toBe(true)
-      expect(el.getAttribute('src')).toBe('//www.youtube.com/embed/dQw4w9WgXcQ')
+      // Upgraded to https, the only scheme the embed allow list accepts (#1919).
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
     })
   })
 

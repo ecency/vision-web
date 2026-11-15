@@ -82,7 +82,9 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
   'player.twitch.tv': /^\/$/, // channel/video carried in the query string
   'emb.d.tube': /^\/$/, // dtube carries the ref in the #! fragment
   'play.3speak.tv': /^\/(watch|embed)/,
-  'open.spotify.com': /^\/embed\//,
+  // embed-podcast is Spotify's older episode/show embed route, still emitted
+  // for those (SPOTIFY_EMBED_REGEX) and answered by Spotify.
+  'open.spotify.com': /^\/embed(?:-podcast)?\//,
   'www.loom.com': /^\/embed\//,
   'www.bitchute.com': /^\/embed\//,
   'bitchute.com': /^\/embed\//,

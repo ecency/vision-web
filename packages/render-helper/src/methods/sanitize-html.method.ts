@@ -1,5 +1,5 @@
 import xss from 'xss'
-import {ALLOWED_ATTRIBUTES, ID_WHITELIST, isAllowedEmbedSrc} from '../consts'
+import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
 import { getProxyBase } from '../proxify-image-src'
 import { decodeEntities, trimTrailingSlash } from '../helper'
 import { authorPixelSize, parsePixelDimension } from './image-dimensions'
@@ -37,6 +37,12 @@ const isProxyPSrcset = (srcset: string): boolean => {
   return candidates.length > 0 && candidates.every(url => url.startsWith(`${base}/p/`));
 };
 
+// Attribute value escaping for the values onTagAttr rebuilds itself. A local
+// copy: xss is CommonJS, and plain Node's ESM loader cannot see its
+// escapeAttrValue as a named export (test/dist-loads-in-plain-node.spec.ts).
+const escapeAttr = (value: string): string =>
+  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 export interface SanitizeHtmlOptions {
   /**
    * Keep a validated pixel width/height pair on `<img>`. Off by default: the
@@ -44,6 +50,12 @@ export interface SanitizeHtmlOptions {
    * depends on. See `RenderOptions.preserveImageDimensions`.
    */
   preserveImageDimensions?: boolean
+  /**
+   * Also drop `markdown-*` class tokens and render-helper's `data-*` link
+   * markers. For HTML that never went through the DOM transforms, where every
+   * such marker is author-written (#1919).
+   */
+  stripAuthorMarkers?: boolean
 }
 
 /**
@@ -82,6 +94,8 @@ function enforceImageDimensionPair(html: string): string {
 
 export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): string {
   const preserveImageDimensions = !!options?.preserveImageDimensions
+  const stripAuthorMarkers = !!options?.stripAuthorMarkers
+  const proxyBase = `${trimTrailingSlash(getProxyBase())}/`
   const whiteList: XSSWhiteList = preserveImageDimensions
     ? {
         ...ALLOWED_ATTRIBUTES,
@@ -140,6 +154,25 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return '';
       }
       if (tag === 'span' && name === 'class' && decoded.toLowerCase().trim() === 'wr') return '';
+      // The embed allow list holds on every path, including bodies that never
+      // reached iframe() (#1919). iframe() only emits sources it accepts.
+      if (tag === 'iframe' && name === 'src' && !isAllowedEmbedSrc(decoded)) return '';
+      // An author's sandbox keeps only the tokens iframe() itself grants.
+      if (tag === 'iframe' && name === 'sandbox') {
+        const tokens = decodedLower.split(/\s+/).filter(Boolean);
+        const kept = tokens.filter(token => IFRAME_SANDBOX_GRANTS.has(token));
+        if (kept.length !== tokens.length) return `sandbox="${kept.join(' ')}"`;
+      }
+      // A poster loads like an image: only the image proxy may serve it. The
+      // video() transform proxies it; anything else is author-direct.
+      if (tag === 'video' && name === 'poster' && !decoded.startsWith(proxyBase)) return '';
+      if (stripAuthorMarkers) {
+        if (RENDER_HELPER_DATA_ATTRIBUTES.has(name)) return '';
+        if (name === 'class') {
+          const kept = stripMarkdownClasses(decoded);
+          if (kept !== decoded) return kept ? `class="${escapeAttr(kept)}"` : '';
+        }
+      }
       // iframe-src data-* attrs: must resolve to an https:// allowed-embed-host
       // URL or they are blanked (stored HTML/iframe injection — CVE class).
       if (EMBED_SRC_DATA_ATTRS.has(name) && !isAllowedEmbedSrc(decoded)) return '';
@@ -162,5 +195,10 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   const withoutBareSource = cleaned.replace(/<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (t) =>
     /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ''
   );
-  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
+  // An iframe whose src was refused above would render an empty frame; drop it.
+  const withoutBareIframe = withoutBareSource.replace(
+    /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/iframe>/gi,
+    (t, attrs: string) => (/\ssrc\s*=/i.test(attrs) ? t : '')
+  );
+  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
 }

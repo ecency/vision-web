@@ -77,3 +77,38 @@ export const ALLOWED_ATTRIBUTES: XSSWhiteList = {
   'del': [],
   'ins': []
 }
+
+// data-* attributes the DOM transforms set to mark links they built (post
+// cards, mentions, tags, communities, proposals, click-to-play embeds).
+// Clients route taps on them, so the author-written copies are stripped
+// before the transforms run and on the sanitize-only path (#1919).
+export const RENDER_HELPER_DATA_ATTRIBUTES: ReadonlySet<string> = new Set([
+  'data-author',
+  'data-community',
+  'data-embed-src',
+  'data-filter',
+  'data-href',
+  'data-is-inline',
+  'data-permlink',
+  'data-proposal',
+  'data-start-time',
+  'data-tag',
+  'data-video-href',
+  'data-youtube'
+])
+
+/** A class value without its `markdown-*` tokens (render-helper's markers). */
+export function stripMarkdownClasses(value: string): string {
+  const tokens = value.split(/\s+/).filter(Boolean)
+  const kept = tokens.filter((token) => !/^markdown-/i.test(token))
+  return kept.length === tokens.length ? value : kept.join(' ')
+}
+
+// The only sandbox tokens iframe() and a() ever grant an embed. An author's
+// sandbox keeps these and loses everything else (allow-top-navigation,
+// allow-forms, allow-modals, ...).
+export const IFRAME_SANDBOX_GRANTS: ReadonlySet<string> = new Set([
+  'allow-scripts',
+  'allow-same-origin',
+  'allow-popups'
+])
