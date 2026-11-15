@@ -93,8 +93,8 @@ describe("classic editor preview video styles", () => {
     const selectors = compiledSelectors("features/post-renderer/video-embeds.scss");
     expect(selectors.length).toBeGreaterThan(0);
     for (const sel of selectors) {
-      // A non-pure view (the only one that gets the YouTube URL caption) may be named.
-      expect(sel).toMatch(/^\.markdown-view(:not\(\.markdown-view-pure\))? /);
+      // A view that inserts the YouTube URL caption may be named by its marker.
+      expect(sel).toMatch(/^\.markdown-view(\.er-youtube-source-host)? /);
       // er-youtube-source: the video URL under a YouTube embed (#235).
       expect(sel).toMatch(
         /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe|er-youtube-source/
@@ -115,16 +115,38 @@ describe("classic editor preview video styles", () => {
     const file = "features/post-renderer/video-embeds.scss";
     const reserve = declarationsFor(
       file,
-      ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube[data-youtube]"
+      ".markdown-view.er-youtube-source-host .markdown-video-link-youtube[data-youtube]:not(.er-youtube):not([data-enhanced])"
     );
     expect(reserve).toMatch(/margin-bottom:\s*3rem/);
+    // Once enhanced the caption carries the same 3rem itself (0.5 + 1.25 + 1.25),
+    // so dropping the room and adding the caption in one step moves nothing.
     const caption = declarationsFor(file, ".markdown-view a.er-youtube-source");
-    expect(caption).toMatch(/margin:\s*-2\.5rem auto 1\.25rem/);
+    expect(caption).toMatch(/margin:\s*0\.5rem auto 1\.25rem/);
     expect(caption).toMatch(/height:\s*1\.25rem/);
     expect(caption).toMatch(/white-space:\s*nowrap/);
     expect(caption).toMatch(/width:\s*fit-content/);
     expect(declarationsFor(file, ".markdown-view a.er-youtube-source::after")).toMatch(
       /content:\s*none/
     );
+  });
+
+  // Where no caption comes (waves direct embeds, views rendered without the
+  // enhancer, a rejected id) nothing may reserve room.
+  it("reserves the room only on unenhanced placeholders inside a caption host", () => {
+    for (const file of [
+      "features/post-renderer/video-embeds.scss",
+      "features/post-renderer/ecency-renderer.scss"
+    ]) {
+      const reserving = compiledRules(file)
+        .filter((rule) => /margin-bottom:\s*3rem/.test(rule.body))
+        .flatMap((rule) => rule.selectors)
+        .filter((sel) => sel.includes("markdown-video-link-youtube"));
+      expect(reserving.length).toBeGreaterThan(0);
+      for (const sel of reserving) {
+        expect(sel).toContain(".er-youtube-source-host ");
+        expect(sel).toContain(":not(.er-youtube)");
+        expect(sel).toContain(":not([data-enhanced])");
+      }
+    }
   });
 });

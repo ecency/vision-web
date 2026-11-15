@@ -119,12 +119,16 @@
 
   // The video's own URL under a YouTube placeholder or player (#235): small and
   // muted so it reads as a caption, centred like a Short above it. It is added
-  // after hydration, so the placeholder reserves its room up front: the
-  // placeholder's bottom margin holds the caption line plus its gaps, and the
-  // caption pulls itself back into that room with a negative top margin
-  // (adjacent margins collapse, so the content below does not move).
-  // Pure views never get the caption, so they reserve nothing.
-  $source-gap: 0.5rem; // placeholder to caption
+  // after hydration, so a placeholder that will get one reserves its room up
+  // front in its bottom margin. The enhancer marks the placeholder (er-youtube
+  // or data-enhanced) and inserts the caption in the same step; the mark drops
+  // the reservation and the caption brings the same total with its own margins
+  // (0.5rem gap, line, 1.25rem after), so the content below does not move.
+  // Only views that insert the caption carry er-youtube-source-host. Anywhere
+  // else (pure views, waves' direct embeds, previews rendered without the
+  // enhancer) reserves nothing, and an id the client rejects is marked without
+  // a caption, so its room goes too.
+  $source-gap: 0.5rem; // placeholder to caption, the placeholder's own bottom margin
   $source-line: 1.25rem; // one caption line
   // Caption to the content below. At least the 1em bottom margin of the
   // paragraph around the placeholder at the post body's largest text size
@@ -132,7 +136,8 @@
   $source-after: 1.25rem;
 
   // Included inside .markdown-view, so `&` is the markdown view itself.
-  &:not(.markdown-view-pure) .markdown-video-link-youtube[data-youtube] {
+  &.er-youtube-source-host
+    .markdown-video-link-youtube[data-youtube]:not(.er-youtube):not([data-enhanced]) {
     margin-bottom: $source-gap + $source-line + $source-after;
   }
 
@@ -142,7 +147,7 @@
     width: fit-content;
     max-width: 100%;
     height: $source-line;
-    margin: -($source-line + $source-after) auto $source-after;
+    margin: $source-gap auto $source-after;
     text-align: center;
     font-size: 0.8125rem;
     line-height: $source-line;

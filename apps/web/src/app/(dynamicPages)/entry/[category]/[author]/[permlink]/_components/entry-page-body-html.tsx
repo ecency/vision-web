@@ -47,7 +47,7 @@ export function EntryPageBodyHtml({ html, style }: Props) {
   return (
     <div
       id="post-body"
-      className="entry-body markdown-view user-selectable client"
+      className="entry-body markdown-view user-selectable client er-youtube-source-host"
       style={style}
       dangerouslySetInnerHTML={innerHtml}
     />

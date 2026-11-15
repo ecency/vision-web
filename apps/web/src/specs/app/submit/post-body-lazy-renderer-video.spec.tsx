@@ -177,6 +177,8 @@ describe("SubmitPreviewContent: video placeholders play in the real editor struc
       return found!;
     });
     expect(link.closest(".markdown-view")).toHaveClass("preview-body");
+    // It inserts the YouTube URL caption, so it carries the room marker (#235).
+    expect(link.closest(".markdown-view")).toHaveClass("er-youtube-source-host");
     expect(link.querySelector("iframe")).toBeNull();
     fireEvent.click(link.querySelector(".markdown-video-play") ?? link);
     await waitFor(() => expect(link.querySelector("iframe")).not.toBeNull());

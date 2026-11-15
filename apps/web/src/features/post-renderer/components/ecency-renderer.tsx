@@ -130,6 +130,9 @@ export function EcencyRenderer({
   const className = clsx(
     "entry-body markdown-view user-selectable",
     pure ? "markdown-view-pure" : "",
+    // Mounts the YouTube extension, which adds the video URL caption: the
+    // placeholders reserve its room (#235).
+    !pure && !renderOptions?.embedVideosDirectly ? "er-youtube-source-host" : "",
     other.className
   );
 

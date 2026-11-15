@@ -26,7 +26,7 @@ export function SubmitPreviewContent({ title, tags, body }: Props) {
         })}
       </div>
 
-      <div className="preview-body markdown-view">
+      <div className="preview-body markdown-view er-youtube-source-host">
         <PostBodyLazyRenderer rawBody={body} />
         <SubmitPollPreview />
       </div>

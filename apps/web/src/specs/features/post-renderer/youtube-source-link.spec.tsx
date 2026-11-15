@@ -158,3 +158,110 @@ describe("entry page YouTube enhancer shows the video URL (#235)", () => {
     host.remove();
   });
 });
+
+// The caption's room is reserved only on a placeholder that is about to get a
+// caption: inside a view that inserts one (the marker class) and not yet
+// enhanced. Elsewhere (waves direct embeds, previews rendered without the
+// enhancer, an id the client rejects) no caption comes, so no gap is left.
+const RESERVE =
+  ".markdown-view.er-youtube-source-host .markdown-video-link-youtube[data-youtube]" +
+  ":not(.er-youtube):not([data-enhanced])";
+
+describe("YouTube URL caption room (#235)", () => {
+  async function enhance(html: string) {
+    const { applyYoutubeVideos } = await import(
+      "@/features/post-renderer/components/utils/youtubeVideosEnhancer"
+    );
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="markdown-view er-youtube-source-host">${html}</div>`;
+    document.body.appendChild(host);
+    const placeholder = host.querySelector<HTMLElement>(".markdown-video-link-youtube")!;
+    const reservedBefore = placeholder.matches(RESERVE);
+    const roots = applyYoutubeVideos(host);
+    // Same task as the enhancer call: no frame between dropping the room and the caption.
+    const reservedAfter = placeholder.matches(RESERVE);
+    const next = placeholder.nextElementSibling;
+    roots.forEach((r) => act(() => r.unmount()));
+    host.remove();
+    return { reservedBefore, reservedAfter, next };
+  }
+
+  it("moves the room to the caption in the same step the enhancer adds it", async () => {
+    const { reservedBefore, reservedAfter, next } = await enhance(youtubeLink());
+    expect(reservedBefore).toBe(true);
+    expect(reservedAfter).toBe(false);
+    expect(next?.classList.contains("er-youtube-source")).toBe(true);
+  });
+
+  it("drops the room for an id the client rejects", async () => {
+    const { reservedAfter, next } = await enhance(
+      youtubeLink().replace(`data-youtube="${ID}"`, 'data-youtube="abc.def,ghi"')
+    );
+    expect(reservedAfter).toBe(false);
+    expect(next?.classList.contains("er-youtube-source") ?? false).toBe(false);
+  });
+
+  it("never reserves room under a direct embed (waves)", () => {
+    const host = document.createElement("div");
+    host.innerHTML =
+      `<div class="markdown-view er-youtube-source-host">` +
+      youtubeLink({}, " er-youtube").replace(
+        '<span class="markdown-video-play"></span>',
+        '<span class="er-youtube-frame"><iframe class="youtube-player"></iframe></span>'
+      ) +
+      `</div>`;
+    expect(host.querySelector(".markdown-video-link-youtube")!.matches(RESERVE)).toBe(false);
+  });
+
+  it("the extension's views drop the room once enhanced", async () => {
+    function Host({ html }: { html: string }) {
+      const ref = useRef<HTMLDivElement>(null);
+      return (
+        <>
+          <div
+            ref={ref}
+            className="markdown-view er-youtube-source-host"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+          <YoutubeVideoExtension containerRef={ref} html={html} />
+        </>
+      );
+    }
+    const { container } = render(<Host html={youtubeLink()} />);
+    await flush();
+    const placeholder = container.querySelector<HTMLElement>(".markdown-video-link-youtube")!;
+    expect(placeholder.matches(RESERVE)).toBe(false);
+    expect(placeholder.nextElementSibling?.classList.contains("er-youtube-source")).toBe(true);
+  });
+});
+
+// Only the views that insert the caption carry the marker the room keys off.
+describe("YouTube URL caption host marker (#235)", () => {
+  it("is on the entry page body", async () => {
+    const { EntryPageBodyHtml } = await import(
+      "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-body-html"
+    );
+    const { container } = render(<EntryPageBodyHtml html="<p>x</p>" />);
+    expect(container.querySelector("#post-body")?.classList.contains("er-youtube-source-host")).toBe(
+      true
+    );
+  });
+
+  it("is on an EcencyRenderer view that mounts the YouTube extension, and only there", async () => {
+    const { EcencyRenderer } = await import(
+      "@/features/post-renderer/components/ecency-renderer"
+    );
+    const hostOf = (el: React.ReactElement) => {
+      const { container, unmount } = render(el);
+      const has = !!container.querySelector(".markdown-view.er-youtube-source-host");
+      unmount();
+      return has;
+    };
+    expect(hostOf(<EcencyRenderer value="body" />)).toBe(true);
+    expect(hostOf(<EcencyRenderer value="body" pure={true} />)).toBe(false);
+    expect(
+      hostOf(<EcencyRenderer value="body" renderOptions={{ embedVideosDirectly: true }} />)
+    ).toBe(false);
+  });
+});
+
