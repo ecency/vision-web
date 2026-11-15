@@ -1,11 +1,22 @@
 import type { Zoom } from "medium-zoom";
 import { zoomReplaceTarget, zoomEffectiveParent } from "./picture-zoom";
 
+/** Releases the images one applyImageZoom run attached. */
+export interface ImageZoomHandle {
+    detach: () => void;
+}
+
+// One medium-zoom instance for the page. Each instance adds document click and
+// keyup and window scroll and resize listeners that detach() does not remove,
+// and the entry page runs the enhancements again on every Edit History or raw
+// toggle, so every run attaches its images to this one instance (#2083).
+let sharedZoom: Zoom | null = null;
+
 /**
  * Apply medium-zoom to images in a container.
- * Returns the zoom instance for cleanup (caller should call .detach() when done).
+ * Resolves to a handle for cleanup (caller should call .detach() when done).
  */
-export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
+export function applyImageZoom(container: HTMLElement): Promise<ImageZoomHandle | null> {
     const elements = Array.from(
         container.querySelectorAll<HTMLElement>(
             ".markdown-view:not(.markdown-view-pure) img"
@@ -125,7 +136,7 @@ export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
     });
 
     // apply medium zoom with final safety check
-    return new Promise<Zoom | null>((resolveZoom) => {
+    return new Promise<ImageZoomHandle | null>((resolveZoom) => {
         try {
             // Filter elements one more time to ensure they're still connected before passing to medium-zoom
             // This prevents "Cannot read property 'parentNode' of null" errors during hydration
@@ -210,11 +221,16 @@ export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
                     }
 
                     try {
-                        const zoom = mediumZoom(stillConnected, {
-                            background: "#131111",
-                            margin: 24, // Add margin for better centering
-                        });
-                        resolveZoom(zoom);
+                        if (sharedZoom) {
+                            sharedZoom.attach(...stillConnected);
+                        } else {
+                            sharedZoom = mediumZoom(stillConnected, {
+                                background: "#131111",
+                                margin: 24, // Add margin for better centering
+                            });
+                        }
+                        const zoom = sharedZoom;
+                        resolveZoom({ detach: () => zoom.detach(...stillConnected) });
                     } catch (error) {
                         console.warn("Failed to initialize medium-zoom:", error);
                         resolveZoom(null);

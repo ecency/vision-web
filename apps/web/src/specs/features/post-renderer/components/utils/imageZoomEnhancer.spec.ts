@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { applyImageZoom } from '@/features/post-renderer/components/utils/imageZoomEnhancer'
+import mediumZoom from 'medium-zoom'
 
 // Mock medium-zoom
 vi.mock('medium-zoom', () => ({
   default: vi.fn(() => ({
     update: vi.fn(),
+    attach: vi.fn(),
+    detach: vi.fn(),
   })),
 }))
 
@@ -383,6 +386,42 @@ describe('applyImageZoom', () => {
 
       // Linked images are excluded (the check looks through <picture> to the <a>).
       expect(container.querySelector('.markdown-image-container')).toBeNull()
+    })
+  })
+
+  // medium-zoom adds document and window listeners per instance and detach()
+  // does not remove them. The entry page runs setupPostEnhancements again on
+  // every Edit History or raw toggle, so each run must reuse one instance and
+  // its cleanup must release only its own images (#2083).
+  describe('one medium-zoom instance across runs', () => {
+    const run = async () => {
+      const body = document.createElement('div')
+      body.classList.add('markdown-view')
+      const img = document.createElement('img')
+      img.src = `https://images.ecency.com/${Math.random()}.png`
+      body.appendChild(img)
+      document.body.appendChild(body)
+      const pending = applyImageZoom(body)
+      // jsdom never loads images; the enhancer waits for load first.
+      body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+      const handle = await pending
+      return { handle, zoomed: body.querySelector('img')! }
+    }
+
+    it('creates at most one instance and attaches later runs to it', async () => {
+      const before = vi.mocked(mediumZoom).mock.calls.length
+      await run()
+      const second = await run()
+      const third = await run()
+      expect(vi.mocked(mediumZoom).mock.calls.length - before).toBeLessThanOrEqual(1)
+      const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+
+      expect(zoom.attach).toHaveBeenCalledWith(second.zoomed)
+      expect(zoom.attach).toHaveBeenCalledWith(third.zoomed)
+
+      // Cleanup releases this run's images only, not the other runs'.
+      third.handle?.detach()
+      expect(zoom.detach).toHaveBeenLastCalledWith(third.zoomed)
     })
   })
 })
