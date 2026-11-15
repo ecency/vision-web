@@ -68,7 +68,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
 
   it("renders a proxied <img src>+srcset in markup (not a base64 data URL)", () => {
     const { container } = render(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     const img = mainImg(container)!;
     expect(img).toBeTruthy();
@@ -86,8 +86,6 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     const { container } = render(
       <EntryListItemThumbnail
         entry={entry}
-        entryProp={entry}
-        isCrossPost={false}
         noImage={NO_IMG}
         isThumbLcp
       />
@@ -104,8 +102,6 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
       render(
         <EntryListItemThumbnail
           entry={entry}
-          entryProp={entry}
-          isCrossPost={false}
           noImage={NO_IMG}
           isThumbLcp
         />
@@ -116,7 +112,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
 
     const lazy = mainImg(
       render(
-        <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+        <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
       ).container
     )!;
     expect(lazy.getAttribute("loading")).toBe("lazy");
@@ -127,8 +123,6 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     const { container } = render(
       <EntryListItemThumbnail
         entry={{ ...entry, __noimg: true }}
-        entryProp={entry}
-        isCrossPost={false}
         noImage={NO_IMG}
       />
     );
@@ -141,8 +135,6 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     const { container } = render(
       <EntryListItemThumbnail
         entry={entry}
-        entryProp={entry}
-        isCrossPost={false}
         noImage={NO_IMG}
         isThumbLcp
       />
@@ -157,8 +149,6 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     const { container } = render(
       <EntryListItemThumbnail
         entry={{ ...entry, __noimg: true, parent_permlink: "root-post" }}
-        entryProp={entry}
-        isCrossPost={false}
         noImage={NO_IMG}
       />
     );
@@ -175,7 +165,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
 
     it("gets the placeholder, like any other source", () => {
       const { container } = render(
-        <EntryListItemThumbnail entry={gif as never} entryProp={gif as never} isCrossPost={false} noImage={NO_IMG} isThumbLcp={true} />
+        <EntryListItemThumbnail entry={gif as never} noImage={NO_IMG} isThumbLcp={true} />
       );
       expect(container.querySelector('img[aria-hidden="true"]')).toBeTruthy();
       const imgs = Array.from(container.querySelectorAll("img"));
@@ -193,7 +183,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     // offering none.
     it("drops srcset, so the browser fetches the both-axes src that actually renders", () => {
       const { container } = render(
-        <EntryListItemThumbnail entry={gif as never} entryProp={gif as never} isCrossPost={false} noImage={NO_IMG} isThumbLcp={true} />
+        <EntryListItemThumbnail entry={gif as never} noImage={NO_IMG} isThumbLcp={true} />
       );
       const real = Array.from(container.querySelectorAll("img")).find((i) => !i.getAttribute("aria-hidden"));
       expect(real?.getAttribute("srcset")).toBeNull();
@@ -204,7 +194,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     it("keeps srcset for a non-gif source", () => {
       const png: TestEntry = { ...entry, permlink: "post-png-srcset", __raw: "https://img.host/photo.png" };
       const { container } = render(
-        <EntryListItemThumbnail entry={png as never} entryProp={png as never} isCrossPost={false} noImage={NO_IMG} isThumbLcp={true} />
+        <EntryListItemThumbnail entry={png as never} noImage={NO_IMG} isThumbLcp={true} />
       );
       const real = Array.from(container.querySelectorAll("img")).find((i) => !i.getAttribute("aria-hidden"));
       expect(real?.getAttribute("srcset")).toBeTruthy();
@@ -220,7 +210,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
         __thumb: "https://img.host/animation.gif", __raw: "https://img.host/photo.png"
       };
       const { container: a } = render(
-        <EntryListItemThumbnail entry={gifThumb as never} entryProp={gifThumb as never} isCrossPost={false} noImage={NO_IMG} />
+        <EntryListItemThumbnail entry={gifThumb as never} noImage={NO_IMG} />
       );
       expect(a.querySelector("img:not([aria-hidden])")?.getAttribute("srcset")).toBeNull();
 
@@ -229,7 +219,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
         __thumb: "https://img.host/photo.png", __raw: "https://img.host/animation.gif"
       };
       const { container: b } = render(
-        <EntryListItemThumbnail entry={pngThumb as never} entryProp={pngThumb as never} isCrossPost={false} noImage={NO_IMG} />
+        <EntryListItemThumbnail entry={pngThumb as never} noImage={NO_IMG} />
       );
       expect(b.querySelector("img:not([aria-hidden])")?.getAttribute("srcset")).toBeTruthy();
     });
@@ -238,7 +228,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     // <img src> with no srcset of its own, which is what kept #1803 fixed.
     it("requests the placeholder once, with no srcset of its own", () => {
       const { container } = render(
-        <EntryListItemThumbnail entry={gif as never} entryProp={gif as never} isCrossPost={false} noImage={NO_IMG} isThumbLcp={true} />
+        <EntryListItemThumbnail entry={gif as never} noImage={NO_IMG} isThumbLcp={true} />
       );
       const ph = container.querySelector('img[aria-hidden="true"]');
       expect(ph?.getAttribute("srcset")).toBeNull();
@@ -248,7 +238,7 @@ describe("EntryListItemThumbnail — SSR-discoverable LCP image", () => {
     it("treats a non-gif source no differently", () => {
       const png: TestEntry = { ...entry, permlink: "post-png", __raw: "https://img.host/photo.png" };
       const { container } = render(
-        <EntryListItemThumbnail entry={png as never} entryProp={png as never} isCrossPost={false} noImage={NO_IMG} isThumbLcp={true} />
+        <EntryListItemThumbnail entry={png as never} noImage={NO_IMG} isThumbLcp={true} />
       );
       expect(container.querySelector('img[aria-hidden="true"]')).toBeTruthy();
     });

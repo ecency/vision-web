@@ -13,8 +13,6 @@ import { THUMB_SIZES } from "./thumb-lcp";
 interface Props {
   entry: Entry;
   noImage: string;
-  isCrossPost: boolean;
-  entryProp: Entry;
   // First above-the-fold item(s): render the thumbnail eagerly with high fetch
   // priority so it can be the LCP without waiting behind lazy images.
   isThumbLcp?: boolean;
@@ -23,8 +21,6 @@ interface Props {
 export function EntryListItemThumbnail({
   entry,
   noImage,
-  isCrossPost,
-  entryProp,
   isThumbLcp = false
 }: Props) {
   const listStyle = useGlobalStore((state) => state.listStyle);
@@ -114,7 +110,7 @@ export function EntryListItemThumbnail({
   return (
     showImage && (
       <div className={"item-image " + (!hasFullImage ? "noImage" : "")}>
-        <EntryLink className="h-full" entry={isCrossPost ? entryProp : entry}>
+        <EntryLink className="h-full" entry={entry}>
           <div className="h-full w-full relative overflow-hidden">
             {/* LQIP placeholder behind the real image; the real image (opaque on
                 load) covers it. Kept fully visible so it never gates the LCP

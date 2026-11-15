@@ -102,7 +102,7 @@ describe("feed thumbnail with a body that breaks the image extractor", () => {
     throwForCraftedPosts();
     const entry = hostileEntry();
     const { container } = render(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     const img = mainImg(container)!;
     expect(img).toBeTruthy();
@@ -118,7 +118,7 @@ describe("feed thumbnail with a body that breaks the image extractor", () => {
     const entry = hostileEntry();
     // The thumbnail alone calls the extractor twice (full size + LQIP).
     const first = render(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     expect(sentry.captureException).toHaveBeenCalledTimes(1);
     expect(sentry.captureException).toHaveBeenCalledWith(
@@ -127,17 +127,17 @@ describe("feed thumbnail with a body that breaks the image extractor", () => {
     );
 
     first.rerender(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     render(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     expect(sentry.captureException).toHaveBeenCalledTimes(1);
 
     // A different broken post is still worth an event of its own.
     const other = hostileEntry();
     render(
-      <EntryListItemThumbnail entry={other} entryProp={other} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={other} noImage={NO_IMG} />
     );
     expect(sentry.captureException).toHaveBeenCalledTimes(2);
   });
@@ -177,7 +177,7 @@ describe("feed thumbnail when the animated-cover check throws", () => {
       json_metadata: { image: ["https://images.example/cover.jpg"] }
     };
     const { container, rerender } = render(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     const img = container.querySelector("img:not([aria-hidden])")!;
     expect(img.getAttribute("src")).not.toBe(NO_IMG);
@@ -192,7 +192,7 @@ describe("feed thumbnail when the animated-cover check throws", () => {
     );
 
     rerender(
-      <EntryListItemThumbnail entry={entry} entryProp={entry} isCrossPost={false} noImage={NO_IMG} />
+      <EntryListItemThumbnail entry={entry} noImage={NO_IMG} />
     );
     expect(sentry.captureException).toHaveBeenCalledTimes(1);
   });
