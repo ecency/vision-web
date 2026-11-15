@@ -9,6 +9,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useEffect, useMemo, useRef } from "react";
 import { getAccessToken } from "@/utils";
+import { Button } from "@ui/button";
 
 interface Props {
   filter?: NotificationFilter;
@@ -99,14 +100,25 @@ export function NotificationList({
       {isLoading && dataFlow.length === 0 ? <LinearProgress /> : <></>}
 
       <div className={`list-body${filteredData.length === 0 && !isLoading ? " empty-list" : ""}`}>
-        {!isLoading && filteredData.length === 0 && !hasNextPage && (
-          <span className="empty-text">
-            {!isQueryEnabled
-              ? i18next.t("notifications.auth-required-desc")
-              : isError
-                ? i18next.t("g.error")
+        {!isLoading && isQueryEnabled && isError && dataFlow.length === 0 ? (
+          // A failed or blocked request (content blocker, offline) must not
+          // leave the panel looking empty: say so and offer a retry.
+          <div className="empty-text flex flex-col items-center gap-3" role="alert">
+            <span>{i18next.t("notifications.load-failed")}</span>
+            <Button size="sm" appearance="secondary" onClick={() => refetch()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
+        ) : (
+          !isLoading &&
+          filteredData.length === 0 &&
+          !hasNextPage && (
+            <span className="empty-text">
+              {!isQueryEnabled
+                ? i18next.t("notifications.auth-required-desc")
                 : i18next.t("g.empty-list")}
-          </span>
+            </span>
+          )
         )}
         {filteredData.map((n, i) => (
           <AnimatedNotificationListItemLayout key={n.id} index={i}>

@@ -41,7 +41,8 @@
 }
 
 .navbar-chat-badge {
-  @apply absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white shadow;
+  // Drawn over the chat link's corner: let a click on it reach the link (#2022).
+  @apply pointer-events-none absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white shadow;
   @apply bg-red-040;
 }
 
