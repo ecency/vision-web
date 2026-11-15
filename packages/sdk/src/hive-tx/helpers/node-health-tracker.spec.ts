@@ -4,6 +4,7 @@ import {
   callRPC,
   callREST,
   callWithQuorum,
+  callRPCWithFallback,
   rpcHealthTracker,
   restHealthTracker,
   __LATENCY_TUNING__,
@@ -368,6 +369,23 @@ describe("call sites feed the tracker — adaptive behavior end to end", () => {
     // would be {result,durationMs} (and quorum could never match) if we'd changed
     // jsonRPCCall's return shape; consensus proves it's still the raw result.
     expect(result).toEqual({ head_block_number: 42 });
+  });
+
+  // #2002: the caller learns which node answered, so a double-check can leave
+  // a lagging node out. The result is unchanged.
+  it("callRPCWithFallback tells onAnswer which node produced the result", async () => {
+    config.nodes = ["https://q-down.test", "https://q-up.test"];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any, init: any) =>
+      String(url).includes("q-down") ? new Response("down", { status: 503 }) : jsonOk(init, null)
+    );
+    const nodes: string[] = [];
+    const answer = await callRPCWithFallback(
+      { method: "bridge.get_post_v2", params: { author: "a", permlink: "p" } },
+      { method: "bridge.get_post", params: { author: "a", permlink: "p" } },
+      { onAnswer: (n) => nodes.push(n) }
+    );
+    expect(answer).toEqual({ result: null, method: "bridge.get_post_v2" });
+    expect(nodes).toEqual(["https://q-up.test"]);
   });
 
   // #2002: the observer reports each node's outcome and changes nothing else.

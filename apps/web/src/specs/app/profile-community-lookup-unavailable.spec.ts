@@ -160,14 +160,20 @@ describe("the wave page when the post lookup fails or finds nothing", () => {
     await expect(render(load, {}, params)).rejects.toBeInstanceOf(SsrLookupUnavailableError);
   });
 
-  // #2002: the first node answers null and the double-check on other nodes
-  // reaches none of them. That is a failed lookup, not a missing wave. Runs the
-  // real SDK post lookup (built dist) against stubbed nodes.
+  // #2002: the first node lags and answers null, and the double-check on other
+  // nodes reaches none of them. That is a failed lookup, not a missing wave.
+  // The lagging node keeps answering null to every method, as a real one does,
+  // and the double-check may ask it again. Runs the real SDK post lookup (built
+  // dist) against stubbed nodes.
   it("throws lookup-unavailable when the first node answers null and every other node fails", async () => {
     const sdk = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    let lagging: string | undefined;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const body = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}"));
-      if (body.method === "bridge.get_post_v2") {
+      const node = new URL(String(url)).origin;
+      // The node the lookup asks first is the lagging one.
+      lagging ??= node;
+      if (node === lagging) {
         return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: null }), {
           status: 200,
           headers: { "Content-Type": "application/json" }

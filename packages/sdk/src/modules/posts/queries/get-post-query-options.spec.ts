@@ -10,7 +10,11 @@ vi.mock('@/modules/core/hive-tx', async (importOriginal) => {
     ...actual,
     callRPC: mockCallRPC,
     // Bridge reads go through the v2 helper; answer them from the same mock.
-    callRPCWithFallback: vi.fn(async (primary: { method: string; params: unknown }) => ({ result: await mockCallRPC(primary.method, primary.params), method: primary.method })),
+    callRPCWithFallback: vi.fn(async (primary: { method: string; params: unknown }, _fallback: unknown, options?: { onAnswer?: (node: string) => void }) => {
+      const result = await mockCallRPC(primary.method, primary.params)
+      options?.onAnswer?.('https://answering.test')
+      return { result, method: primary.method }
+    }),
   }
 })
 
@@ -155,7 +159,7 @@ describe('getPostQueryOptions', () => {
       const result = await (options.queryFn as any)()
 
       expect(result).toBeNull()
-      expect(verifyPostOnAlternateNode).toHaveBeenCalledWith('testauthor', 'test-permlink', '')
+      expect(verifyPostOnAlternateNode).toHaveBeenCalledWith('testauthor', 'test-permlink', '', 'https://answering.test')
     })
 
     // #2002: a double-check where no node answered is a failed lookup, not
@@ -183,7 +187,7 @@ describe('getPostQueryOptions', () => {
       const result = await (options.queryFn as any)()
 
       expect(result).toEqual(verifiedEntry)
-      expect(verifyPostOnAlternateNode).toHaveBeenCalledWith('testauthor', 'test-permlink', '')
+      expect(verifyPostOnAlternateNode).toHaveBeenCalledWith('testauthor', 'test-permlink', '', 'https://answering.test')
     })
 
     it('should not call verification when primary returns data', async () => {

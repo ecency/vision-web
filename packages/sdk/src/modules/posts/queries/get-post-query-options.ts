@@ -22,20 +22,35 @@ export function getPostQueryOptions(
         return null;
       }
 
-      // hive-tx tries nodes in order; the first healthy node (index 0) handles this call.
-      // If it returns null, verifyPostOnAlternateNode skips index 0 and tries others.
-      const raw = await bridgeV2Call<Entry | null>("get_post", {
-        author,
-        permlink: cleanPermlink,
-        observer,
-        top_votes: POST_TOP_VOTES,
-      });
+      // hive-tx picks the healthiest node for this call (or the server read
+      // proxy). If its answer is null, verifyPostOnAlternateNode asks the other
+      // nodes, and a null from the node that answered here does not count: a
+      // node that lags keeps answering null.
+      let answeringNode: string | undefined;
+      const raw = await bridgeV2Call<Entry | null>(
+        "get_post",
+        {
+          author,
+          permlink: cleanPermlink,
+          observer,
+          top_votes: POST_TOP_VOTES,
+        },
+        undefined,
+        (node) => {
+          answeringNode = node;
+        }
+      );
       const response = raw ? normalizeEntry(raw, observer) : raw;
 
       if (!response) {
         // Primary node returned null — verify on alternate nodes
         // to guard against sync lag returning null for valid posts
-        const verified = await verifyPostOnAlternateNode(author, cleanPermlink, observer);
+        const verified = await verifyPostOnAlternateNode(
+          author,
+          cleanPermlink,
+          observer,
+          answeringNode
+        );
         if (!verified) {
           return null;
         }
