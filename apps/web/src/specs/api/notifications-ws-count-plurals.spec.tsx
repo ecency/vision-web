@@ -117,10 +117,22 @@ describe("count notifications use i18next plurals (#2021)", () => {
     );
   });
 
-  it.each(locales)("%s renders counts 1 and 7 with no stray English suffix", (locale) => {
+  // One count per plural category the locale uses, so _zero/_two/_few/_many
+  // render too (pl "other" is only reached by a fraction, fr "many" by 10^6).
+  const CANDIDATES = [...Array.from({ length: 200 }, (_, i) => i), 1.5, 1000000];
+  const countsFor = (locale: string) => {
+    const rules = new Intl.PluralRules(locale);
+    return rules
+      .resolvedOptions()
+      .pluralCategories.map((category) => CANDIDATES.find((n) => rules.select(n) === category)!);
+  };
+
+  it.each(locales)("%s renders a count of every plural category with no stray English suffix", (locale) => {
     const t = translations.getFixedT(locale);
+    const counts = countsFor(locale);
+    expect(counts.every((n) => n !== undefined), `${locale} counts`).toBe(true);
     for (const key of ["checkins", "monthly-posts"]) {
-      for (const count of [1, 7]) {
+      for (const count of counts) {
         const body = t(`notification.${key}`, { count });
         expect(body, `${locale} ${key} ${count}`).toContain(String(count));
         // Neither an "s" glued to a non-Latin word ("7 дн.s"), nor a placeholder.
