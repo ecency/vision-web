@@ -2,4 +2,4 @@
 "@ecency/render-helper": patch
 ---
 
-`extractYtStartTime` reads YouTube's hour, minute and second form in `t` (`1m30s` is 90, `1h2m3s` is 3723) instead of keeping only the first number, so a shared link with a start time no longer starts the embed at the wrong second. A `t` or `start` value that is not a time (negative, non-numeric, empty) gives no start time instead of `NaN`, a negative number or `0`.
+`extractYtStartTime` reads YouTube's hour, minute and second form in `t` (`1m30s` is 90, `1h2m3s` is 3723) instead of keeping only the first number, so the parsed start time (`data-start-time` on YouTube video links, used for the video link caption on web and by mobile) is right for those forms. A value that is not a time (negative, non-numeric, empty, or more than 7 digits) gives no start time instead of `NaN`, a negative number, `0` or a huge number, and an invalid `t` falls back to a valid `start`.

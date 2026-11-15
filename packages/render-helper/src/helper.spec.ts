@@ -355,6 +355,17 @@ describe('Helper Functions', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=999999')).toBe('999999')
       })
 
+      it('should give no start time for an unbounded number', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=99999999999999999999999')).toBe('')
+        expect(extractYtStartTime(`https://youtube.com/watch?v=ID&t=${'9'.repeat(400)}`)).toBe('')
+        expect(extractYtStartTime(`https://youtube.com/watch?v=ID&start=${'9'.repeat(400)}`)).toBe('')
+      })
+
+      it('should fall back to a valid ?start= when ?t= is invalid or empty', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=abc&start=30')).toBe('30')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=&start=30')).toBe('30')
+      })
+
       it('should handle URL with hash fragment', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=123#comments')).toBe('123')
       })
