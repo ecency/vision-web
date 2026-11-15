@@ -10,7 +10,8 @@ import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
 import {
   MATTERMOST_OWNER_COOKIE,
   MATTERMOST_TOKEN_COOKIE,
-  mattermostCookieToken
+  mattermostCookieToken,
+  ownerlessMattermostSession
 } from "./mattermost-session-cookie";
 
 export { mattermostCookieToken };
@@ -962,21 +963,21 @@ export async function ensurePersonalToken(
  * (`owner`, the verified Ecency username). The token reader honours the
  * session only while that account is the one active in the browser.
  */
+function sessionCookie(name: string, value: string) {
+  return {
+    name,
+    value,
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30
+  };
+}
+
 export function withMattermostTokenCookie(response: NextResponse, token: string, owner: string) {
-  for (const [name, value] of [
-    [MATTERMOST_TOKEN_COOKIE, token],
-    [MATTERMOST_OWNER_COOKIE, owner.toLowerCase()]
-  ]) {
-    response.cookies.set({
-      name,
-      value,
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30
-    });
-  }
+  response.cookies.set(sessionCookie(MATTERMOST_TOKEN_COOKIE, token));
+  response.cookies.set(sessionCookie(MATTERMOST_OWNER_COOKIE, owner.toLowerCase()));
   return response;
 }
 
@@ -1012,7 +1013,37 @@ export async function getMattermostTokenFromCookies(): Promise<string | null> {
 
   // 2) Fall back to httpOnly cookie (web clients), only for the active account
   const cookieStore = await cookies();
-  return mattermostCookieToken((name) => cookieStore.get(name)?.value);
+  const readCookie = (name: string) => cookieStore.get(name)?.value;
+  const token = mattermostCookieToken(readCookie);
+  if (token) {
+    return token;
+  }
+
+  // 3) A session set before the owner cookie existed (#2023). Pages other
+  //    than /chats never bootstrap, so rejecting it would zero the badge
+  //    there. Honour it once it proves to be the active account's (the chat
+  //    username is the Hive username the bootstrap verified) and name the
+  //    owner, so this lookup runs once per such cookie.
+  const legacy = ownerlessMattermostSession(readCookie);
+  if (!legacy) {
+    return null;
+  }
+  let me: Pick<MattermostUser, "username"> | undefined;
+  try {
+    me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", legacy.token);
+  } catch {
+    // Invalid token or chat unreachable: no session; the client bootstraps on the 401.
+    return null;
+  }
+  if (me?.username?.toLowerCase() !== legacy.active) {
+    return null;
+  }
+  try {
+    cookieStore.set(sessionCookie(MATTERMOST_OWNER_COOKIE, legacy.active));
+  } catch {
+    // Read-only cookie store (not a route handler): honour it without stamping.
+  }
+  return legacy.token;
 }
 
 export async function mmUserFetch<T>(path: string, token: string, init?: RequestInit) {
