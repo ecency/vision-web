@@ -54,10 +54,19 @@ export function getNotificationsInfiniteQueryOptions(
     },
     enabled: !!activeUsername && !!code,
     // A 4xx (an expired or revoked code: 401, 403) fails the same way on every
-    // try. Anything else (5xx, network) gets React Query's default 3 retries.
+    // try. A 408 timeout and a 429 rate limit are transient, like a 5xx or a
+    // network failure: those get React Query's default 3 retries.
     retry: (failureCount, error) => {
       const status = (error as { status?: unknown } | null)?.status;
-      if (typeof status === "number" && status >= 400 && status < 500) return false;
+      if (
+        typeof status === "number" &&
+        status >= 400 &&
+        status < 500 &&
+        status !== 408 &&
+        status !== 429
+      ) {
+        return false;
+      }
       return failureCount < 3;
     },
     // No initialData here: an empty seed counts as fresh for the whole staleTime,

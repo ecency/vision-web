@@ -83,6 +83,16 @@ describe("getNotificationsInfiniteQueryOptions (#2080)", () => {
     expect(retry(0, new TypeError("Failed to fetch"))).toBe(true);
   });
 
+  it("still retries a 408 timeout and a 429 rate limit", async () => {
+    const retry = options().retry as (count: number, error: unknown) => boolean;
+    for (const status of [408, 429]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("later", { status })));
+      const error = await run().catch((e) => e);
+      expect(retry(0, error)).toBe(true);
+      expect(retry(3, error)).toBe(false);
+    }
+  });
+
   it("has no next page after an empty page", () => {
     expect(nextPage([])).toBeUndefined();
     expect(nextPage(undefined)).toBeUndefined();
