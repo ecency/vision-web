@@ -63,8 +63,9 @@ export function PerksQuestsSection() {
   // price and the purchase is disabled, so nobody is charged without seeing the price. A failed
   // background refetch keeps the last roster, so the label stays.
   const { data: proMembers } = useQuery(getProMembersQueryOptions());
-  const rosterLoaded = proMembers !== undefined;
-  const isPro = isProMember(proMembers?.members, username);
+  const members = Array.isArray(proMembers?.members) ? proMembers.members : undefined;
+  const rosterLoaded = members !== undefined;
+  const isPro = isProMember(members, username);
 
   const [tier, setTier] = useState<QuestTier>("daily");
   const [showTopup, setShowTopup] = useState(false);
