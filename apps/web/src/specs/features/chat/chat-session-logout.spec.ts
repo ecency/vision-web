@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHAT_BOOTSTRAP_QUERY_PREFIX } from "@/features/chat/chat-session";
-import { ChatAccountInactiveError } from "@/features/chat/chat-session-errors";
+import { CHAT_BOOTSTRAP_QUERY_PREFIX, chatBootstrapFetch } from "@/features/chat/chat-session";
+import { ChatAccountInactiveError, ChatSessionChangedError } from "@/features/chat/chat-session-errors";
 import type { AuthenticationState } from "@/core/global-store/modules/authentication-module";
 import type { ActiveUser } from "@/entities";
 import { createAuthenticationActions } from "@/core/global-store/modules/authentication-module";
@@ -477,6 +477,28 @@ describe("chat client state on an account switch (#2023)", () => {
     actionsFor("alice").setActiveUser("bob");
 
     expect(bootstrapSignal?.aborted).toBe(true);
+  });
+
+  it("reports an aborted bootstrap as a session change, which is not retried", async () => {
+    fetchMock.mockImplementation((input: string, init?: RequestInit) => {
+      if (input === SESSION_URL) return Promise.resolve(ok());
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError"))
+        );
+      });
+    });
+    const pending = chatBootstrapFetch("/api/mattermost/bootstrap", { method: "POST" }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    await waitFor(() =>
+      expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toHaveLength(1)
+    );
+
+    actionsFor("alice").setActiveUser("bob");
+
+    expect(await pending).toBeInstanceOf(ChatSessionChangedError);
   });
 
   it("a stale tab sends no bootstrap when it regains focus (#2023 review)", async () => {

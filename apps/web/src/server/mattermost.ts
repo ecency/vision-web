@@ -7,6 +7,7 @@ import { ESIE_USERNAME } from "@/features/chat/official-accounts";
 import { toPublicChatUser } from "@/server/chat-public-user";
 import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
+import { CHAT_ACCOUNT_HEADER } from "@/features/chat/chat-account-binding";
 import {
   MATTERMOST_OWNER_COOKIE,
   MATTERMOST_TOKEN_COOKIE,
@@ -1022,7 +1023,7 @@ export async function getMattermostTokenFromCookies(
   // 2) Fall back to httpOnly cookie (web clients), only for the active account
   const cookieStore = await cookies();
   const readCookie = (name: string) => cookieStore.get(name)?.value;
-  if (!chatAccountMatchesCookies(headerStore.get("x-chat-account"), readCookie)) {
+  if (!chatAccountMatchesCookies(headerStore.get(CHAT_ACCOUNT_HEADER), readCookie)) {
     return null;
   }
   const token = mattermostCookieToken(readCookie);

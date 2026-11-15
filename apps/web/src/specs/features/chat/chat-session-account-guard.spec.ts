@@ -11,7 +11,7 @@ import {
   resetChatSession
 } from "@/features/chat/chat-session";
 import { ChatAccountInactiveError } from "@/features/chat/chat-session-errors";
-import { MattermostWebSocket } from "@/features/chat/mattermost-websocket";
+import { MattermostWebSocket, disconnectActiveChatSocket } from "@/features/chat/mattermost-websocket";
 
 // #2087 review: two follow-ups to the per-account chat session (#2023).
 // 1. Every outstanding reset holds chat requests back, and a reset that times
@@ -263,6 +263,20 @@ describe("chat websocket in a stale tab (#2087 review)", () => {
     ws.disconnect();
   });
 
+  it("a socket reconnected after a disconnect can still be closed by a reset", async () => {
+    vi.useRealTimers();
+    const ws = new MattermostWebSocket();
+    await ws.connect();
+    ws.disconnect();
+    // e.g. the composer's typing kick reopens it.
+    await ws.connect();
+    const disconnect = vi.spyOn(ws, "disconnect");
+
+    disconnectActiveChatSocket();
+
+    expect(disconnect).toHaveBeenCalled();
+  });
+
   it("closes the open socket when a chat request finds the tab stale", async () => {
     vi.useRealTimers();
     const ws = new MattermostWebSocket();
@@ -293,5 +307,10 @@ describe("websocket route session cookie (#2087 review)", () => {
       "utf8"
     );
     expect(source).toMatch(/mattermostCookieTokenFor\(\s*request\.nextUrl\.searchParams\.get\(/);
+    // Client and route share one name for the param, so a rename cannot split them.
+    expect(source).toMatch(
+      /import \{ CHAT_ACCOUNT_QUERY_PARAM \} from "@\/features\/chat\/chat-account-binding"/
+    );
+    expect(source).toMatch(/searchParams\.get\(CHAT_ACCOUNT_QUERY_PARAM\)/);
   });
 });

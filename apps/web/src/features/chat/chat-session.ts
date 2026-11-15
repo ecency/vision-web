@@ -14,18 +14,11 @@ import Cookies from "js-cookie";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { getQueryClient } from "@/core/react-query";
 import { ChatAccountInactiveError, ChatSessionChangedError } from "./chat-session-errors";
+import { CHAT_ACCOUNT_HEADER } from "./chat-account-binding";
 
 export const CHAT_SESSION_URL = "/api/mattermost/session";
 
-/**
- * Request header naming the account this tab's chat request is for. The chat
- * session cookies are shared by every tab, so after another tab switched
- * account they belong to that one; the server refuses them for a request that
- * names another account.
- */
-export const CHAT_ACCOUNT_HEADER = "X-Chat-Account";
-/** The same for the chat websocket, which cannot send headers. */
-export const CHAT_ACCOUNT_QUERY_PARAM = "account";
+export { CHAT_ACCOUNT_HEADER, CHAT_ACCOUNT_QUERY_PARAM } from "./chat-account-binding";
 
 // A hung request must not stall chat for the rest of the page's life.
 const RESET_TIMEOUT_MS = 10_000;
@@ -190,12 +183,6 @@ export async function chatSessionSettled(): Promise<void> {
 }
 
 /**
- * `fetch` for chat API requests: waits for a pending session reset first, so a
- * request made right after a logout or switch cannot run as the previous
- * account, and a new account's bootstrap cannot have its fresh cookie wiped by
- * a late expiry.
- */
-/**
  * This tab's account for chat, or null when it has none. Throws
  * ChatAccountInactiveError when another tab made another account (or none)
  * the browser's active one: the shared session cookies are not this tab's
@@ -211,6 +198,12 @@ export function chatTabAccount(): string | null {
   return tabAccount;
 }
 
+/**
+ * `fetch` for chat API requests: waits for a pending session reset first, so a
+ * request made right after a logout or switch cannot run as the previous
+ * account, and a new account's bootstrap cannot have its fresh cookie wiped by
+ * a late expiry.
+ */
 export async function chatSessionFetch(input: string, init?: RequestInit): Promise<Response> {
   await chatSessionSettled();
 

@@ -229,6 +229,9 @@ export class MattermostWebSocket {
     }
 
     this.connectionState = "connecting";
+    // disconnect() clears the tracker, so a reconnect must re-register or a later
+    // reset could not close this socket (#2087 review).
+    globalInstance = this;
 
     try {
       // If token is provided (third-party apps), use it in query param

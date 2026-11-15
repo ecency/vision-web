@@ -4,10 +4,8 @@ import type { WebSocketServer } from "ws";
 import { scrubChatSocketFrame } from "@/server/chat-public-user";
 import { closeSocketSafely } from "@/server/chat-socket-close";
 import { mattermostCookieTokenFor } from "@/server/mattermost-session-cookie";
-
-// The tab's account, named by the web client (CHAT_ACCOUNT_QUERY_PARAM in
-// features/chat/chat-session.ts; a browser websocket cannot send headers).
-const CHAT_ACCOUNT_QUERY_PARAM = "account";
+// The tab's account, named by the web client (a browser websocket cannot send headers).
+import { CHAT_ACCOUNT_QUERY_PARAM } from "@/features/chat/chat-account-binding";
 
 const TOKEN_QUERY_PARAM = "token" as const;
 
