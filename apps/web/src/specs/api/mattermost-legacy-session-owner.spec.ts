@@ -123,4 +123,74 @@ describe("legacy chat session without an owner cookie (#2023)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(setCookie).not.toHaveBeenCalled();
   });
+
+  it("asks chat once for concurrent requests with the same token", async () => {
+    jar = { mm_pat: "tok-a", active_user: "alice" };
+    let answer: (r: Response) => void = () => {};
+    fetchMock.mockImplementation(
+      () => new Promise<Response>((resolve) => {
+        answer = resolve;
+      })
+    );
+    const read = await reader();
+
+    const first = read();
+    const second = read();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    answer(new Response(JSON.stringify({ id: "u1", username: "alice" }), { status: 200 }));
+
+    expect(await first).toBe("tok-a");
+    expect(await second).toBe("tok-a");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks chat again once the remembered answer is ten minutes old", async () => {
+    vi.useFakeTimers();
+    try {
+      jar = { mm_pat: "tok-a", active_user: "alice" };
+      meAnswers("alice");
+      const read = await reader();
+
+      expect(await read()).toBe("tok-a");
+      vi.advanceTimersByTime(9 * 60 * 1000);
+      expect(await read()).toBe("tok-a");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      expect(await read()).toBe("tok-a");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("remembers at most 1000 tokens, dropping the oldest", async () => {
+    meAnswers("alice");
+    const read = await reader();
+
+    for (let i = 0; i <= 1000; i++) {
+      jar = { mm_pat: `tok-${i}`, active_user: "alice" };
+      await read();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1001);
+
+    // The newest is still known; the first one was dropped and is asked again.
+    jar = { mm_pat: "tok-1000", active_user: "alice" };
+    await read();
+    expect(fetchMock).toHaveBeenCalledTimes(1001);
+    jar = { mm_pat: "tok-0", active_user: "alice" };
+    await read();
+    expect(fetchMock).toHaveBeenCalledTimes(1002);
+  });
+
+  it("does not keep the raw token as a cache key", async () => {
+    jar = { mm_pat: "tok-secret", active_user: "alice" };
+    meAnswers("alice");
+    vi.resetModules();
+    vi.stubEnv("MATTERMOST_BASE_URL", "https://mm.test/api/v4");
+    const mod = await import("@/server/mattermost");
+    await mod.getMattermostTokenFromCookies();
+    expect([...mod.legacyOwnerCacheKeysForTest()]).not.toContain("tok-secret");
+    expect([...mod.legacyOwnerCacheKeysForTest()]).toHaveLength(1);
+  });
 });

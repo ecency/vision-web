@@ -1,5 +1,5 @@
 import { cookies, headers } from "next/headers";
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { bridgeApiCall } from "@ecency/sdk";
 import { CommunityRole, ROLES } from "@ecency/sdk";
@@ -1046,19 +1046,36 @@ export async function getMattermostTokenFromCookies(
 }
 
 // Whom a legacy (ownerless) session token belongs to: its chat username, or
-// null when chat refused it. An outage is not remembered.
+// null when chat refused it. An outage is not remembered. Keyed by a hash of
+// the token, so the token itself is not kept in a long-lived structure; at most
+// LEGACY_OWNER_MAX entries, the oldest written dropped first. Concurrent
+// requests with the same token share one lookup.
 const LEGACY_OWNER_TTL_MS = 10 * 60 * 1000;
 const LEGACY_OWNER_MAX = 1000;
 const legacyOwners = new Map<string, { owner: string | null; expires: number }>();
+const legacyLookups = new Map<string, Promise<string | null>>();
 
-async function legacySessionOwner(token: string): Promise<string | null> {
-  const now = Date.now();
-  const known = legacyOwners.get(token);
-  if (known && known.expires > now) {
-    return known.owner;
+/** Keys of the legacy owner cache (hashes), for specs. */
+export function legacyOwnerCacheKeysForTest(): IterableIterator<string> {
+  return legacyOwners.keys();
+}
+
+function legacySessionOwner(token: string): Promise<string | null> {
+  const key = createHash("sha256").update(token).digest("hex");
+  const known = legacyOwners.get(key);
+  if (known && known.expires > Date.now()) {
+    return Promise.resolve(known.owner);
   }
-  legacyOwners.delete(token);
+  legacyOwners.delete(key);
 
+  const pending = legacyLookups.get(key);
+  if (pending) return pending;
+  const lookup = lookUpLegacyOwner(key, token).finally(() => legacyLookups.delete(key));
+  legacyLookups.set(key, lookup);
+  return lookup;
+}
+
+async function lookUpLegacyOwner(key: string, token: string): Promise<string | null> {
   let owner: string | null;
   try {
     const me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", token);
@@ -1071,11 +1088,10 @@ async function legacySessionOwner(token: string): Promise<string | null> {
     owner = null;
   }
   if (legacyOwners.size >= LEGACY_OWNER_MAX) {
-    // Oldest first: a Map iterates in insertion order.
     const oldest = legacyOwners.keys().next().value;
     if (oldest !== undefined) legacyOwners.delete(oldest);
   }
-  legacyOwners.set(token, { owner, expires: now + LEGACY_OWNER_TTL_MS });
+  legacyOwners.set(key, { owner, expires: Date.now() + LEGACY_OWNER_TTL_MS });
   return owner;
 }
 
