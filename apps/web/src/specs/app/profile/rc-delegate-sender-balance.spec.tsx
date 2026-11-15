@@ -158,8 +158,15 @@ describe("RC delegate from another user's profile", () => {
     const balanceColumn = balance.closest(".balance")!.parentElement!;
     expect(errorColumn.className).toBe(balanceColumn.className);
 
+    // Announced, and tied to the input it is about.
+    const error = screen.getByText("rc-info.insufficient-rc-error");
+    expect(error).toHaveAttribute("role", "alert");
+    expect(error.id).not.toBe("");
+    expect(input.getAttribute("aria-describedby")).toBe(error.id);
+
     fireEvent.change(input, { target: { value: "" } });
     expect(input).not.toHaveAttribute("aria-invalid", "true");
+    expect(input).not.toHaveAttribute("aria-describedby");
   });
 
   it("defaults the recipient to the profile being visited", async () => {

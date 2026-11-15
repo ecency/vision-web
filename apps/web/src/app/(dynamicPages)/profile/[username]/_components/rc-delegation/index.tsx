@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { FormControl, InputGroup } from "@ui/input";
 import { Button } from "@ui/button";
 import { Form } from "@ui/form";
@@ -34,6 +34,7 @@ export const ResourceCreditsDelegation = (props: any) => {
   const [inProgress, setInProgress] = useState<boolean>(false);
   const [step, setStep] = useState<any>(1);
   const [amountError, setAmountError] = useState<string>("");
+  const amountErrorId = useId();
   const [toError, setToError] = useState<string>("");
   const [toWarning, setToWarning] = useState<string>("");
   const [toData, setToData] = useState<any>(delegateeData || "");
@@ -240,6 +241,7 @@ export const ResourceCreditsDelegation = (props: any) => {
                     onChange={amountChanged}
                     // The input's invalid style (red border) keys off aria-invalid.
                     aria-invalid={shownAmountError !== ""}
+                    aria-describedby={shownAmountError ? amountErrorId : undefined}
                   />
                 </InputGroup>
               </div>
@@ -249,7 +251,9 @@ export const ResourceCreditsDelegation = (props: any) => {
               // Same column as the balance line below.
               <div className="grid grid-cols-12">
                 <div className="col-span-12 lg:col-span-10 lg:col-start-3">
-                  <small className="text-red tr-form-text">{shownAmountError}</small>
+                  <small id={amountErrorId} role="alert" className="text-red tr-form-text">
+                    {shownAmountError}
+                  </small>
                 </div>
               </div>
             )}
