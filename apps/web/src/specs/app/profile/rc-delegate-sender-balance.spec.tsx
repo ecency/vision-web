@@ -143,6 +143,25 @@ describe("RC delegate from another user's profile", () => {
     expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
   });
 
+  // Screenshot pass (#2075): the amount input showed no invalid border next to
+  // the error, and the error sat out of line with the balance line.
+  it("marks the amount invalid and lines the error up with the balance", async () => {
+    await openDelegateOnBobsProfile();
+    const balance = await screen.findByText(`: ${ALICE_DELEGATABLE}`);
+    const input = screen.getByPlaceholderText("transfer.amount-placeholder");
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.change(input, { target: { value: String(ALICE_RC * 2) } });
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    const errorColumn = screen.getByText("rc-info.insufficient-rc-error").parentElement!;
+    const balanceColumn = balance.closest(".balance")!.parentElement!;
+    expect(errorColumn.className).toBe(balanceColumn.className);
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+  });
+
   it("defaults the recipient to the profile being visited", async () => {
     await openDelegateOnBobsProfile();
 

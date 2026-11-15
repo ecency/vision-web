@@ -54,6 +54,9 @@ export const ResourceCreditsDelegation = (props: any) => {
     );
   };
   const overLimit = exceedsLimit(amount);
+  // The amount error on screen: the minimum below 5B RC, the limit above it.
+  const shownAmountError =
+    amountError && (Number(amount) < 5000000000 || overLimit) ? amountError : "";
 
   const toChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
@@ -235,17 +238,20 @@ export const ResourceCreditsDelegation = (props: any) => {
                     placeholder={i18next.t("transfer.amount-placeholder")}
                     value={amount}
                     onChange={amountChanged}
-                    className={
-                      overLimit && amountError ? "is-invalid" : ""
-                    }
+                    // The input's invalid style (red border) keys off aria-invalid.
+                    aria-invalid={shownAmountError !== ""}
                   />
                 </InputGroup>
               </div>
             </div>
 
-            {amount < 5000000000 && <small className="text-red tr-form-text">{amountError}</small>}
-            {Number(amount) >= 5000000000 && overLimit && (
-              <small className="text-red tr-form-text">{amountError}</small>
+            {shownAmountError && (
+              // Same column as the balance line below.
+              <div className="grid grid-cols-12">
+                <div className="col-span-12 lg:col-span-10 lg:col-start-3">
+                  <small className="text-red tr-form-text">{shownAmountError}</small>
+                </div>
+              </div>
             )}
 
             <div className="grid grid-cols-12">
