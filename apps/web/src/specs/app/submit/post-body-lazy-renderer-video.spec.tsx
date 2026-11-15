@@ -3,6 +3,14 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostBodyLazyRenderer } from "@/app/submit/_components/post-body-lazy-renderer";
+import { SubmitPreviewContent } from "@/app/submit/_components/submit-preview-content";
+
+vi.mock("@/app/submit/_components/submit-poll-preview", () => ({
+  SubmitPollPreview: () => null
+}));
+vi.mock("@/features/shared/tag", () => ({
+  TagLink: ({ children }: { children: React.ReactNode }) => <>{children}</>
+}));
 
 /**
  * #1939: the classic editor preview renders videos as click-to-play
@@ -145,5 +153,32 @@ describe("classic editor preview under StrictMode (#1939)", () => {
       String(msg).includes("synchronously unmount a root")
     );
     expect(syncUnmount).toHaveLength(0);
+  });
+});
+
+/**
+ * #1939 on the real editor DOM: `.markdown-view` wraps the lazy renderer from
+ * outside, while each preview line hands the extensions its own inner div.
+ * Element-scoped querySelectorAll matches ancestors outside that div, so the
+ * `.markdown-view .markdown-video-link-*` selectors must still find the links.
+ */
+describe("SubmitPreviewContent: video placeholders play in the real editor structure", () => {
+  it.each([
+    ["YouTube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ".markdown-video-link-youtube"],
+    ["3Speak", "https://3speak.tv/watch?v=alice/abcdefgh", ".markdown-video-link-speak"],
+    ["Odysee", "https://odysee.com/@channel:2/video:e", ".markdown-video-link-odysee"]
+  ])("%s plays on click", async (_name, url, selector) => {
+    const { container } = render(
+      <SubmitPreviewContent title="t" tags={["hive"]} body={`Intro\n\n${url}\n\nOutro`} />
+    );
+    const link = await waitFor(() => {
+      const found = container.querySelector<HTMLElement>(selector);
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(link.closest(".markdown-view")).toHaveClass("preview-body");
+    expect(link.querySelector("iframe")).toBeNull();
+    fireEvent.click(link.querySelector(".markdown-video-play") ?? link);
+    await waitFor(() => expect(link.querySelector("iframe")).not.toBeNull());
   });
 });
