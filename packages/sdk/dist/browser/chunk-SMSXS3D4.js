@@ -1,0 +1,2 @@
+import {a}from'./chunk-O3RWIKI6.js';function o(r,e,t){let n=r.trim().toLowerCase();return a(`ecency-recovery:${n}:${e}:${t}`)}function g(r,e,t,n){return r.sign(o(e,t,n)).customToString()}export{o as a,g as b};//# sourceMappingURL=chunk-SMSXS3D4.js.map
+//# sourceMappingURL=chunk-SMSXS3D4.js.map

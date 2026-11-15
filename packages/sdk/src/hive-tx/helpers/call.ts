@@ -392,9 +392,14 @@ const NODE_CAPABILITY_ASSERT_PREFIXES = [
   'Assert Exception:false: Supported by hivemind'
 ]
 
+/** A node's assert that it cannot serve the API or method (see the prefixes above). */
+export function isNodeCapabilityAssert(message: string): boolean {
+  return NODE_CAPABILITY_ASSERT_PREFIXES.some((prefix) => message.startsWith(prefix))
+}
+
 function isNodeLevelRPCError(code: number, message: string): boolean {
   // A node that does not serve the API or method: fail over to one that does.
-  if (NODE_CAPABILITY_ASSERT_PREFIXES.some((prefix) => message.startsWith(prefix))) return true
+  if (isNodeCapabilityAssert(message)) return true
   // Any other "Assert Exception:" is the chain or hivemind answering the request (a
   // post that does not exist, a bad argument), whatever the code it comes
   // with (-32602 from hivemind, -32003 from a plain hived node), and it
@@ -1440,7 +1445,7 @@ function hedgedRpcAttempt<T>(opts: {
   onHedgeFired: (node: string) => void
   /** Caller-supplied payload validation — see callRPC's `validate` param. */
   validate?: (result: unknown) => boolean
-}): Promise<RpcFallbackResult<T>> {
+}): Promise<RpcFallbackResult<T> & { node: string }> {
   const {
     method,
     call,
@@ -1455,7 +1460,7 @@ function hedgedRpcAttempt<T>(opts: {
     onHedgeFired,
     validate
   } = opts
-  return new Promise<RpcFallbackResult<T>>((resolve, reject) => {
+  return new Promise<RpcFallbackResult<T> & { node: string }>((resolve, reject) => {
     let done = false
     let pendingLegs = 0
     let hedgeFired = false
@@ -1542,7 +1547,7 @@ function hedgedRpcAttempt<T>(opts: {
           } else if (!hedgeFired) {
             rpcHedgeBudget.refill()
           }
-          finish(() => resolve({ result: answer.result, method: answer.method }))
+          finish(() => resolve({ result: answer.result, method: answer.method, node }))
         })
         .catch((e) => {
           merged.cleanup()
@@ -1682,6 +1687,13 @@ export interface CallRPCWithFallbackOptions {
   retry?: number
   signal?: AbortSignal
   validate?: (result: unknown) => boolean
+  /**
+   * Told which node produced the returned result (the read proxy's URL when
+   * the proxy served it). Not called when the call throws. It does not change
+   * what the call returns or throws: a caller uses it to leave that node out
+   * of a follow-up check (a node that answered `null` because it lags).
+   */
+  onAnswer?: (node: string) => void
 }
 
 /**
@@ -1721,7 +1733,8 @@ export const callRPCWithFallback = async <T = any>(
     options.timeout,
     options.retry ?? config.retry,
     options.signal,
-    options.validate
+    options.validate,
+    options.onAnswer
   )
 
 const callRPCCore = async <T = any>(
@@ -1730,8 +1743,17 @@ const callRPCCore = async <T = any>(
   timeout: number | undefined,
   retry: number,
   signal?: AbortSignal,
-  validate?: (result: unknown) => boolean
+  validate?: (result: unknown) => boolean,
+  onAnswer?: (node: string) => void
 ): Promise<RpcFallbackResult<T>> => {
+  const answered = (node: string) => {
+    if (!onAnswer) return
+    try {
+      onAnswer(node)
+    } catch {
+      // An observer must not change the call's outcome.
+    }
+  }
   const method = primary.method
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an array')
@@ -1776,6 +1798,7 @@ const callRPCCore = async <T = any>(
           const served = await proxyRpcCall<T>(proxy, spec.method, spec.params, ceiling, signal, validate)
           rpcProxyStats.served++
           proxyConsecutiveMisses = 0
+          answered(proxy.url)
           return { result: served, method: spec.method }
         } catch (e: unknown) {
           if (signal?.aborted) throw e
@@ -1855,7 +1878,7 @@ const callRPCCore = async <T = any>(
       try {
         // All health/budget recording happens inside the hedged attempt —
         // the catch below must NOT record again (unlike the sequential path).
-        return await hedgedRpcAttempt<T>({
+        const won = await hedgedRpcAttempt<T>({
           method,
           call: primary,
           fallback,
@@ -1869,6 +1892,8 @@ const callRPCCore = async <T = any>(
           onHedgeFired: (n) => triedInRound.add(n),
           validate
         })
+        answered(won.node)
+        return { result: won.result, method: won.method }
       } catch (e: any) {
         if (e instanceof RPCError && !isNodeLevelRPCError(e.code, e.message)) {
           throw e
@@ -1910,6 +1935,7 @@ const callRPCCore = async <T = any>(
       // An un-hedged success is what earns hedge budget back (see HedgeBudget).
       rpcHedgeBudget.refill()
       tryRecordHeadBlock(rpcHealthTracker, node, method, res)
+      answered(node)
       return { result: answer.result, method: answer.method }
     } catch (e: any) {
       // RPCErrors: distinguish node-level failures from genuine blockchain rejections.
@@ -2587,18 +2613,41 @@ export async function callREST(
 
 // ── Public API: callWithQuorum ───────────────────────────────────────────────
 
+/** What one node called by callWithQuorum answered, or the error it threw. */
+export type QuorumNodeOutcome =
+  | { node: string; result: unknown; error?: undefined }
+  | { node: string; error: unknown; result?: undefined }
+
+function notifyNodeSettled(
+  observer: ((outcome: QuorumNodeOutcome) => void) | undefined,
+  outcome: QuorumNodeOutcome
+) {
+  if (!observer) return
+  try {
+    observer(outcome)
+  } catch {
+    // An observer must not change the quorum outcome.
+  }
+}
+
 /**
  * Make a JSONRPC call with quorum. The method will cross-check the result
  * with `quorum` number of nodes before returning the result.
  * @param method - The API method name (e.g., 'condenser_api.get_accounts')
  * @param params - Parameters for the API method as array or object
  * @param quorum - Default: 2 (recommended)
+ * @param signal - Optional abort signal for every node call
+ * @param onNodeSettled - Optional observer, told what each node called answered
+ *   (`result`) or threw (`error`). It does not change what this returns or
+ *   throws: a caller uses it to tell "every node answered nothing" apart from
+ *   "every node failed", which both end in the same thrown error.
  */
 export const callWithQuorum = async <T = any>(
   method: string,
   params: any[] | object = [],
   quorum = 2,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onNodeSettled?: (outcome: QuorumNodeOutcome) => void
 ): Promise<T> => {
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an Array')
@@ -2627,8 +2676,13 @@ export const callWithQuorum = async <T = any>(
     for (let i = 0; i < batchNodes.length; i++) {
       promises.push(
         jsonRPCCall(batchNodes[i], method, params, undefined, true, signal)
-          .then((data) => batchResults.push(data))
-          .catch(() => {})
+          .then((data) => {
+            batchResults.push(data)
+            notifyNodeSettled(onNodeSettled, { node: batchNodes[i], result: data })
+          })
+          .catch((error) => {
+            notifyNodeSettled(onNodeSettled, { node: batchNodes[i], error })
+          })
       )
     }
     await Promise.all(promises)
@@ -2656,6 +2710,11 @@ function findConsensus(results: any[], quorum: number) {
     }
     resultGroups.get(key)!.push(result)
   }
-  const consensusGroup = Array.from(resultGroups.values()).find((group) => group.length >= quorum)
+  // A falsy result (a node answering null) is never a consensus: the caller
+  // keeps asking. It must not shadow a later group that holds a real result,
+  // or one lagging node's null hides a post every other node has.
+  const consensusGroup = Array.from(resultGroups.values()).find(
+    (group) => group.length >= quorum && group[0]
+  )
   return consensusGroup ? consensusGroup[0] : null
 }

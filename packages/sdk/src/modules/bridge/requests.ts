@@ -34,14 +34,15 @@ const BRIDGE_V2_ONLY_PARAMS = ["top_votes"];
 export async function bridgeV2Call<T>(
   endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion",
   params: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onAnswer?: (node: string) => void
 ): Promise<T> {
   const v1Params: Record<string, unknown> = { ...params };
   for (const key of BRIDGE_V2_ONLY_PARAMS) delete v1Params[key];
   const { result } = await callRPCWithFallback<T>(
     { method: `bridge.${endpoint}_v2`, params },
     { method: `bridge.${endpoint}`, params: v1Params },
-    { signal }
+    { signal, onAnswer }
   );
   return result;
 }

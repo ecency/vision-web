@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  ChatAccountInactiveError,
+  ChatSessionChangedError,
   isBootstrapBanError,
   shouldRefetchBootstrapOnFocus,
   shouldRetryBootstrap
@@ -82,5 +84,17 @@ describe("bootstrap focus-refetch policy — a ban must not be permanent", () =>
     const outage = Object.assign(new Error("chat service unavailable"), { status: 503 });
     expect(shouldRefetchBootstrapOnFocus(outage, NOW, NOW)).toBe(true);
     expect(shouldRefetchBootstrapOnFocus(null, NOW, NOW)).toBe(true);
+  });
+});
+
+// #2023: the session guard errors are decisions about this tab, not faults.
+describe("bootstrap retry policy: session guard errors are final", () => {
+  it("does not retry a bootstrap that bailed on a session reset", () => {
+    expect(shouldRetryBootstrap(0, new ChatSessionChangedError())).toBe(false);
+  });
+
+  it("does not retry a bootstrap refused for an inactive account", () => {
+    expect(shouldRetryBootstrap(0, new ChatAccountInactiveError("bob"))).toBe(false);
+    expect(shouldRetryBootstrap(0, new ChatAccountInactiveError(undefined))).toBe(false);
   });
 });

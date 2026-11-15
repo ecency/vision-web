@@ -49,6 +49,7 @@ export type {
   RpcFallbackResult,
   CallRPCWithFallbackOptions,
   RpcBatchAnswer,
+  QuorumNodeOutcome,
 } from "../../hive-tx";
 
 // ── Compat types (matching dhive shapes used throughout the codebase) ──────

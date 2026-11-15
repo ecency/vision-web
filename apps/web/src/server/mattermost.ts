@@ -7,6 +7,16 @@ import { ESIE_USERNAME } from "@/features/chat/official-accounts";
 import { toPublicChatUser } from "@/server/chat-public-user";
 import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
+import { CHAT_ACCOUNT_HEADER } from "@/features/chat/chat-account-binding";
+import {
+  MATTERMOST_OWNER_COOKIE,
+  MATTERMOST_TOKEN_COOKIE,
+  chatAccountMatchesCookies,
+  mattermostCookieToken,
+  ownerlessMattermostSession
+} from "./mattermost-session-cookie";
+
+export { mattermostCookieToken };
 
 export { ChatUserBusyError };
 
@@ -15,7 +25,6 @@ export { toPublicChatUser };
 const MATTERMOST_BASE_URL = process.env.MATTERMOST_BASE_URL;
 const MATTERMOST_ADMIN_TOKEN = process.env.MATTERMOST_ADMIN_TOKEN;
 const MATTERMOST_TEAM_ID = process.env.MATTERMOST_TEAM_ID;
-const MATTERMOST_TOKEN_COOKIE = "mm_pat";
 export const CHAT_BAN_PROP = "ecency_chat_banned_until";
 // Why the ban was applied, written alongside the expiry by the moderation service.
 // Lets the clients explain what happened instead of quoting a timestamp. Absent on
@@ -951,20 +960,58 @@ export async function ensurePersonalToken(
   }, { signal });
 }
 
-export function withMattermostTokenCookie(response: NextResponse, token: string) {
-  response.cookies.set({
-    name: MATTERMOST_TOKEN_COOKIE,
-    value: token,
+/**
+ * Sets the chat session cookie, and next to it the account it belongs to
+ * (`owner`, the verified Ecency username). The token reader honours the
+ * session only while that account is the one active in the browser.
+ */
+function sessionCookie(name: string, value: string) {
+  return {
+    name,
+    value,
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 30
-  });
+  };
+}
+
+export function withMattermostTokenCookie(response: NextResponse, token: string, owner: string) {
+  response.cookies.set(sessionCookie(MATTERMOST_TOKEN_COOKIE, token));
+  response.cookies.set(sessionCookie(MATTERMOST_OWNER_COOKIE, owner.toLowerCase()));
   return response;
 }
 
-export async function getMattermostTokenFromCookies(): Promise<string | null> {
+/**
+ * Expires the chat session cookie. It is httpOnly, so the browser cannot drop
+ * it itself: logout and account switch call the session route, which uses this.
+ * Same attributes as when it was set, or the browser keeps the original.
+ */
+function expiredSessionCookies() {
+  return [MATTERMOST_TOKEN_COOKIE, MATTERMOST_OWNER_COOKIE].map((name) => ({
+    ...sessionCookie(name, ""),
+    maxAge: 0
+  }));
+}
+
+export function clearMattermostTokenCookie(response: NextResponse) {
+  for (const cookie of expiredSessionCookies()) {
+    response.cookies.set(cookie);
+  }
+  return response;
+}
+
+
+/**
+ * `readOnly`: for a route whose response may be publicly cached (the avatar
+ * route), which must not carry the session cookies. An ownerless session is
+ * then no session, without the lookup that would stamp or expire it; any
+ * other chat call stamps it.
+ */
+export async function getMattermostTokenFromCookies(
+  options: { readOnly?: boolean } = {}
+): Promise<string | null> {
   // 1) Check X-MM-Token header first (mobile clients send token explicitly
   //    to avoid race conditions with async cookie jar on React Native)
   const headerStore = await headers();
@@ -973,9 +1020,52 @@ export async function getMattermostTokenFromCookies(): Promise<string | null> {
     return headerToken;
   }
 
-  // 2) Fall back to httpOnly cookie (web clients)
+  // 2) Fall back to httpOnly cookie (web clients), only for the active account
   const cookieStore = await cookies();
-  return cookieStore.get(MATTERMOST_TOKEN_COOKIE)?.value || null;
+  const readCookie = (name: string) => cookieStore.get(name)?.value;
+  if (!chatAccountMatchesCookies(headerStore.get(CHAT_ACCOUNT_HEADER), readCookie)) {
+    return null;
+  }
+  const token = mattermostCookieToken(readCookie);
+  if (token) {
+    return token;
+  }
+
+  // 3) A session set before the owner cookie existed (#2023). Pages other
+  //    than /chats never bootstrap, so rejecting it would zero the badge
+  //    there. Honour it once it proves to be the active account's (the chat
+  //    username is the Hive username the bootstrap verified) and name the
+  //    owner, so this lookup runs once per such cookie.
+  const legacy = options.readOnly ? null : ownerlessMattermostSession(readCookie);
+  if (!legacy) {
+    return null;
+  }
+  // Read-only cookie store (not a route handler): answer without writing.
+  const writeCookies = (cookiesToSet: ReturnType<typeof sessionCookie>[]) => {
+    try {
+      for (const cookie of cookiesToSet) cookieStore.set(cookie);
+    } catch {
+      // Nothing to do.
+    }
+  };
+  let me: Pick<MattermostUser, "username"> | undefined;
+  try {
+    me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", legacy.token);
+  } catch (error) {
+    // A revoked token is a definitive answer: expire the cookie so later
+    // requests ask nothing. An outage or timeout says nothing about it: keep it.
+    if (error instanceof MattermostError && error.status === 401) {
+      writeCookies(expiredSessionCookies());
+    }
+    return null;
+  }
+  if (me?.username?.toLowerCase() !== legacy.active) {
+    // Another account's session: never honour it, and drop it.
+    writeCookies(expiredSessionCookies());
+    return null;
+  }
+  writeCookies([sessionCookie(MATTERMOST_OWNER_COOKIE, legacy.active)]);
+  return legacy.token;
 }
 
 export async function mmUserFetch<T>(path: string, token: string, init?: RequestInit) {
@@ -1097,6 +1187,14 @@ export async function requireMattermostSuperAdmin(
 }
 
 export function handleMattermostError(error: unknown) {
+  // A 403 is a permission answer (not a member of the channel, not allowed),
+  // not a lost session: a 401 makes the web client bootstrap again and refetch
+  // every chat query (#2023). The channel view reads "forbidden" / 403 as not
+  // a member, as it does a 401.
+  if (error instanceof MattermostError && error.status === 403) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   if (isMattermostUnauthorizedError(error)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

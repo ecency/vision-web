@@ -9,6 +9,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import { useEffect, useMemo, useRef } from "react";
 import { getAccessToken } from "@/utils";
+import { Button } from "@ui/button";
 
 interface Props {
   filter?: NotificationFilter;
@@ -35,6 +36,8 @@ export function NotificationList({
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
+    isRefetchError,
     refetch
   } = useInfiniteQuery(getNotificationsInfiniteQueryOptions(activeUser?.username, accessToken, filter));
 
@@ -43,7 +46,9 @@ export function NotificationList({
   const isFetchingNextPageRef = useRef(isFetchingNextPage);
   const fetchNextPageRef = useRef(fetchNextPage);
   const isLoadingRef = useRef(false);
+  const isFetchNextPageErrorRef = useRef(isFetchNextPageError);
 
+  isFetchNextPageErrorRef.current = isFetchNextPageError;
   hasNextPageRef.current = hasNextPage;
   isFetchingNextPageRef.current = isFetchingNextPage;
   fetchNextPageRef.current = fetchNextPage;
@@ -82,7 +87,11 @@ export function NotificationList({
           entries[0].isIntersecting &&
           !isLoadingRef.current &&
           hasNextPageRef.current &&
-          !isFetchingNextPageRef.current
+          !isFetchingNextPageRef.current &&
+          // After a failed next page only the Retry button asks again:
+          // scrolling to that row brings this sentinel into view, and an
+          // automatic refetch would hide the row while it retries (#2080).
+          !isFetchNextPageErrorRef.current
         ) {
           fetchNextPageRef.current();
         }
@@ -99,14 +108,38 @@ export function NotificationList({
       {isLoading && dataFlow.length === 0 ? <LinearProgress /> : <></>}
 
       <div className={`list-body${filteredData.length === 0 && !isLoading ? " empty-list" : ""}`}>
-        {!isLoading && filteredData.length === 0 && !hasNextPage && (
-          <span className="empty-text">
-            {!isQueryEnabled
-              ? i18next.t("notifications.auth-required-desc")
-              : isError
-                ? i18next.t("g.error")
+        {!isLoading && isQueryEnabled && isError && dataFlow.length === 0 ? (
+          // A failed or blocked request (content blocker, offline) must not
+          // leave the panel looking empty: say so and offer a retry.
+          <div className="empty-text flex flex-col items-center gap-3" role="alert">
+            <span>{i18next.t("notifications.load-failed")}</span>
+            <Button size="sm" outline onClick={() => refetch()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
+        ) : (
+          !isLoading &&
+          filteredData.length === 0 &&
+          !hasNextPage &&
+          // Rows are loaded but none fits the view and the refresh failed: the
+          // refresh notice below says it, "empty" would not be known to be true.
+          !(isRefetchError && dataFlow.length > 0) && (
+            <span className="empty-text">
+              {!isQueryEnabled
+                ? i18next.t("notifications.auth-required-desc")
                 : i18next.t("g.empty-list")}
-          </span>
+            </span>
+          )
+        )}
+        {isRefetchError && dataFlow.length > 0 && !isFetching && (
+          // A failed refresh (the panel reopened, a refetch) keeps the rows
+          // loaded before: they may be out of date, so say so (#2087 review).
+          <div className="flex items-center justify-center gap-3 py-3" role="alert">
+            <span className="text-sm">{i18next.t("notifications.refresh-failed")}</span>
+            <Button size="sm" outline onClick={() => refetch()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
         )}
         {filteredData.map((n, i) => (
           <AnimatedNotificationListItemLayout key={n.id} index={i}>
@@ -119,6 +152,16 @@ export function NotificationList({
             />
           </AnimatedNotificationListItemLayout>
         ))}
+        {isFetchNextPageError && dataFlow.length > 0 && !isFetchingNextPage && (
+          // A failed "load more" keeps the rows already shown: offer to retry
+          // the next page instead of stopping silently.
+          <div className="flex items-center justify-center gap-3 py-3" role="alert">
+            <span className="text-sm">{i18next.t("notifications.load-more-failed")}</span>
+            <Button size="sm" outline onClick={() => fetchNextPage()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
+        )}
         <div ref={sentinelRef} style={{ height: 1 }} />
       </div>
       {isLoading && dataFlow.length > 0 && <LinearProgress />}

@@ -2,8 +2,11 @@ import { vi } from "vitest";
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let pathname = "/";
+let chatUnread: { totalUnread: number; truncated?: boolean } | undefined;
 const toggleUiProp = vi.fn();
 const useActiveAccount = vi.fn(() => ({ activeUser: { username: "tester" } as { username: string } | null }));
 
@@ -24,7 +27,7 @@ vi.mock("next/dynamic", () => ({
 vi.mock("@/api/queries", () => ({ useHydrated: () => true }));
 vi.mock("@/core/global-store", () => ({ useGlobalStore: (s: any) => s({ toggleUiProp }) }));
 vi.mock("@/core/hooks/use-active-account", () => ({ useActiveAccount: () => useActiveAccount() }));
-vi.mock("@/features/chat/mattermost-api", () => ({ useMattermostUnread: () => ({ data: undefined }) }));
+vi.mock("@/features/chat/mattermost-api", () => ({ useMattermostUnread: () => ({ data: chatUnread }) }));
 vi.mock("@/utils", () => ({
   isInAppBrowser: () => false,
   random: vi.fn(),
@@ -62,6 +65,7 @@ function renderNav(over: Partial<React.ComponentProps<typeof NavbarMobile>> = {}
 describe("NavbarMobile", () => {
   beforeEach(() => {
     pathname = "/";
+    chatUnread = undefined;
     vi.clearAllMocks();
     useActiveAccount.mockReturnValue({ activeUser: { username: "tester" } });
   });
@@ -132,5 +136,28 @@ describe("NavbarMobile", () => {
     // Home / Chats / brand stay available to anonymous users
     expect(screen.getByLabelText("navbar.home")).toBeInTheDocument();
     expect(screen.getByAltText("Ecency")).toBeInTheDocument();
+  });
+
+  // #2022: the unread badge is drawn over the chat tab's corner, where a user
+  // aims when there is a count. It must let the tap through to the link.
+  // jsdom applies no CSS, so these pin the classes that do it in a browser.
+  test("the mobile chat badge lets a tap through to the chat link", () => {
+    chatUnread = { totalUnread: 4 };
+    renderNav();
+    expect(screen.getByText("4")).toHaveClass("pointer-events-none");
+  });
+
+  test("the desktop chat badge lets a click through to the chat link", () => {
+    const desktop = readFileSync(
+      resolve(__dirname, "../../../features/shared/navbar/navbar-desktop.tsx"),
+      "utf8"
+    );
+    expect(desktop).toContain('className="navbar-chat-badge');
+    const scss = readFileSync(
+      resolve(__dirname, "../../../features/shared/navbar/_index.scss"),
+      "utf8"
+    );
+    const rule = scss.slice(scss.indexOf(".navbar-chat-badge {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toMatch(/@apply[^;]*\bpointer-events-none\b/);
   });
 });

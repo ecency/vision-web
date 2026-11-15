@@ -33,6 +33,8 @@ import clsx from "clsx";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getChatBanInfo } from "@/features/chat/chat-ban-notice";
 import { ChatBanScreen } from "@/features/chat/components/chat-ban-screen";
+import { ChatAccountInactiveNotice } from "@/features/chat/components/chat-account-inactive-notice";
+import { ChatAccountInactiveError } from "@/features/chat/chat-session-errors";
 import { ChannelAvatar } from "@/features/chat/components/channel-avatar";
 import { NewGroupModal } from "@/features/chat/components/new-group-modal";
 import { NewPrivateChannelModal } from "@/features/chat/components/private-channel-modals";
@@ -560,6 +562,12 @@ export function ChatsClient() {
       return <ChatBanScreen info={bootstrapBan} onExpire={refetchBootstrap} />;
     }
 
+    // This tab refused to bootstrap for an account that is no longer the
+    // browser's: by class, never by the (English) message text.
+    if (error instanceof ChatAccountInactiveError) {
+      return <ChatAccountInactiveNotice error={error} onRetry={() => refetchBootstrap()} />;
+    }
+
     const errorMessage = error?.message?.toLowerCase() || "";
     const isAuthError =
       errorMessage.includes("unauthorized") ||
@@ -592,7 +600,7 @@ export function ChatsClient() {
     // Show other errors with retry button
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
-        <div className="text-sm text-red-500">
+        <div className="text-center text-sm text-red-500">
           Chat initialization failed: {error.message}
         </div>
         <button

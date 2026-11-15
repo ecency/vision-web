@@ -28,6 +28,17 @@ module.exports = [
     handler: 'NetworkOnly'
   },
   {
+    // Chat and newsletter API answers belong to the account the request's
+    // cookies name, and the cache below is keyed by URL only: after an account
+    // switch a slow or failed request was answered with the previous account's
+    // data (#2023, #2084). The newsletter token routes' GET inspects current
+    // state, which a cached copy would hide. Before the generic /api rule,
+    // which Workbox would pick first otherwise. Keep in step with
+    // ACCOUNT_API_PREFIXES in src/core/pwa-account-cache.ts.
+    urlPattern: /^https:\/\/ecency\.com\/api\/(?:mattermost|newsletter)\/.*/i,
+    handler: 'NetworkOnly'
+  },
+  {
     // Cache API responses with network-first strategy
     urlPattern: /^https:\/\/ecency\.com\/api\/.*/i,
     handler: 'NetworkFirst',

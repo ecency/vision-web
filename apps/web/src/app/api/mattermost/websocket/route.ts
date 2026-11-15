@@ -3,8 +3,10 @@ import { WebSocket } from "ws";
 import type { WebSocketServer } from "ws";
 import { scrubChatSocketFrame } from "@/server/chat-public-user";
 import { closeSocketSafely } from "@/server/chat-socket-close";
+import { mattermostCookieTokenFor } from "@/server/mattermost-session-cookie";
+// The tab's account, named by the web client (a browser websocket cannot send headers).
+import { CHAT_ACCOUNT_QUERY_PARAM } from "@/features/chat/chat-account-binding";
 
-const MATTERMOST_TOKEN_COOKIE = "mm_pat" as const;
 const TOKEN_QUERY_PARAM = "token" as const;
 
 // Allowed origins for CORS - configurable via env
@@ -65,8 +67,14 @@ function getToken(request: NextRequest): string | undefined {
     return queryToken;
   }
 
-  // Check cookie
-  return request.cookies.get(MATTERMOST_TOKEN_COOKIE)?.value;
+  // Check cookie: only a session that belongs to the active account (#2023),
+  // and only for a socket naming that account (#2087 review).
+  return (
+    mattermostCookieTokenFor(
+      request.nextUrl.searchParams.get(CHAT_ACCOUNT_QUERY_PARAM),
+      (name) => request.cookies.get(name)?.value
+    ) ?? undefined
+  );
 }
 
 function checkOrigin(request: NextRequest): boolean {

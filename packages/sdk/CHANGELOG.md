@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.9.0
+
+### Minor Changes
+
+- [#2087](https://github.com/ecency/vision-web/pull/2087) [`9355f85`](https://github.com/ecency/vision-web/commit/9355f850c7705f0dbb87d9b46448eb95ea716b97) Thanks [@feruzm](https://github.com/feruzm)! - `getNotificationsInfiniteQueryOptions` throws on a non-OK response, on a body that is not JSON and on a body that is not a list, instead of resolving an empty page, so consumers reach their error state and retry. A thrown non-OK error carries `status`, and the options' `retry` does not retry a 4xx (an expired or revoked code) other than a 408 timeout or a 429 rate limit; those, a 5xx and a network failure keep React Query's default 3 retries. `getNextPageParam` returns `undefined` after an empty page (it returned `""`, which React Query reads as "has a next page"), so `hasNextPage` turns false and an account with no notifications gets the empty-list state.
+
+  Migration: the query can now reject where it resolved `[]` before. A consumer that read an empty page as "no notifications" should show its error state (and a retry) on a rejection.
+
+- [#2087](https://github.com/ecency/vision-web/pull/2087) [`f136b90`](https://github.com/ecency/vision-web/commit/f136b90631f12b6235e0c4b3808ea421172c4ad9) Thanks [@feruzm](https://github.com/feruzm)! - `verifyPostOnAlternateNode` (and so `getPostQueryOptions`) no longer turns a failed double-check into "not found". When the first node answers `null` and the other nodes are asked, it resolves the post if a node has it, `null` only when another node actually answered (null, or an `Assert Exception:` such as "does not exist" or "invalid account char"), and throws the last node error (the quorum error as its `cause`) when every other node failed (transport error, rate limit, timeout, a node without the API). A `null` from the node that answered the first call does not count, since a lagging node answers `null` again. `callWithQuorum` no longer lets a `null` from one node hide a real result from a later node; when every node answers `null` it still rejects, as before.
+
+  New, all optional: `callWithQuorum` takes a fifth argument, `onNodeSettled`, that reports each node's answer or error (`QuorumNodeOutcome` type); `callRPCWithFallback` takes `onAnswer` in its options, told which node produced the result; `bridgeV2Call` takes it as a fourth argument; `verifyPostOnAlternateNode` takes the answering node as a fourth argument.
+
+  Migration: `verifyPostOnAlternateNode` and `getPostQueryOptions` can now reject where they resolved `null` before. A caller that treated `null` as "post does not exist" should treat a rejection as "lookup failed, try again", not as a 404.
+
+### Patch Changes
+
+- Bug batch: post lookup failover, RC delegation limits, notifications errors, chat session per account (#2087)
+
+- [#2087](https://github.com/ecency/vision-web/pull/2087) [`7002802`](https://github.com/ecency/vision-web/commit/700280290b4a432b69c3b466869a3e45568fccda) Thanks [@feruzm](https://github.com/feruzm)! - `buildDelegateRcOp` (and so `useDelegateRc`) trims each delegatee and drops empty names, so `"a,b,"` delegates to `a` and `b` instead of also sending an empty name, matching what the web delegate form counts. A list with no name left throws the missing parameters error. After the broadcast, `useDelegateRc` refreshes the account and RC queries of each delegatee in the list, where it used one key built from the raw list string.
+
+- [#2087](https://github.com/ecency/vision-web/pull/2087) [`b527223`](https://github.com/ecency/vision-web/commit/b527223762f916705e97092e458b60ce6af16d3a) Thanks [@feruzm](https://github.com/feruzm)! - `useDelegateRc` asks for posting authority instead of active. `delegate_rc` is a custom_json signed through `required_posting_auths`, and since HF28's strict authority checks an active key can not sign it, so key logins were signing with the wrong key.
+
+- [#2087](https://github.com/ecency/vision-web/pull/2087) [`857cec7`](https://github.com/ecency/vision-web/commit/857cec782a47ff5998e0d01d81376767bc17f4c6) Thanks [@feruzm](https://github.com/feruzm)! - `proMembersSet` no longer throws on a malformed Pro roster: a body that is not an array gives an empty set, and entries that are not strings are skipped.
+
 ## 2.8.2
 
 ### Patch Changes

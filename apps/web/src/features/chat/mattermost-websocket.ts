@@ -1,5 +1,6 @@
 import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 import type { MattermostPost, MattermostPostsResponse } from "@/features/chat/mattermost-api";
+import { CHAT_ACCOUNT_QUERY_PARAM, chatTabAccount, registerChatSocketCloser } from "./chat-session";
 
 declare global {
   interface Window {
@@ -54,6 +55,17 @@ export type ConnectionStatus = "live" | "connected" | "disconnected";
 
 // Global instance tracker to prevent duplicate connections
 let globalInstance: MattermostWebSocket | null = null;
+
+/**
+ * Closes the chat websocket that is open, if any. A logout or account switch
+ * calls it: the socket was authenticated as the previous account (#2023).
+ */
+export function disconnectActiveChatSocket(): void {
+  globalInstance?.disconnect();
+}
+
+// chat-session calls this on a reset without importing this module (#2023).
+registerChatSocketCloser(disconnectActiveChatSocket);
 
 export class MattermostWebSocket {
   private ws: WebSocket | null = null;
@@ -202,14 +214,34 @@ export class MattermostWebSocket {
       return;
     }
 
+    // The cookie session is shared by every tab. Once another tab made another
+    // account active it is that account's: a stale tab must not connect (or
+    // reconnect) with it, or it receives that account's events and sends
+    // typing as it (#2087 review).
+    let tabAccount: string | null = null;
+    if (!this.token) {
+      try {
+        tabAccount = chatTabAccount();
+      } catch {
+        this.disconnect();
+        return;
+      }
+    }
+
     this.connectionState = "connecting";
+    // disconnect() clears the tracker, so a reconnect must re-register or a later
+    // reset could not close this socket (#2087 review).
+    globalInstance = this;
 
     try {
       // If token is provided (third-party apps), use it in query param
-      // Otherwise rely on httpOnly cookie sent automatically by browser (first-party app)
+      // Otherwise rely on httpOnly cookie sent automatically by browser (first-party app),
+      // naming this tab's account so the server refuses another account's session.
       const wsUrl = this.token
         ? `/api/mattermost/websocket?token=${this.token}`
-        : `/api/mattermost/websocket`;
+        : tabAccount
+          ? `/api/mattermost/websocket?${CHAT_ACCOUNT_QUERY_PARAM}=${encodeURIComponent(tabAccount)}`
+          : `/api/mattermost/websocket`;
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const fullUrl = `${protocol}//${window.location.host}${wsUrl}`;
 

@@ -54,7 +54,13 @@ export function NavbarNotificationsButton({ onClick }: { onClick?: () => void })
             // key remount re-pops the badge on every count change; playing on the
             // initial mount is intentional here (tiny client-only badge, approved
             // exception to the no-initial-animation rule)
-            <span key={unread} className="notifications-badge notranslate animate-pop-in">
+            // pointer-events-none: the badge sits over the bell's top-right
+            // corner, and a click on it would land on this span instead of the
+            // button and do nothing (#2022).
+            <span
+              key={unread}
+              className="notifications-badge notranslate animate-pop-in pointer-events-none"
+            >
               {unread.toString().length < 3 ? unread : "..."}
             </span>
           )}

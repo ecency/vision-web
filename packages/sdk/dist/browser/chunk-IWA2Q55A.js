@@ -1,0 +1,2 @@
+import {l}from'./chunk-AKHLPLZA.js';import {queryOptions}from'@tanstack/react-query';function n(){return queryOptions({queryKey:["operations","chain-properties"],queryFn:async()=>await l("condenser_api.get_chain_properties",[])})}export{n as a};//# sourceMappingURL=chunk-IWA2Q55A.js.map
+//# sourceMappingURL=chunk-IWA2Q55A.js.map

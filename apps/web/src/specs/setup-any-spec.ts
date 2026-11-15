@@ -187,7 +187,11 @@ vi.mock("@ecency/sdk", async () => ({
   })),
   // Real pure impl (no deps) so pro-config's isProMember + its spec behave like production.
   proMembersSet: (members?: string[]) =>
-    new Set((members ?? []).map((m: string) => m.toLowerCase())),
+    new Set(
+      (Array.isArray(members) ? (members as unknown[]) : [])
+        .filter((m): m is string => typeof m === "string")
+        .map((m) => m.toLowerCase())
+    ),
   // The newsletter ERROR CLASSES are handed out for real (from source, same
   // reason as moderation above): the web wrappers re-export them and dialogs
   // branch on instanceof + .status, which only works when everyone holds the

@@ -4,6 +4,8 @@ import Cookies from "js-cookie";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { sentry } from "@/core/sentry/lazy-sentry";
 import { clearSessionActiveKey } from "@/utils/session-active-key";
+import { resetChatSession } from "@/features/chat/chat-session";
+import { dropCachedAccountResponses } from "@/core/pwa-account-cache";
 
 const makeActiveUser = (username: string): ActiveUser => ({
   username,
@@ -40,10 +42,42 @@ export const createAuthenticationActions = (
     const currentUsername = getState().activeUser?.username;
 
     if (name === currentUsername) {
+      // Choosing this tab's account again (a login while another tab switched
+      // away or logged out) makes it the browser's active account again, or
+      // its chat stays refused as a stale tab (#2023).
+      if (name && Cookies.get(ACTIVE_USER_COOKIE_NAME) !== name) {
+        ls.set("active_user", name);
+        Cookies.set(ACTIVE_USER_COOKIE_NAME, name, { expires: 365 });
+      }
       return;
     }
 
     const nextActiveUser = name ? load(name) : null;
+
+    // Logout or switch away from a signed-in account: its chat session cookie
+    // must not carry over (#2023). A page load restoring the persisted account
+    // starts from null and keeps the session it already has.
+    if (currentUsername) {
+      // A sync throw here must not abort the logout itself.
+      // Another tab already made another account active: the shared session
+      // cookies are that account's now (that tab expired this one's), so drop
+      // only this tab's chat state. Covers a stale tab's logout or switch and
+      // Raidstead following the other tab (#2087 review).
+      const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME);
+      const cookiesAreOurs =
+        !browserAccount || browserAccount.toLowerCase() === currentUsername.toLowerCase();
+      try {
+        void resetChatSession({ expireServerSession: cookiesAreOurs });
+      } catch {
+        // The server-side account binding still keeps the old session out.
+      }
+      // Answers the service worker cached for the previous account.
+      try {
+        void dropCachedAccountResponses().catch(() => undefined);
+      } catch {
+        // Never block a logout on the cache.
+      }
+    }
 
     if (name) {
       ls.set("active_user", name);

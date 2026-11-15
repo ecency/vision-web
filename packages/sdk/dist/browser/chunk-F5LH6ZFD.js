@@ -1,0 +1,2 @@
+import {a}from'./chunk-UUBW2YRI.js';import {c}from'./chunk-TUGMXAIJ.js';async function l(r,c$1){await c.queryClient.prefetchQuery(a(r));let n=c.queryClient.getQueryData(a(r).queryKey)?.profile?.tokens?.find(o=>o.symbol===c$1)?.meta?.address;if(!n)throw new Error("[SDK][Wallets] \u2013\xA0cannot fetch APT balance with empty adrress");return n}export{l as a};//# sourceMappingURL=chunk-F5LH6ZFD.js.map
+//# sourceMappingURL=chunk-F5LH6ZFD.js.map

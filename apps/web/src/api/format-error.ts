@@ -10,7 +10,7 @@ const handleChainError = (strErr: string): [string | null, ErrorTypes] => {
     return [i18next.t("chain-error.must-claim"), ErrorTypes.INFO];
   } else if (/Cannot claim that much VESTS/.test(strErr)) {
     return [i18next.t("chain-error.must-claim"), ErrorTypes.INFO];
-  } else if (/Please wait to transact|needs \d+ RC/.test(strErr)) {
+  } else if (/Please wait to transact|needs \d+ RC|has insufficient RC/.test(strErr)) {
     return [
       i18next.t("chain-error.insufficient-resource"),
       ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS
