@@ -425,13 +425,16 @@ export function buildDelegateRcOp(
   delegatees: string,
   maxRc: string | number
 ): Operation {
-  if (!from || !delegatees || maxRc === undefined) {
+  // One account or a comma separated list. Empty names ("a,b," or "a,,b")
+  // are dropped, as the delegate form does when it counts the delegatees.
+  const delegateeArray = (delegatees ?? "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+
+  if (!from || delegateeArray.length === 0 || maxRc === undefined) {
     throw new Error("[SDK][buildDelegateRcOp] Missing required parameters");
   }
-
-  const delegateeArray = delegatees.includes(",")
-    ? delegatees.split(",").map((d) => d.trim())
-    : [delegatees];
 
   return [
     "custom_json",
