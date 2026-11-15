@@ -188,7 +188,7 @@ describe("notifications bell (#2022)", () => {
 
   // #2080 screenshot pass: scrolling to the retry row brought the sentinel
   // into view, which started the failed page again and hid the row.
-  it("does not refetch a failed next page when the sentinel comes into view; Retry does", async () => {
+  it("does not refetch a failed next page when the sentinel comes into view; Retry does, then scrolling loads on", async () => {
     const observers: IntersectionObserverCallback[] = [];
     vi.stubGlobal(
       "IntersectionObserver",
@@ -232,10 +232,20 @@ describe("notifications bell (#2022)", () => {
       expect(nextPageCalls()).toBe(failedCalls);
       expect(screen.getByText("notifications.load-more-failed")).toBeInTheDocument();
 
+      // Retry succeeds: the scroll loads the following page by itself again.
+      api.list.mockImplementation(async (pageParam?: string) =>
+        pageParam === "n1" ? [row("n2")] : pageParam === "n2" ? [row("n3")] : [row("n1")]
+      );
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "g.retry" }));
       });
       await waitFor(() => expect(nextPageCalls()).toBe(failedCalls + 1));
+      expect(await screen.findByText("row-n2")).toBeInTheDocument();
+      expect(screen.queryByText("notifications.load-more-failed")).not.toBeInTheDocument();
+
+      await intersect();
+      expect(await screen.findByText("row-n3")).toBeInTheDocument();
+      expect(api.list.mock.calls.filter(([page]) => page === "n2")).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
     }
