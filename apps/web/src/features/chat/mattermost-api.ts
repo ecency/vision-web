@@ -13,6 +13,9 @@ import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-g
 // Every request here goes through chatSessionFetch, which waits for a pending
 // logout/switch session reset (#2023). Keep bare fetch out of this module.
 import { chatSessionFetch, chatSessionGeneration, chatSessionSettled } from "./chat-session";
+import { ChatAccountInactiveError, ChatSessionChangedError } from "./chat-session-errors";
+
+export { ChatAccountInactiveError, ChatSessionChangedError };
 
 /** Safely parse JSON from a fetch response, falling back to a readable error */
 async function safeJson<T>(res: Response): Promise<T> {
@@ -117,33 +120,6 @@ export function shouldRefetchBootstrapOnFocus(
 // `error: Error` is load-bearing: React Query infers the query's TError from
 // this predicate, and widening it to `unknown` propagates out to every consumer
 // reading `error.message`.
-/**
- * Thrown, without a request, when this tab's account is not the one active in
- * the browser (another tab switched): bootstrapping would put this account's
- * chat cookie over the active one's (#2023).
- */
-export class ChatAccountInactiveError extends Error {
-  constructor(browserAccount: string | undefined) {
-    super(
-      browserAccount
-        ? "Another account is active in this browser"
-        : "No account is active in this browser"
-    );
-    this.name = "ChatAccountInactiveError";
-  }
-}
-
-/**
- * Thrown, without a request, when a session reset (an account switch in this
- * tab) happened while the bootstrap waited: its result belongs to no one.
- */
-export class ChatSessionChangedError extends Error {
-  constructor() {
-    super("Chat session changed");
-    this.name = "ChatSessionChangedError";
-  }
-}
-
 function isChatSessionGuardError(error: unknown) {
   return error instanceof ChatAccountInactiveError || error instanceof ChatSessionChangedError;
 }

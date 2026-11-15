@@ -2695,6 +2695,8 @@
     "title": "Chats",
     "page-title": "Start direct messages or join channels to chat with anyone.",
     "loading-chats": "Loading chats…",
+    "other-account-active": "Another account is active in this browser. Switch back to this account to use chat here.",
+    "no-account-active": "This browser is no longer signed in to any account. Sign in again to use chat.",
     "start-dm-button": "Start DM",
     "starting-dm": "Starting…",
     "search-user": "Search by username",
