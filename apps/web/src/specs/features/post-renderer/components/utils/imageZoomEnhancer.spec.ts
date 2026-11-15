@@ -423,5 +423,33 @@ describe('applyImageZoom', () => {
       third.handle?.detach()
       expect(zoom.detach).toHaveBeenLastCalledWith(third.zoomed)
     })
+
+    it("a late cleanup of an earlier run on the same body leaves the later run's zoom alone", async () => {
+      const body = document.createElement('div')
+      body.classList.add('markdown-view')
+      body.appendChild(Object.assign(document.createElement('img'), { src: 'https://images.ecency.com/same.png' }))
+      document.body.appendChild(body)
+      const load = () =>
+        body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+
+      // Run A, then run B on the same images (Edit History closed and opened
+      // again before A's cleanup landed).
+      const pendingA = applyImageZoom(body)
+      load()
+      const a = await pendingA
+      const pendingB = applyImageZoom(body)
+      load()
+      const b = await pendingB
+      const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+      const img = body.querySelector('img')!
+      expect(zoom.attach).toHaveBeenLastCalledWith(img)
+      zoom.detach.mockClear()
+
+      a?.detach()
+      expect(zoom.detach).not.toHaveBeenCalled()
+
+      b?.detach()
+      expect(zoom.detach).toHaveBeenCalledWith(img)
+    })
   })
 })

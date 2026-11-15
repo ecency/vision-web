@@ -11,6 +11,11 @@ export interface ImageZoomHandle {
 // and the entry page runs the enhancements again on every Edit History or raw
 // toggle, so every run attaches its images to this one instance (#2083).
 let sharedZoom: Zoom | null = null;
+// The run that last attached each image. Two runs can cover the same <img>
+// (a re-run before the previous cleanup landed), and attach() de-dupes, so a
+// late detach from the earlier run would strip the zoom the later run just
+// set up. A run's handle releases only the images it still owns.
+const owners = new WeakMap<HTMLElement, object>();
 
 /**
  * Apply medium-zoom to images in a container.
@@ -230,7 +235,15 @@ export function applyImageZoom(container: HTMLElement): Promise<ImageZoomHandle 
                             });
                         }
                         const zoom = sharedZoom;
-                        resolveZoom({ detach: () => zoom.detach(...stillConnected) });
+                        const run = {};
+                        stillConnected.forEach((img) => owners.set(img, run));
+                        resolveZoom({
+                            detach: () => {
+                                const mine = stillConnected.filter((img) => owners.get(img) === run);
+                                mine.forEach((img) => owners.delete(img));
+                                if (mine.length > 0) zoom.detach(...mine);
+                            }
+                        });
                     } catch (error) {
                         console.warn("Failed to initialize medium-zoom:", error);
                         resolveZoom(null);
