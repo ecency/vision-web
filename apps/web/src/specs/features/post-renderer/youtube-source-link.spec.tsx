@@ -270,3 +270,138 @@ describe("YouTube URL caption host marker (#235)", () => {
   });
 });
 
+
+// An <iframe> the author pasted is kept by render-helper as a plain player with
+// no placeholder, so it needs the caption too (#235 review).
+const IFRAME_RESERVE =
+  '.markdown-view.er-youtube-source-host iframe[src*="youtube.com/embed/"]' +
+  ":not(.markdown-video-link *):not([data-enhanced])";
+
+function youtubeIframe(src = `https://www.youtube.com/embed/${ID}`, className = "") {
+  const cls = className ? ` class="${className}"` : "";
+  return `<p>Intro</p><iframe${cls} src="${src}" frameborder="0" allowfullscreen="allowfullscreen"></iframe><p>After</p>`;
+}
+
+describe("a pasted YouTube iframe shows the video URL (#235)", () => {
+  it("gets one caption right after it in an EcencyRenderer view, also after a re-render", async () => {
+    const html = youtubeIframe();
+    const { container, rerender } = render(
+      <StrictMode>
+        <Body html={html} />
+      </StrictMode>
+    );
+    await flush();
+    const links = sourceLinks(container);
+    expect(links).toHaveLength(1);
+    expect(links[0].href).toBe(`https://www.youtube.com/watch?v=${ID}`);
+    expect(links[0].previousElementSibling?.tagName).toBe("IFRAME");
+
+    rerender(
+      <StrictMode>
+        <Body html={`${html}<p>edited</p>`} />
+      </StrictMode>
+    );
+    await flush();
+    expect(sourceLinks(container)).toHaveLength(1);
+  });
+
+  it("links a Short's iframe to its Shorts page, centred like the Short", async () => {
+    const { container } = render(
+      <Body html={youtubeIframe(`https://www.youtube.com/embed/${ID}`, "portrait-embed")} />
+    );
+    await flush();
+    const links = sourceLinks(container);
+    expect(links.map((a) => a.textContent)).toEqual([`youtube.com/shorts/${ID}`]);
+    expect(links[0].classList.contains("er-youtube-source-start")).toBe(false);
+  });
+
+  // A pasted landscape player is not centred on the post page (fixed width,
+  // left edge), so its caption lines up with its left edge instead.
+  it("starts a landscape iframe's caption at the player's left edge", async () => {
+    const { container } = render(<Body html={youtubeIframe()} />);
+    await flush();
+    expect(sourceLinks(container)[0].classList.contains("er-youtube-source-start")).toBe(true);
+  });
+
+  it("adds nothing for another site's iframe, a bad id, a direct embed or a pure view", async () => {
+    const cases = [
+      youtubeIframe("https://player.vimeo.com/video/123456"),
+      youtubeIframe("https://www.youtube.com/embed/abc.def,ghi"),
+      `<a class="markdown-video-link markdown-video-link-youtube er-youtube" data-youtube="${ID}">` +
+        `<span class="er-youtube-frame"><iframe class="youtube-player" src="https://www.youtube.com/embed/${ID}"></iframe></span></a>`
+    ];
+    for (const html of cases) {
+      const { container, unmount } = render(<Body html={html} />);
+      await flush();
+      expect(sourceLinks(container)).toHaveLength(0);
+      unmount();
+    }
+    const { container } = render(<Body html={youtubeIframe()} pure />);
+    await flush();
+    expect(sourceLinks(container)).toHaveLength(0);
+  });
+
+  it("gets one caption from the entry page enhancer, removed by a reset, one again on re-run", async () => {
+    const { applyYoutubeVideos, resetYoutubeVideos } = await import(
+      "@/features/post-renderer/components/utils/youtubeVideosEnhancer"
+    );
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="markdown-view er-youtube-source-host">${youtubeIframe()}</div>`;
+    document.body.appendChild(host);
+    const iframe = host.querySelector<HTMLIFrameElement>("iframe")!;
+    expect(iframe.matches(IFRAME_RESERVE)).toBe(true);
+
+    let roots = applyYoutubeVideos(host);
+    // Same task: the room goes as the caption comes.
+    expect(iframe.matches(IFRAME_RESERVE)).toBe(false);
+    expect(sourceLinks(host).map((a) => a.href)).toEqual([`https://www.youtube.com/watch?v=${ID}`]);
+    expect(iframe.nextElementSibling?.classList.contains("er-youtube-source")).toBe(true);
+
+    resetYoutubeVideos(host);
+    expect(sourceLinks(host)).toHaveLength(0);
+    expect(iframe.matches(IFRAME_RESERVE)).toBe(true);
+
+    roots.forEach((r) => act(() => r.unmount()));
+    roots = applyYoutubeVideos(host);
+    expect(sourceLinks(host)).toHaveLength(1);
+    roots.forEach((r) => act(() => r.unmount()));
+    host.remove();
+  });
+
+  it("drops the room for a bad id without adding a caption", async () => {
+    const { applyYoutubeVideos } = await import(
+      "@/features/post-renderer/components/utils/youtubeVideosEnhancer"
+    );
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="markdown-view er-youtube-source-host">${youtubeIframe(
+      "https://www.youtube.com/embed/abc.def,ghi"
+    )}</div>`;
+    document.body.appendChild(host);
+    const iframe = host.querySelector<HTMLIFrameElement>("iframe")!;
+    applyYoutubeVideos(host);
+    expect(iframe.matches(IFRAME_RESERVE)).toBe(false);
+    expect(sourceLinks(host)).toHaveLength(0);
+    host.remove();
+  });
+
+  it("drops the room in the extension's views once enhanced", async () => {
+    function Host({ html }: { html: string }) {
+      const ref = useRef<HTMLDivElement>(null);
+      return (
+        <>
+          <div
+            ref={ref}
+            className="markdown-view er-youtube-source-host"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+          <YoutubeVideoExtension containerRef={ref} html={html} />
+        </>
+      );
+    }
+    const { container } = render(<Host html={youtubeIframe()} />);
+    await flush();
+    const iframe = container.querySelector<HTMLIFrameElement>("iframe")!;
+    expect(iframe.matches(IFRAME_RESERVE)).toBe(false);
+    expect(iframe.nextElementSibling?.classList.contains("er-youtube-source")).toBe(true);
+  });
+});

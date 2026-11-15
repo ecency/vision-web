@@ -149,4 +149,28 @@ describe("classic editor preview video styles", () => {
       }
     }
   });
+
+  // A pasted YouTube <iframe> (no placeholder) reserves the same room until its
+  // caption comes, and only in a caption host (#235 review).
+  it("reserves the room under a pasted YouTube iframe only until it is enhanced", () => {
+    const iframe =
+      '.markdown-view.er-youtube-source-host iframe[src*="youtube.com/embed/"]' +
+      ":not(.markdown-video-link *):not([data-enhanced])";
+    for (const file of [
+      "features/post-renderer/video-embeds.scss",
+      "features/post-renderer/ecency-renderer.scss"
+    ]) {
+      expect(declarationsFor(file, iframe)).toMatch(/margin-bottom:\s*3rem/);
+    }
+  });
+
+  it("lines a landscape iframe's caption up with the player, centred inside <center>", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    expect(
+      declarationsFor(file, ".markdown-view a.er-youtube-source.er-youtube-source-start")
+    ).toMatch(/margin-left:\s*0/);
+    expect(
+      declarationsFor(file, ".markdown-view center a.er-youtube-source.er-youtube-source-start")
+    ).toMatch(/margin-left:\s*auto/);
+  });
 });

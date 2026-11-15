@@ -1,6 +1,10 @@
 import { createRoot, Root } from "react-dom/client";
 import { YoutubeVideoRenderer } from "../extensions";
-import { attachYoutubeSource } from "../extensions/youtube-video-extension";
+import {
+    attachYoutubeIframeSources,
+    attachYoutubeSource,
+    detachYoutubeIframeSources
+} from "../extensions/youtube-video-extension";
 import { getYoutubeEmbedUrl } from "./getYoutubeEmbedUrl";
 import { setVideoPlaceholderVisible } from "./video-placeholder";
 
@@ -34,6 +38,9 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
         attachYoutubeSource(el);
     });
 
+    // A YouTube <iframe> the author pasted has no placeholder: caption it too.
+    attachYoutubeIframeSources(container);
+
     return roots;
 }
 
@@ -53,4 +60,9 @@ export function resetYoutubeVideos(container: HTMLElement): void {
             delete el.dataset.enhanced;
             setVideoPlaceholderVisible(el, true);
         });
+    detachYoutubeIframeSources(
+        container.querySelectorAll<HTMLIFrameElement>(
+            'iframe[src*="youtube.com/embed/"][data-enhanced="true"]'
+        )
+    );
 }

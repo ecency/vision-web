@@ -9,6 +9,45 @@ import { unmountRootsLater } from "../utils/unmount-roots-later";
 import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/;
+const YOUTUBE_EMBED_SRC = /^(?:https?:)?\/\/(?:www\.|m\.)?youtube\.com\/embed\/([^?#/]+)/i;
+
+/**
+ * YouTube players the author pasted as an <iframe>: render-helper keeps them
+ * with no placeholder, so they get the caption directly. Players inside a
+ * placeholder (click-to-play, waves' direct embeds) are not these.
+ */
+const PASTED_YOUTUBE_IFRAMES =
+  '.markdown-view:not(.markdown-view-pure) iframe[src*="youtube.com/embed/"]:not([data-enhanced])';
+
+/**
+ * Captions the pasted YouTube players in `container`. Each is marked
+ * (`data-enhanced`, which drops its reserved room) in the same step its caption
+ * is added; an id that is not a YouTube id is marked with no caption. Returns
+ * the marked players for {@link detachYoutubeIframeSources}.
+ */
+export function attachYoutubeIframeSources(container: ParentNode): HTMLIFrameElement[] {
+  const iframes = Array.from(container.querySelectorAll<HTMLIFrameElement>(PASTED_YOUTUBE_IFRAMES)).filter(
+    (iframe) => !iframe.closest(".markdown-video-link")
+  );
+  for (const iframe of iframes) {
+    iframe.dataset.enhanced = "true";
+    const source = attachYoutubeSource(iframe);
+    // A landscape player sits at the left edge (a Short's is centred).
+    if (source && !iframe.classList.contains("portrait-embed")) {
+      source.classList.add("er-youtube-source-start");
+    }
+  }
+  return iframes;
+}
+
+/** Undoes {@link attachYoutubeIframeSources} for these players. */
+export function detachYoutubeIframeSources(iframes: Iterable<HTMLIFrameElement>): void {
+  for (const iframe of iframes) {
+    const next = iframe.nextElementSibling;
+    if (next?.classList.contains("er-youtube-source")) next.remove();
+    delete iframe.dataset.enhanced;
+  }
+}
 
 /**
  * The posted video's own URL, rebuilt from the placeholder (render-helper drops
@@ -16,12 +55,23 @@ const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/;
  * the id is not a YouTube video id.
  */
 export function youtubeSourceUrl(element: HTMLElement): { href: string; label: string } | null {
-  const id = (element.dataset.youtube ?? "").split("?")[0];
+  let id: string;
+  let portrait: boolean;
+  let start: string;
+  if (element instanceof HTMLIFrameElement) {
+    // A pasted player: render-helper keeps it as /embed/<id> and marks a Short's
+    // with portrait-embed.
+    const src = element.getAttribute("src") ?? "";
+    id = YOUTUBE_EMBED_SRC.exec(src)?.[1] ?? "";
+    portrait = element.classList.contains("portrait-embed");
+    start = /[?&]start=(\d+)/.exec(src)?.[1] ?? "";
+  } else {
+    id = (element.dataset.youtube ?? "").split("?")[0];
+    portrait = element.classList.contains("markdown-video-link-youtube-portrait");
+    start = element.dataset.startTime ?? "";
+  }
   if (!YOUTUBE_ID.test(id)) return null;
-  const path = element.classList.contains("markdown-video-link-youtube-portrait")
-    ? `shorts/${id}`
-    : `watch?v=${id}`;
-  const start = element.dataset.startTime ?? "";
+  const path = portrait ? `shorts/${id}` : `watch?v=${id}`;
   const time = /^[1-9][0-9]{0,6}$/.test(start) ? `${path.includes("?") ? "&" : "?"}t=${start}s` : "";
   const label = `youtube.com/${path}${time}`;
   return { href: `https://www.${label}`, label };
@@ -96,6 +146,7 @@ export function YoutubeVideoExtension({
   const enhancedRef = useRef<
     { element: HTMLElement; frame: HTMLElement; source: HTMLElement | null }[]
   >([]);
+  const iframesRef = useRef<HTMLIFrameElement[]>([]);
 
   const reset = useCallback(() => {
     unmountRootsLater(rootsRef.current);
@@ -107,6 +158,8 @@ export function YoutubeVideoExtension({
       setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
+    detachYoutubeIframeSources(iframesRef.current);
+    iframesRef.current = [];
   }, []);
 
   useEffect(() => {
@@ -150,6 +203,10 @@ export function YoutubeVideoExtension({
         console.warn("Error enhancing YouTube video element:", error);
       }
     });
+
+    if (containerRef.current) {
+      iframesRef.current = attachYoutubeIframeSources(containerRef.current);
+    }
 
     return reset;
   }, [containerRef, reset, html]);
