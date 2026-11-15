@@ -156,7 +156,7 @@ export function EcencyRenderer({
             <>
               <YoutubeVideoExtension containerRef={ref} html={html} />
               <ThreeSpeakVideoExtension containerRef={ref} images={images} html={html} />
-              <EmbedVideoExtension containerRef={ref} body={value} />
+              <EmbedVideoExtension containerRef={ref} body={html} />
             </>
           )}
           <WaveLikePostExtension containerRef={ref} embedDepth={embedDepth} />

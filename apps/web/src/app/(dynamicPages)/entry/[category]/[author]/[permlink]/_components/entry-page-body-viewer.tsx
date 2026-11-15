@@ -42,6 +42,9 @@ interface Props {
 export function EntryPageBodyViewer({ entry }: Props) {
   const [signingOperation, setSigningOperation] = useState<string>();
   const { isRawContent, isEdit, editHistory } = useContext(EntryPageContext);
+  // Keyed on content: a refetched entry hands a new image array with the same
+  // urls, and re-running the enhancements would stop a playing video (#2082).
+  const imagesKey = JSON.stringify(entry.json_metadata?.image ?? null);
 
   useEffect(() => {
     if (isRawContent || isEdit || editHistory) {
@@ -154,7 +157,7 @@ export function EntryPageBodyViewer({ entry }: Props) {
       clearTimeout(timer);
       cleanup?.();
     };
-  }, [isRawContent, isEdit, editHistory, entry.json_metadata?.image]);
+  }, [isRawContent, isEdit, editHistory, imagesKey]);
 
   return (
     <EntryPageViewerManager>

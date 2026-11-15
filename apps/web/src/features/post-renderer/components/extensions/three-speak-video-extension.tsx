@@ -165,6 +165,12 @@ export function ThreeSpeakVideoExtension({
   // setup-cleanup-setup cycle skipped every element on the second setup
   // (`:not(.er-speak)`) and the placeholders never played (#1939).
   const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
+  // Callers pass json_metadata.image, often as a new array with the same
+  // content on every render. Re-running on identity would stop a playing
+  // video, so the effect keys on the content and reads the latest array.
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  const imagesKey = JSON.stringify(images ?? null);
 
   const reset = useCallback(() => {
     unmountRootsLater(rootsRef.current);
@@ -200,7 +206,7 @@ export function ThreeSpeakVideoExtension({
           cleanupFnsRef.current.push(cleanup);
         } else {
           // Entry pages: click-to-play with thumbnail
-          injectThreeSpeakThumbnail(element, images);
+          injectThreeSpeakThumbnail(element, imagesRef.current);
 
           const container = document.createElement("div");
           container.classList.add("er-speak-frame");
@@ -226,7 +232,7 @@ export function ThreeSpeakVideoExtension({
     });
 
     return reset;
-  }, [images, reset, html]);
+  }, [imagesKey, reset, html]);
 
   return <></>;
 }
