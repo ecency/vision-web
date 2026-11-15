@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { SavingsWithdrawRequest } from "../types";
 import { callRPC } from "@/modules/core/hive-tx";
+import { QueryKeys } from "@/modules/core";
 
 /**
  * Get pending savings withdrawal requests for an account
@@ -9,7 +10,7 @@ import { callRPC } from "@/modules/core/hive-tx";
  */
 export function getSavingsWithdrawFromQueryOptions(account: string) {
   return queryOptions({
-    queryKey: ["wallet", "savings-withdraw", account],
+    queryKey: QueryKeys.wallet.savingsWithdraw(account),
     queryFn: () =>
       callRPC("condenser_api.get_savings_withdraw_from", [
         account,
