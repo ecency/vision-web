@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
+import { ACCOUNT_API_PREFIXES } from "@/core/pwa-account-cache";
 
 const require = createRequire(import.meta.url);
 const rules: Array<{ urlPattern: RegExp; handler?: string; options?: { cacheName?: string } }> = require(
@@ -53,6 +54,28 @@ describe("service worker runtime caching", () => {
     const rule = ruleFor(`${APP_ORIGIN}${path}`);
     expect(rule?.handler).toBe("NetworkOnly");
     expect(rule?.options?.cacheName).toBeUndefined();
+  });
+
+  // #2084: the newsletter routes resolve the account server side while the
+  // URL does not name it. The token routes' GET inspects the current state,
+  // which a cached copy would hide once confirmed.
+  it.each([
+    "/api/newsletter/subscriptions",
+    "/api/newsletter/sender?type=blog&target=alice",
+    "/api/newsletter/issues?type=blog&target=alice",
+    "/api/newsletter/posts?type=blog&target=alice&limit=20",
+    "/api/newsletter/confirm/abc123",
+    "/api/newsletter/unsubscribe/abc123"
+  ])("never caches newsletter API answers: %s", (path) => {
+    const rule = ruleFor(`${APP_ORIGIN}${path}`);
+    expect(rule?.handler).toBe("NetworkOnly");
+    expect(rule?.options?.cacheName).toBeUndefined();
+  });
+
+  it("serves every route whose cached answers an account switch drops NetworkOnly", () => {
+    for (const prefix of ACCOUNT_API_PREFIXES) {
+      expect(ruleFor(`${APP_ORIGIN}${prefix}x`)?.handler).toBe("NetworkOnly");
+    }
   });
 
   it("keeps the generic API cache for other routes", () => {

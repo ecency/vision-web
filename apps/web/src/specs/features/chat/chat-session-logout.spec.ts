@@ -435,9 +435,10 @@ describe("chat client state on an account switch (#2023)", () => {
     expect(queryClient.getQueryData(["posts", "entry", "/@a/p"])).toEqual({ author: "a" });
   });
 
-  it("drops chat answers the service worker cached for the previous account (#2023)", async () => {
+  it("drops per-account answers the service worker cached for the previous account (#2023, #2084)", async () => {
     const entries = [
       "https://ecency.com/api/mattermost/channels/unreads",
+      "https://ecency.com/api/newsletter/subscriptions",
       "https://ecency.com/api/mattermost/channels",
       "https://ecency.com/api/oembed?url=x"
     ].map((url) => new Request(url));
@@ -456,9 +457,10 @@ describe("chat client state on an account switch (#2023)", () => {
 
     actionsFor("alice").setActiveUser("bob");
 
-    await waitFor(() => expect(deleted).toHaveLength(2));
+    await waitFor(() => expect(deleted).toHaveLength(3));
     expect(deleted).toEqual([
       "https://ecency.com/api/mattermost/channels/unreads",
+      "https://ecency.com/api/newsletter/subscriptions",
       "https://ecency.com/api/mattermost/channels"
     ]);
   });

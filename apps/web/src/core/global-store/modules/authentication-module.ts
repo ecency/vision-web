@@ -5,6 +5,7 @@ import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { sentry } from "@/core/sentry/lazy-sentry";
 import { clearSessionActiveKey } from "@/utils/session-active-key";
 import { resetChatSession } from "@/features/chat/chat-session";
+import { dropCachedAccountResponses } from "@/core/pwa-account-cache";
 
 const makeActiveUser = (username: string): ActiveUser => ({
   username,
@@ -55,6 +56,12 @@ export const createAuthenticationActions = (
         void resetChatSession();
       } catch {
         // The server-side account binding still keeps the old session out.
+      }
+      // Answers the service worker cached for the previous account.
+      try {
+        void dropCachedAccountResponses().catch(() => undefined);
+      } catch {
+        // Never block a logout on the cache.
       }
     }
 
