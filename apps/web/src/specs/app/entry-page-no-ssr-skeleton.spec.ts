@@ -115,6 +115,7 @@ describe("entry page has no SSR skeleton boundary above the post body", () => {
       "entry-page-nsfw-body-wrapper.tsx",
       "entry-page-nsfw-revealing.tsx",
       "entry-page-static-body.tsx",
+      "entry-page-body-html.tsx",
       "entry-page-raw-body.tsx"
     ].map((name) => path.join(ROUTE, "_components", name));
     for (const file of chain) {
