@@ -123,14 +123,33 @@ export function shouldRefetchBootstrapOnFocus(
  * chat cookie over the active one's (#2023).
  */
 export class ChatAccountInactiveError extends Error {
-  constructor() {
-    super("Another account is active in this browser");
+  constructor(browserAccount: string | undefined) {
+    super(
+      browserAccount
+        ? "Another account is active in this browser"
+        : "No account is active in this browser"
+    );
     this.name = "ChatAccountInactiveError";
   }
 }
 
+/**
+ * Thrown, without a request, when a session reset (an account switch in this
+ * tab) happened while the bootstrap waited: its result belongs to no one.
+ */
+export class ChatSessionChangedError extends Error {
+  constructor() {
+    super("Chat session changed");
+    this.name = "ChatSessionChangedError";
+  }
+}
+
+function isChatSessionGuardError(error: unknown) {
+  return error instanceof ChatAccountInactiveError || error instanceof ChatSessionChangedError;
+}
+
 export function shouldRetryBootstrap(failureCount: number, error: Error) {
-  if (isBootstrapBanError(error) || error instanceof ChatAccountInactiveError) {
+  if (isBootstrapBanError(error) || isChatSessionGuardError(error)) {
     return false;
   }
 
@@ -173,10 +192,11 @@ export function useMattermostBootstrap(community?: string) {
       const bootstrapFetch = async (init: RequestInit) => {
         await chatSessionSettled();
         if (chatSessionGeneration() !== generation) {
-          throw new Error("Chat session changed");
+          throw new ChatSessionChangedError();
         }
-        if (Cookies.get(ACTIVE_USER_COOKIE_NAME)?.toLowerCase() !== username?.toLowerCase()) {
-          throw new ChatAccountInactiveError();
+        const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME);
+        if (browserAccount?.toLowerCase() !== username?.toLowerCase()) {
+          throw new ChatAccountInactiveError(browserAccount);
         }
         return chatSessionFetch("/api/mattermost/bootstrap", init);
       };
@@ -236,6 +256,11 @@ export function useMattermostBootstrap(community?: string) {
             })
           });
         } catch (refreshError) {
+          // Not a failed refresh: the browser moved to another account or
+          // session while it ran. Keep the reason, do not ask for a login.
+          if (isChatSessionGuardError(refreshError)) {
+            throw refreshError;
+          }
           console.error("Failed to refresh tokens:", refreshError);
           throw new Error("Authentication required - please log in again");
         }
