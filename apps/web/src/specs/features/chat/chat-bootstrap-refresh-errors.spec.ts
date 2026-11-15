@@ -89,24 +89,32 @@ describe("bootstrap token refresh keeps the session guard errors", () => {
 
   it("a session reset during the refresh is not reported as a lost login", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    let bailed: unknown;
     hsTokenRenew.mockImplementation(async () => {
       // An account switch away and back in this tab, while refreshing.
       fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
       void resetChatSession();
       return renewed;
     });
-    getQueryClient()
-      .getQueryCache()
-      .subscribe((event) => {
-        if (event.type === "updated" && event.action.type === "error") bailed = event.action.error;
-      });
+    // A fresh cached bootstrap, so mounting runs nothing: the reset removes
+    // the query, so its own rejection is not observable through the hook.
+    // Run its query function directly instead.
+    const queryKey = ["mattermost-bootstrap", "alice", undefined];
+    getQueryClient().setQueryData(queryKey, { ok: true, userId: "u1", channelId: "c1" });
     mount();
+    const queryFn = getQueryClient().getQueryCache().find({ queryKey })?.options.queryFn as (
+      context: unknown
+    ) => Promise<unknown>;
 
-    await waitFor(() => expect(hsTokenRenew).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 50));
+    const bailed = await queryFn({
+      queryKey,
+      signal: new AbortController().signal,
+      meta: undefined,
+      client: getQueryClient()
+    }).catch((error: unknown) => error);
 
+    expect(bailed).toBeInstanceOf(Error);
+    expect((bailed as Error).name).toBe("ChatSessionChangedError");
+    expect((bailed as Error).message).not.toMatch(/log in again/);
     expect(consoleError).not.toHaveBeenCalledWith("Failed to refresh tokens:", expect.anything());
-    if (bailed) expect((bailed as Error).message).not.toMatch(/log in again/);
   });
 });
