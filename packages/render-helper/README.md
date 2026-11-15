@@ -35,7 +35,7 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - `postBodySummary` - Generate text summary from post body
 - `proxifyImageSrc` - Proxify image URLs through Ecency's image server
 - `setProxyBase` - Configure image proxy endpoint (default: `https://i.ecency.com`)
-- `setCacheSize` - Configure LRU cache size (default: 60 entries)
+- `setCacheSize` - Configure LRU cache size (default: 500 entries)
 
 ### Processing Pipeline
 

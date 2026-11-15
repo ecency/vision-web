@@ -88,7 +88,6 @@
     "custom-domain-added": "Added",
     "custom-domain-explainer": "Use your own domain like blog.yoursite.com. Adds +$1/mo by card or +1 HBD/mo, billed with your hosting.",
     "custom-domain-included-note": "Your custom domain is included. Add and verify it right after checkout.",
-    "custom-domain-hbd-note": "One step custom domain setup is available with card checkout. Pay by card to activate your custom domain in one go.",
     "custom-domain-use-card": "Pay by card",
     "next-steps-title": "What's next?",
     "next-step-login": "Open your new site and sign in with @{{owner}}, the owner account, using Keychain or HiveSigner.",
