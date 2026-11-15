@@ -14,7 +14,7 @@ import {
 } from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "react-use";
-import { getDelegatableRc } from "./delegatable-rc";
+import { getDelegatableRc, parseDelegatees, rcDelegationDelta } from "./delegatable-rc";
 
 export const ResourceCreditsDelegation = (props: any) => {
   const { activeUser, hideDelegation, toFromList, amountFromList, delegateeData } = props;
@@ -38,17 +38,31 @@ export const ResourceCreditsDelegation = (props: any) => {
   const [toWarning, setToWarning] = useState<string>("");
   const [toData, setToData] = useState<any>(delegateeData || "");
 
-  // Changing an existing delegation only needs the difference: hived counts
-  // the RC already delegated to that recipient towards the new amount.
-  const rcLimit =
-    delegatableRc === undefined
-      ? undefined
-      : delegatableRc + (toFromList && to === toFromList ? Number(amountFromList) || 0 : 0);
+  // hived takes `amount` for EVERY delegatee of a comma separated list, less
+  // what is already delegated to each: changing an existing delegation only
+  // needs the difference. The existing amount is known for the delegation
+  // being edited from the list.
+  const exceedsLimit = (value: string, recipients: string = to) => {
+    if (delegatableRc === undefined) return false;
+    const delegatees = parseDelegatees(recipients);
+    const existing: Record<string, number> = toFromList
+      ? { [toFromList]: Number(amountFromList) || 0 }
+      : {};
+    return (
+      rcDelegationDelta(Number(value), delegatees.length ? delegatees : [""], existing) >
+      delegatableRc
+    );
+  };
+  const overLimit = exceedsLimit(amount);
 
   const toChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
     setInProgress(true);
     setTo(value);
+    // What the amount costs grows with the number of delegatees: recheck it.
+    if (Number(amount) >= 5000000000) {
+      setAmountError(exceedsLimit(amount, value) ? i18next.t("rc-info.insufficient-rc-error") : "");
+    }
   };
 
   const amountChanged = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -56,13 +70,13 @@ export const ResourceCreditsDelegation = (props: any) => {
     setAmount(amount);
     if (
       amount === "" ||
-      (Number(amount) >= 5000000000 && Number(amount) <= Number(rcLimit)) ||
+      (Number(amount) >= 5000000000 && !exceedsLimit(amount)) ||
       amount === "0"
     ) {
       setAmountError("");
     } else if (Number(amount) < 5000000000) {
       setAmountError(i18next.t("rc-info.minimum-rc-error"));
-    } else if (Number(amount) > Number(rcLimit)) {
+    } else if (exceedsLimit(amount)) {
       setAmountError(i18next.t("rc-info.insufficient-rc-error"));
       return;
     }
@@ -98,7 +112,8 @@ export const ResourceCreditsDelegation = (props: any) => {
     !amountError &&
     !!amount &&
     (Number(amount) === 0 || Number(amount) >= 5000000000) &&
-    Number(amount) <= Number(rcLimit);
+    delegatableRc !== undefined &&
+    !overLimit;
 
   const handleTo = useCallback(async (value: string) => {
     if (!value) {
@@ -221,7 +236,7 @@ export const ResourceCreditsDelegation = (props: any) => {
                     value={amount}
                     onChange={amountChanged}
                     className={
-                      Number(amount) > Number(rcLimit) && amountError ? "is-invalid" : ""
+                      overLimit && amountError ? "is-invalid" : ""
                     }
                   />
                 </InputGroup>
@@ -229,7 +244,7 @@ export const ResourceCreditsDelegation = (props: any) => {
             </div>
 
             {amount < 5000000000 && <small className="text-red tr-form-text">{amountError}</small>}
-            {amount > Number(rcLimit) && (
+            {Number(amount) >= 5000000000 && overLimit && (
               <small className="text-red tr-form-text">{amountError}</small>
             )}
 

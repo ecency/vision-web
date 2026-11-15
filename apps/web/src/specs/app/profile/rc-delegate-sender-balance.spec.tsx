@@ -6,7 +6,11 @@ import { QueryClient } from "@tanstack/react-query";
 import { getAccountRcQueryOptions, getRcStatsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ResourceCreditsInfo } from "@/app/(dynamicPages)/profile/[username]/_components/rc-info";
-import { getDelegatableRc } from "@/app/(dynamicPages)/profile/[username]/_components/rc-delegation/delegatable-rc";
+import {
+  DELEGATE_RC_TX_RESERVE,
+  getDelegatableRc
+} from "@/app/(dynamicPages)/profile/[username]/_components/rc-delegation/delegatable-rc";
+import { formatError } from "@/api/format-error";
 import { mockFullAccount, renderWithQueryClient, setupModalContainers } from "@/specs/test-utils";
 
 // Visiting someone else's profile, RC info -> "Delegate": the form signs as the
@@ -58,6 +62,9 @@ vi.mock("@/app/(dynamicPages)/profile/[username]/_components/rc-delegations-list
 }));
 
 const ALICE_RC = 20_000_000_000; // the logged in sender
+// Her mana is full and all her own: current mana is the binding term, so the
+// transaction's RC reserve comes off it.
+const ALICE_DELEGATABLE = ALICE_RC - DELEGATE_RC_TX_RESERVE;
 const BOB_RC = 900_000_000_000; // the visited profile
 
 function rcAccount(account: string, mana: number) {
@@ -121,13 +128,13 @@ describe("RC delegate from another user's profile", () => {
   it("shows the logged in user's RC as the balance, not the visited account's", async () => {
     await openDelegateOnBobsProfile();
 
-    await waitFor(() => expect(screen.getByText(`: ${ALICE_RC}`)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(`: ${ALICE_DELEGATABLE}`)).toBeInTheDocument());
     expect(screen.queryByText(`: ${BOB_RC}`)).not.toBeInTheDocument();
   });
 
   it("rejects an amount above the sender's RC even when the visited account has it", async () => {
     await openDelegateOnBobsProfile();
-    await screen.findByText(`: ${ALICE_RC}`);
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
 
     fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
       target: { value: String(ALICE_RC * 2) }
@@ -145,7 +152,7 @@ describe("RC delegate from another user's profile", () => {
   // #2073
   it("does not crash when the user logs out while the delegate form is open", async () => {
     const view = await openDelegateOnBobsProfile();
-    await screen.findByText(`: ${ALICE_RC}`);
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
 
     vi.mocked(useActiveAccount).mockReturnValue({
       activeUser: null,
@@ -161,7 +168,7 @@ describe("RC delegate from another user's profile", () => {
   // Pins the Modal onHide reset that the `show && activeUser` guard relies on.
   it("stays closed when the user signs in again after logging out", async () => {
     const view = await openDelegateOnBobsProfile();
-    await screen.findByText(`: ${ALICE_RC}`);
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
     fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
       target: { value: "10000000000" }
     });
@@ -241,11 +248,61 @@ describe("RC delegate from another user's profile", () => {
       expect(screen.queryByText(`: ${32 * B}`)).not.toBeInTheDocument();
     });
 
-    it("is capped by current mana when that is lower than own RC", async () => {
+    it("is capped by current mana, less the transaction's RC, when that is lower than own RC", async () => {
       senderRc({ mana: 12 * B, maxRc: 25 * B, received: 5 * B });
       await openDelegateOnBobsProfile();
 
-      expect(await screen.findByText(`: ${12 * B}`)).toBeInTheDocument();
+      expect(await screen.findByText(`: ${12 * B - DELEGATE_RC_TX_RESERVE}`)).toBeInTheDocument();
+    });
+
+    // Delegating all of current mana leaves nothing to pay for the
+    // custom_json itself, and the broadcast fails.
+    it("rejects delegating every last unit of current mana", async () => {
+      senderRc({ mana: 12 * B, maxRc: 25 * B, received: 5 * B });
+      await openDelegateOnBobsProfile();
+      await screen.findByText(`: ${12 * B - DELEGATE_RC_TX_RESERVE}`);
+      const amountInput = screen.getByPlaceholderText("transfer.amount-placeholder");
+
+      fireEvent.change(amountInput, { target: { value: String(12 * B) } });
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+
+      fireEvent.change(amountInput, { target: { value: String(12 * B - DELEGATE_RC_TX_RESERVE) } });
+      expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+    });
+
+    it("keeps no reserve off own RC when mana is well above it", async () => {
+      // Own 20B, mana 25B: 5B of mana is left after the delegation.
+      senderRc({ mana: 25 * B, maxRc: 25 * B, received: 5 * B });
+      await openDelegateOnBobsProfile();
+
+      expect(await screen.findByText(`: ${20 * B}`)).toBeInTheDocument();
+    });
+
+    // hived sums the delegation over every delegatee of a comma separated list.
+    it("checks the amount times the number of delegatees against the limit", async () => {
+      senderRc({ mana: 25 * B, maxRc: 25 * B, received: 5 * B });
+      await openDelegateOnBobsProfile();
+      await screen.findByText(`: ${20 * B}`);
+
+      fireEvent.change(screen.getByPlaceholderText("transfer.to-placeholder"), {
+        target: { value: "carol,dave" }
+      });
+      fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+        target: { value: String(15 * B) }
+      });
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+      expect(screen.getByText("g.next").closest("button")).toBeDisabled();
+
+      fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+        target: { value: String(10 * B) }
+      });
+      expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+
+      // A third delegatee makes the same amount too much.
+      fireEvent.change(screen.getByPlaceholderText("transfer.to-placeholder"), {
+        target: { value: "carol,dave,erin" }
+      });
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
     });
 
     it("rejects an amount between the delegatable RC and the old inflated balance", async () => {
@@ -271,13 +328,26 @@ describe("RC delegate from another user's profile", () => {
 
     it("regenerates mana to now, never past max_rc, then caps at own RC", () => {
       // Half a regeneration window (2.5 days) after 0 mana: half of max_rc.
-      expect(getDelegatableRc(rc(0, 100, 0, 0), 216_000 * 1000)).toBe(50);
+      expect(getDelegatableRc(rc(0, 100, 0, 0), 216_000 * 1000, 0)).toBe(50);
       // Long after: full, capped at max_rc, then at own RC (100 - 30 received).
-      expect(getDelegatableRc(rc(0, 100, 30, 0), 10_000_000 * 1000)).toBe(70);
+      expect(getDelegatableRc(rc(0, 100, 30, 0), 10_000_000 * 1000, 0)).toBe(70);
+    });
+
+    it("keeps the reserve in current mana", () => {
+      expect(getDelegatableRc(rc(50, 100, 0, 1000), 1000 * 1000, 10)).toBe(40);
+      // Own RC binds and leaves more than the reserve in mana: no change.
+      expect(getDelegatableRc(rc(100, 100, 50, 1000), 1000 * 1000, 10)).toBe(50);
     });
 
     it("is never negative", () => {
       expect(getDelegatableRc(rc(0, 10, 50, 1000), 1000 * 1000)).toBe(0);
+    });
+
+    it("maps hived's delegate_rc shortfall to the insufficient RC message", () => {
+      const [message] = formatError(
+        new Error("Assert Exception:from_delegable_rc >= delta_total: Account alice has insufficient RC (have 1, needs 2)")
+      );
+      expect(message).toBe("chain-error.insufficient-resource");
     });
   });
 
@@ -292,14 +362,40 @@ describe("RC delegate from another user's profile", () => {
     fireEvent.click(screen.getAllByRole("button")[0]);
     fireEvent.click(await screen.findByText(/rc-info.delegated/));
     fireEvent.click(await screen.findByText("edit-carol"));
-    await screen.findByText(`: ${ALICE_RC}`);
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
     const amountInput = screen.getByPlaceholderText("transfer.amount-placeholder");
 
-    // carol has 30B, alice can delegate 20B more: 50B is the most.
-    fireEvent.change(amountInput, { target: { value: "50000000000" } });
+    // carol has 30B, alice can delegate 19B more: 49B is the most.
+    const most = 30_000_000_000 + ALICE_DELEGATABLE;
+    fireEvent.change(amountInput, { target: { value: String(most) } });
     expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
 
-    fireEvent.change(amountInput, { target: { value: "50000000001" } });
+    fireEvent.change(amountInput, { target: { value: String(most + 1) } });
+    expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+  });
+
+  // Editing carol's 30B delegation into "carol,dave": carol needs only the
+  // difference, dave the full amount.
+  it("counts the existing delegation of the edited delegatee in a list", async () => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "alice" },
+      username: "alice"
+    } as unknown as ActiveAccount);
+    renderProfile("alice");
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(await screen.findByText(/rc-info.delegated/));
+    fireEvent.click(await screen.findByText("edit-carol"));
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
+
+    fireEvent.change(screen.getByPlaceholderText("transfer.to-placeholder"), {
+      target: { value: "carol,dave" }
+    });
+    const amountInput = screen.getByPlaceholderText("transfer.amount-placeholder");
+    // 2 x amount - 30B <= 19B  =>  amount <= 24.5B
+    const most = (30_000_000_000 + ALICE_DELEGATABLE) / 2;
+    fireEvent.change(amountInput, { target: { value: String(most) } });
+    expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+    fireEvent.change(amountInput, { target: { value: String(most + 1) } });
     expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
   });
 
@@ -327,7 +423,7 @@ describe("RC delegate from another user's profile", () => {
     // A fresh Delegate from RC info.
     fireEvent.click(screen.getAllByRole("button")[0]);
     fireEvent.click(await screen.findByText("rc-info.delegation-button"));
-    await screen.findByText(`: ${ALICE_RC}`);
+    await screen.findByText(`: ${ALICE_DELEGATABLE}`);
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
         target: { value: "10000000000" }
