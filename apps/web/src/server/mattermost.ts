@@ -1005,9 +1005,8 @@ export function clearMattermostTokenCookie(response: NextResponse) {
 
 /**
  * `readOnly`: for a route whose response may be publicly cached (the avatar
- * route), which must not carry the session cookies. An ownerless session is
- * then no session, without the lookup that would stamp or expire it; any
- * other chat call stamps it.
+ * route). An ownerless session is then no session, without the chat lookup
+ * that would honour it.
  */
 export async function getMattermostTokenFromCookies(
   options: { readOnly?: boolean } = {}
@@ -1033,39 +1032,51 @@ export async function getMattermostTokenFromCookies(
 
   // 3) A session set before the owner cookie existed (#2023). Pages other
   //    than /chats never bootstrap, so rejecting it would zero the badge
-  //    there. Honour it once it proves to be the active account's (the chat
-  //    username is the Hive username the bootstrap verified) and name the
-  //    owner, so this lookup runs once per such cookie.
+  //    there. Honour it while it proves to be the active account's (the chat
+  //    username is the Hive username the bootstrap verified). It writes no
+  //    cookie: this runs inside an ordinary chat request whose Set-Cookie can
+  //    land after a switch made the cookies another account's (#2089). The
+  //    answer is remembered per token instead, so chat is asked once.
   const legacy = options.readOnly ? null : ownerlessMattermostSession(readCookie);
   if (!legacy) {
     return null;
   }
-  // Read-only cookie store (not a route handler): answer without writing.
-  const writeCookies = (cookiesToSet: ReturnType<typeof sessionCookie>[]) => {
-    try {
-      for (const cookie of cookiesToSet) cookieStore.set(cookie);
-    } catch {
-      // Nothing to do.
-    }
-  };
-  let me: Pick<MattermostUser, "username"> | undefined;
+  const owner = await legacySessionOwner(legacy.token);
+  return owner !== null && owner === legacy.active ? legacy.token : null;
+}
+
+// Whom a legacy (ownerless) session token belongs to: its chat username, or
+// null when chat refused it. An outage is not remembered.
+const LEGACY_OWNER_TTL_MS = 10 * 60 * 1000;
+const LEGACY_OWNER_MAX = 1000;
+const legacyOwners = new Map<string, { owner: string | null; expires: number }>();
+
+async function legacySessionOwner(token: string): Promise<string | null> {
+  const now = Date.now();
+  const known = legacyOwners.get(token);
+  if (known && known.expires > now) {
+    return known.owner;
+  }
+  legacyOwners.delete(token);
+
+  let owner: string | null;
   try {
-    me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", legacy.token);
+    const me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", token);
+    owner = me?.username?.toLowerCase() || null;
   } catch (error) {
-    // A revoked token is a definitive answer: expire the cookie so later
-    // requests ask nothing. An outage or timeout says nothing about it: keep it.
-    if (error instanceof MattermostError && error.status === 401) {
-      writeCookies(expiredSessionCookies());
+    // A revoked token is a definitive answer; an outage or timeout says nothing.
+    if (!(error instanceof MattermostError && error.status === 401)) {
+      return null;
     }
-    return null;
+    owner = null;
   }
-  if (me?.username?.toLowerCase() !== legacy.active) {
-    // Another account's session: never honour it, and drop it.
-    writeCookies(expiredSessionCookies());
-    return null;
+  if (legacyOwners.size >= LEGACY_OWNER_MAX) {
+    // Oldest first: a Map iterates in insertion order.
+    const oldest = legacyOwners.keys().next().value;
+    if (oldest !== undefined) legacyOwners.delete(oldest);
   }
-  writeCookies([sessionCookie(MATTERMOST_OWNER_COOKIE, legacy.active)]);
-  return legacy.token;
+  legacyOwners.set(token, { owner, expires: now + LEGACY_OWNER_TTL_MS });
+  return owner;
 }
 
 export async function mmUserFetch<T>(path: string, token: string, init?: RequestInit) {

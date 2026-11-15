@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // #2023 review: a chat cookie set before the owner cookie existed (mm_pat
 // without mm_owner) must keep working for the account it belongs to, or the
 // navbar badge reads 0 everywhere but /chats after the deploy. The reader
-// resolves the token's chat user once and stamps the owner when it matches.
+// resolves the token's chat user and honours it when it is the active account's.
 
 let jar: Record<string, string> = {};
 const setCookie = vi.fn();
@@ -33,21 +33,6 @@ async function reader() {
   return getMattermostTokenFromCookies;
 }
 
-function expired() {
-  return setCookie.mock.calls
-    .map(([cookie]) => cookie as { name: string; value: string; maxAge?: number })
-    .filter((cookie) => cookie.maxAge === 0 && cookie.value === "")
-    .map((cookie) => cookie.name)
-    .sort();
-}
-
-function ownerStamps() {
-  return setCookie.mock.calls.filter((call) => {
-    const [first] = call;
-    return (typeof first === "string" ? first : (first as { name: string }).name) === "mm_owner";
-  });
-}
-
 describe("legacy chat session without an owner cookie (#2023)", () => {
   beforeEach(() => {
     jar = {};
@@ -61,7 +46,11 @@ describe("legacy chat session without an owner cookie (#2023)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is the session when the token belongs to the active account, and stamps the owner", async () => {
+  // #2089: the check runs inside an ordinary chat request, and its Set-Cookie
+  // lands whenever the answer arrives, possibly after a switch made the cookies
+  // another account's. So it writes no cookie at all, and remembers the answer
+  // for the token in the process instead.
+  it("is the session when the token belongs to the active account, and writes no cookie", async () => {
     jar = { mm_pat: "tok-a", active_user: "Alice" };
     meAnswers("alice");
     const read = await reader();
@@ -70,37 +59,52 @@ describe("legacy chat session without an owner cookie (#2023)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toBe("https://mm.test/api/v4/users/me");
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get("authorization")).toBe("Bearer tok-a");
-
-    const stamps = ownerStamps();
-    expect(stamps).toHaveLength(1);
-    const [cookie] = stamps[0];
-    expect(cookie).toMatchObject({ name: "mm_owner", value: "alice", httpOnly: true, path: "/" });
+    expect(setCookie).not.toHaveBeenCalled();
   });
 
-  it("is no session, and stamps nothing, when the token belongs to another account", async () => {
+  it("asks chat once per token, not on every request", async () => {
+    jar = { mm_pat: "tok-a", active_user: "alice" };
+    meAnswers("alice");
+    const read = await reader();
+
+    expect(await read()).toBe("tok-a");
+    expect(await read()).toBe("tok-a");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The remembered owner is checked against the account active now.
+    jar = { mm_pat: "tok-a", active_user: "bob" };
+    expect(await read()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("is no session, and writes no cookie, when the token belongs to another account", async () => {
     jar = { mm_pat: "tok-a", active_user: "bob" };
     meAnswers("alice");
     const read = await reader();
 
     expect(await read()).toBeNull();
-    expect(ownerStamps().filter(([c]) => (c as { value: string }).value !== "")).toHaveLength(0);
-    // A definitive answer: expire the cookie so the next request asks nothing.
-    expect(expired()).toEqual(["mm_owner", "mm_pat"]);
+    expect(setCookie).not.toHaveBeenCalled();
   });
 
-  it("is no session, and expires the cookie, when the token is no longer valid", async () => {
+  it("is no session, writes no cookie and asks once, when the token is no longer valid", async () => {
     jar = { mm_pat: "tok-a", active_user: "alice" };
     meAnswers(null, 401);
-    expect(await (await reader())()).toBeNull();
-    expect(expired()).toEqual(["mm_owner", "mm_pat"]);
+    const read = await reader();
+
+    expect(await read()).toBeNull();
+    expect(await read()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(setCookie).not.toHaveBeenCalled();
   });
 
-  it("is no session, and keeps the cookie, when chat is unreachable", async () => {
+  it("is no session, writes no cookie, and asks again, when chat is unreachable", async () => {
     jar = { mm_pat: "tok-a", active_user: "alice" };
+    const read = await reader();
     meAnswers(null, 502);
-    expect(await (await reader())()).toBeNull();
+    expect(await read()).toBeNull();
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
-    expect(await (await reader())()).toBeNull();
+    expect(await read()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(setCookie).not.toHaveBeenCalled();
   });
 
