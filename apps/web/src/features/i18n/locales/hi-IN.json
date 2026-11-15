@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} ने आपके पोस्ट को रिबॉग किया",
     "transfer": "{{source}} ने आपको {{amount}} भेजा है",
     "delegations": "{{source}} आपको डेलीगेटेड {{amount}}",
-    "checkins": "आपने इस सप्ताह {{count}} दिन{{suffix}} चेक इन किया। ऐसे ही जारी रखें!",
     "payouts": "Your content payout is ready.",
     "payouts-amount": "आपको {{amount}} भुगतान प्राप्त हुआ।",
     "payouts-amount-usd": "आपने ${{amount_usd}} ({{amount}}) कमाए।",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "आपने इस महीने {{count}} पोस्ट{{suffix}} बनाई। ऐसे ही जारी रखें!",
     "weekly-earnings": "आपने इस सप्ताह ${{total}} कमाए - पोस्ट से ${{author}}, क्यूरेशन से ${{curation}}।",
     "weekly-earnings-short": "आपने इस सप्ताह अपनी पोस्ट और क्यूरेशन से ${{total}} कमाए।"
   },

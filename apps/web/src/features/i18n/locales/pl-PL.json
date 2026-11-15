@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} reblogował twój post",
     "transfer": "{{source}} wysłał(a) Ci {{amount}}",
     "delegations": "{{source}} przekazał Ci {{amount}}",
-    "checkins": "Zameldowano się {{count}} dni{{suffix}} w tym tygodniu. Tak trzymaj!",
     "payouts": "Wypłata treści jest gotowa.",
     "payouts-amount": "Otrzymałeś(aś) wypłatę {{amount}}.",
     "payouts-amount-usd": "Zarobiłeś ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Utworzyłeś {{count}} post{{suffix}} w tym miesiącu. Tak dalej!",
     "weekly-earnings": "W tym tygodniu zarobiłeś ${{total}} - ${{author}} z postów, ${{curation}} z kuracji.",
     "weekly-earnings-short": "Zdobyłeś w tym tygodniu ${{total}} z Twoich postów i ciekawości."
   },

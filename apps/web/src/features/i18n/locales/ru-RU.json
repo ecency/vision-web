@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} сделал репост вашего поста",
     "transfer": "{{source}} отправил вам {{amount}}",
     "delegations": "{{source}} делегировал вам {{amount}}",
-    "checkins": "Вы отметились {{count}} дн.{{suffix}} на этой неделе. Так держать!",
     "payouts": "Выплата контента готова.",
     "payouts-amount": "Вы получили выплату {{amount}}.",
     "payouts-amount-usd": "Вы заработали ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} «{{title}}»",
-    "monthly-posts": "Вы создали {{count}} пост{{suffix}} в этом месяце. Держите его!",
     "weekly-earnings": "Вы заработали ${{total}} на этой неделе - ${{author}} от должностей, ${{curation}} от курирования.",
     "weekly-earnings-short": "Вы заработали ${{total}} на этой неделе от ваших постов и курирования."
   },

@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} menampilkan kembali postingan Anda",
     "transfer": "{{source}} mengirimkan Anda {{amount}}",
     "delegations": "{{source}} mendelegasikan {{amount}} kepada Anda",
-    "checkins": "Anda telah check-in {{count}} hari{{suffix}} minggu ini. Pertahankan!",
     "payouts": "Your content payout is ready.",
     "payouts-amount": "Anda menerima pembayaran {{amount}}.",
     "payouts-amount-usd": "Anda memperoleh ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Anda membuat {{count}} postingan{{suffix}} bulan ini. Pertahankan!",
     "weekly-earnings": "Anda memperoleh ${{total}} minggu ini - ${{author}} dari postingan, ${{curation}} dari kurasi.",
     "weekly-earnings-short": "Anda memperoleh ${{total}} minggu ini dari postingan dan kurasi Anda."
   },

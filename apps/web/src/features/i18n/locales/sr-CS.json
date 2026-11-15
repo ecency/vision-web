@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} je podelio vašu objavu",
     "transfer": "{{source}} vam je poslao {{amount}}",
     "delegations": "{{source}} vam je delegirao {{amount}}",
-    "checkins": "Prijavili ste se {{count}} dan{{suffix}} ove nedelje. Samo nastavite!",
     "payouts": "Your content payout is ready.",
     "payouts-amount": "Primili ste isplatu od {{amount}}.",
     "payouts-amount-usd": "Zaradili ste ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Napravili ste {{count}} objav{{suffix}} ovog meseca. Samo nastavite!",
     "weekly-earnings": "Zaradili ste ${{total}} ove nedelje - ${{author}} od objava, ${{curation}} od kuracije.",
     "weekly-earnings-short": "Zaradili ste ${{total}} ove nedelje od svojih objava i kuracije."
   },

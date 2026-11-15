@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} sizni postingizni qayta blogladi",
     "transfer": "{{source}} sizga jo'natdi {{amount}}",
     "delegations": "{{source}} sizga jo'natdi {{amount}}",
-    "checkins": "Bu hafta {{count}} kun{{suffix}} belgilandingiz. Shunday davom eting!",
     "payouts": "Your content payout is ready.",
     "payouts-amount": "Siz {{amount}} to'lov oldingiz.",
     "payouts-amount-usd": "Siz ${{amount_usd}} ({{amount}}) ishladingiz.",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Bu oy {{count}} ta post{{suffix}} yaratdingiz. Shunday davom eting!",
     "weekly-earnings": "Bu hafta ${{total}} ishladingiz - postlardan ${{author}}, kuratorlikdan ${{curation}}.",
     "weekly-earnings-short": "Bu hafta postlaringiz va kuratorligingizdan ${{total}} ishladingiz."
   },

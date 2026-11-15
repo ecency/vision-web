@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} ha reblogueado tu publicación",
     "transfer": "{{source}} te envió {{amount}}",
     "delegations": "{{source}} te delegó {{amount}}",
-    "checkins": "Has comprobado {{count}} día{{suffix}} esta semana. ¡Sigue así!",
     "payouts": "Tus ganancias de contenido están listas.",
     "payouts-amount": "Has recibido el pago de {{amount}}.",
     "payouts-amount-usd": "Has ganado ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Has creado {{count}} publicación{{suffix}} este mes. ¡Sigue así!",
     "weekly-earnings": "Esta semana ganaste ${{total}} - ${{author}} por posts, ${{curation}} por curación.",
     "weekly-earnings-short": "Has ganado ${{total}} esta semana por tus publicaciones y tu curación."
   },

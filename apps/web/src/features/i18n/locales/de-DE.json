@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} hat deinen Beitrag geteilt",
     "transfer": "{{source}} hat dir {{amount}} gesendet",
     "delegations": "{{source}} hat dir {{amount}} delegiert",
-    "checkins": "Sie haben diese Woche {{count}} Tag{{suffix}} eingecheckt. Weiter so!",
     "payouts": "Ihre Inhaltsauszahlung ist bereit.",
     "payouts-amount": "Sie haben {{amount}} Auszahlung erhalten.",
     "payouts-amount-usd": "Sie haben ${{amount_usd}} verdient ({{amount}}).",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Sie haben {{count}} Post{{suffix}} in diesem Monat erstellt. Weiter so!",
     "weekly-earnings": "Sie haben diese Woche ${{total}} verdient - ${{author}} von Beiträgen, ${{curation}} von Heilung.",
     "weekly-earnings-short": "Sie haben diese Woche ${{total}} durch Ihre Beiträge und Heilung verdient."
   },

@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} a reblogué votre post",
     "transfer": "{{source}} vous a envoyé {{amount}}",
     "delegations": "{{source}} vous a délégué {{amount}}",
-    "checkins": "Vous avez déverrouillé {{count}} jour{{suffix}} cette semaine. Continuez comme ça !",
     "payouts": "Votre paiement de contenu est prêt.",
     "payouts-amount": "Vous avez reçu le paiement {{amount}}.",
     "payouts-amount-usd": "Vous avez gagné ${{amount_usd}} ({{amount}}).",
     "payouts-title": "{{body}} « {{title}} »",
-    "monthly-posts": "Vous avez créé un post {{count}}{{suffix}} ce mois-ci. Continuez comme ça !",
     "weekly-earnings": "Vous avez gagné ${{total}} cette semaine - ${{author}} par poste, ${{curation}} par curation.",
     "weekly-earnings-short": "Vous avez gagné named@@0 ${{total}} cette semaine grâce à vos messages et à votre conservation."
   },

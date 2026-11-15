@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} 转发了您的帖子",
     "transfer": "{{source}} 发送给您 {{amount}}",
     "delegations": "{{source}} 向您委托了 {{amount}}",
-    "checkins": "您本周已签到 {{count}} 天{{suffix}}。继续保持！",
     "payouts": "您的支付已准备就绪。",
     "payouts-amount": "您收到了 {{amount}} 收益。",
     "payouts-amount-usd": "您赚取了 ${{amount_usd}}（{{amount}}）。",
     "payouts-title": "{{body}} “{{title}}”",
-    "monthly-posts": "您本月发布了 {{count}} 篇帖子{{suffix}}。继续保持！",
     "weekly-earnings": "您本周赚取了 ${{total}} - 帖子收益 ${{author}}，策展收益 ${{curation}}。",
     "weekly-earnings-short": "您本周通过发帖和策展赚取了 ${{total}}。"
   },

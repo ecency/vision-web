@@ -1853,12 +1853,10 @@
     "reblogged": "{{source}} gönderini yeniden yayınladı",
     "transfer": "{{source}} sana {{amount}} gönderdi",
     "delegations": "{{source}} size {{amount}} devretti",
-    "checkins": "Bu hafta {{count}} gün{{suffix}} giriş yaptın. Böyle devam et!",
     "payouts": "Your content payout is ready.",
     "payouts-amount": "{{amount}} ödeme aldınız.",
     "payouts-amount-usd": "${{amount_usd}} ({{amount}}) kazandınız.",
     "payouts-title": "{{body}} \"{{title}}\"",
-    "monthly-posts": "Bu ay {{count}} gönderi{{suffix}} oluşturdun. Böyle devam et!",
     "weekly-earnings": "Bu hafta ${{total}} kazandınız - gönderilerden ${{author}}, küratörlükten ${{curation}}.",
     "weekly-earnings-short": "Bu hafta gönderilerinizden ve küratörlükten ${{total}} kazandınız."
   },
