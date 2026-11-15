@@ -2,7 +2,7 @@ export { Transaction, TransactionTooLargeError, MIN_TRANSACTION_SIZE_LIMIT, getT
 export type { TransactionReference } from './Transaction'
 export { PrivateKey } from './helpers/PrivateKey'
 export { callRPC, callRPCWithFallback, callRPCBatch, callRPCBroadcast, callREST, callWithQuorum, RPCError, rpcProxyStats, resetRpcProxyBreaker } from './helpers/call'
-export type { RpcCallSpec, RpcFallbackResult, CallRPCWithFallbackOptions, RpcBatchAnswer } from './helpers/call'
+export type { RpcCallSpec, RpcFallbackResult, CallRPCWithFallbackOptions, RpcBatchAnswer, QuorumNodeOutcome } from './helpers/call'
 export {
   config,
   setNodes,

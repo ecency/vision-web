@@ -2587,18 +2587,41 @@ export async function callREST(
 
 // ── Public API: callWithQuorum ───────────────────────────────────────────────
 
+/** What one node called by callWithQuorum answered, or the error it threw. */
+export type QuorumNodeOutcome =
+  | { node: string; result: unknown; error?: undefined }
+  | { node: string; error: unknown; result?: undefined }
+
+function notifyNodeSettled(
+  observer: ((outcome: QuorumNodeOutcome) => void) | undefined,
+  outcome: QuorumNodeOutcome
+) {
+  if (!observer) return
+  try {
+    observer(outcome)
+  } catch {
+    // An observer must not change the quorum outcome.
+  }
+}
+
 /**
  * Make a JSONRPC call with quorum. The method will cross-check the result
  * with `quorum` number of nodes before returning the result.
  * @param method - The API method name (e.g., 'condenser_api.get_accounts')
  * @param params - Parameters for the API method as array or object
  * @param quorum - Default: 2 (recommended)
+ * @param signal - Optional abort signal for every node call
+ * @param onNodeSettled - Optional observer, told what each node called answered
+ *   (`result`) or threw (`error`). It does not change what this returns or
+ *   throws: a caller uses it to tell "every node answered nothing" apart from
+ *   "every node failed", which both end in the same thrown error.
  */
 export const callWithQuorum = async <T = any>(
   method: string,
   params: any[] | object = [],
   quorum = 2,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onNodeSettled?: (outcome: QuorumNodeOutcome) => void
 ): Promise<T> => {
   if (!Array.isArray(config.nodes)) {
     throw new Error('config.nodes is not an Array')
@@ -2627,8 +2650,13 @@ export const callWithQuorum = async <T = any>(
     for (let i = 0; i < batchNodes.length; i++) {
       promises.push(
         jsonRPCCall(batchNodes[i], method, params, undefined, true, signal)
-          .then((data) => batchResults.push(data))
-          .catch(() => {})
+          .then((data) => {
+            batchResults.push(data)
+            notifyNodeSettled(onNodeSettled, { node: batchNodes[i], result: data })
+          })
+          .catch((error) => {
+            notifyNodeSettled(onNodeSettled, { node: batchNodes[i], error })
+          })
       )
     }
     await Promise.all(promises)

@@ -369,4 +369,28 @@ describe("call sites feed the tracker — adaptive behavior end to end", () => {
     // jsonRPCCall's return shape; consensus proves it's still the raw result.
     expect(result).toEqual({ head_block_number: 42 });
   });
+
+  // #2002: the observer reports each node's outcome and changes nothing else.
+  it("callWithQuorum tells an observer what each node answered or threw, same outcome", async () => {
+    config.nodes = ["https://q-a.test", "https://q-b.test"];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any, init: any) =>
+      String(url).includes("q-a")
+        ? new Response("down", { status: 503 })
+        : jsonOk(init, null)
+    );
+    const outcomes: Array<{ node: string; result?: unknown; error?: unknown }> = [];
+    await expect(
+      callWithQuorum("bridge.get_post", { author: "a", permlink: "p" }, 1, undefined, (o) =>
+        outcomes.push(o)
+      )
+    ).rejects.toThrow("No more nodes available.");
+    // Without an observer: the very same rejection.
+    await expect(
+      callWithQuorum("bridge.get_post", { author: "a", permlink: "p" }, 1)
+    ).rejects.toThrow("No more nodes available.");
+
+    const byNode = Object.fromEntries(outcomes.map((o) => [o.node, o]));
+    expect(byNode["https://q-b.test"]).toEqual({ node: "https://q-b.test", result: null });
+    expect(String(byNode["https://q-a.test"].error)).toContain("HTTP 503");
+  });
 });

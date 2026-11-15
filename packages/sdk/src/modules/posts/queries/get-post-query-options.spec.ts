@@ -158,6 +158,17 @@ describe('getPostQueryOptions', () => {
       expect(verifyPostOnAlternateNode).toHaveBeenCalledWith('testauthor', 'test-permlink', '')
     })
 
+    // #2002: a double-check where no node answered is a failed lookup, not
+    // "not found". The error must reach the caller (the page answers 503).
+    it('should reject when primary returns null and the alternate check fails on every node', async () => {
+      mockCallRPC.mockResolvedValue(null)
+      vi.mocked(verifyPostOnAlternateNode).mockRejectedValue(new Error('No node answered'))
+
+      const options = getPostQueryOptions('testauthor', 'test-permlink')
+
+      await expect((options.queryFn as any)()).rejects.toThrow('No node answered')
+    })
+
     it('should return verified entry when primary returns null but alternate node has it', async () => {
       const verifiedEntry = {
         author: 'testauthor',
