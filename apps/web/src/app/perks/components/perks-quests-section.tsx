@@ -59,8 +59,11 @@ export function PerksQuestsSection() {
   const { data: quests } = useQuery(getQuestsQueryOptions(username));
   const { data: spin } = useQuery(getGameStatusCheckQueryOptions(username, code, "spin"));
   // Pro members get streak freezes for free, so do not quote them the Points price.
-  // Until the roster has loaded (or when it failed) nobody is quoted a price.
-  const { data: proMembers, isSuccess: rosterLoaded } = useQuery(getProMembersQueryOptions());
+  // Until the roster has loaded (or when it failed with no earlier data) nobody is quoted a
+  // price and the purchase is disabled, so nobody is charged without seeing the price. A failed
+  // background refetch keeps the last roster, so the label stays.
+  const { data: proMembers } = useQuery(getProMembersQueryOptions());
+  const rosterLoaded = proMembers !== undefined;
   const isPro = isProMember(proMembers?.members, username);
 
   const [tier, setTier] = useState<QuestTier>("daily");
@@ -145,7 +148,7 @@ export function PerksQuestsSection() {
                   outline={true}
                   onClick={handleBuyFreeze}
                   isLoading={isBuyingFreeze}
-                  disabled={isBuyingFreeze}
+                  disabled={isBuyingFreeze || !rosterLoaded}
                 >
                   {!rosterLoaded
                     ? i18next.t("perks.quests.buy-freeze-neutral")

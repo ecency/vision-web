@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { PerksQuestsSection } from "@/app/perks/components/perks-quests-section";
 
 type RosterState = { status: "pending" | "error" | "success"; members?: string[] };
+// "error" with members set models a failed background refetch that keeps the last data.
 const { roster } = vi.hoisted(() => ({
   roster: { status: "pending", members: undefined } as RosterState
 }));
@@ -24,7 +25,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: (opts: { queryKey: string[] }) => {
     if (opts.queryKey[0] === "pro-members") {
       return {
-        data: roster.status === "success" ? { members: roster.members } : undefined,
+        data: roster.members ? { members: roster.members } : undefined,
         isSuccess: roster.status === "success",
         isError: roster.status === "error"
       };
@@ -61,9 +62,18 @@ describe("perks quests: streak freeze price waits for the Pro roster", () => {
       render(<PerksQuestsSection />);
       expect(screen.queryByText(priced)).toBeNull();
       expect(screen.queryByText("perks.quests.buy-freeze-free")).toBeNull();
-      expect(screen.getByText("perks.quests.buy-freeze-neutral")).toBeInTheDocument();
+      const button = screen.getByText("perks.quests.buy-freeze-neutral").closest("button");
+      // No price shown, so the purchase cannot be made either.
+      expect(button).toBeDisabled();
     }
   );
+
+  it("keeps the price after a failed refetch that kept the roster", () => {
+    roster.status = "error";
+    roster.members = ["bob"];
+    render(<PerksQuestsSection />);
+    expect(screen.getByText(priced).closest("button")).toBeEnabled();
+  });
 
   it("quotes the price to a resolved non-Pro member", () => {
     roster.status = "success";
