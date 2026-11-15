@@ -173,4 +173,39 @@ describe("EmbedVideoExtension", () => {
     const anchor = root.querySelector<HTMLElement>(".markdown-video-link-odysee")!;
     expect(anchor.classList.contains("er-embed")).toBe(false);
   });
+
+  it("shows the play button again when a reset re-enhances the same node (#2082)", async () => {
+    const html = {
+      __html: videoLink("markdown-video-link-odysee", "https://odysee.com/$/embed/@channel:2/video:e")
+    };
+    // A stable __html object keeps the nodes; only the change signal moves.
+    function SignalHarness({ signal }: { signal: string }) {
+      const ref = useRef<HTMLDivElement>(null);
+      return (
+        <div ref={ref}>
+          <div className="markdown-view" dangerouslySetInnerHTML={html} />
+          <EmbedVideoExtension containerRef={ref} body={signal} />
+        </div>
+      );
+    }
+
+    const { container: root, rerender } = render(<SignalHarness signal="a" />, { container });
+    const anchor = root.querySelector<HTMLElement>(".markdown-video-link-odysee")!;
+    const play = anchor.querySelector<HTMLElement>(".markdown-video-play")!;
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(play.style.display).toBe("none");
+
+    await act(async () => {
+      rerender(<SignalHarness signal="b" />);
+    });
+
+    expect(anchor.querySelector("iframe")).toBeNull();
+    expect(play.style.display).toBe("");
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(anchor.querySelector("iframe")).toBeTruthy();
+  });
 });

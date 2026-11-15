@@ -46,16 +46,23 @@ export default function HoneybackAbout() {
                 {t("intro")}
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3 md:justify-start">
-                {["store-ios", "store-android"].map((key) => (
-                  <span
-                    key={key}
-                    className="rounded-2xl px-6 py-3 text-base font-bold opacity-70"
-                    style={{ background: "#F4B223", color: ink }}
-                    aria-disabled="true"
-                  >
-                    {t(key)}
-                  </span>
-                ))}
+                <a
+                  href="https://play.google.com/store/apps/details?id=com.ecency.games"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-2xl px-6 py-3 text-base font-bold"
+                  style={{ background: "#F4B223", color: ink }}
+                >
+                  {t("store-android")}
+                </a>
+                {/* The iOS build is still in App Store review. */}
+                <span
+                  className="rounded-2xl px-6 py-3 text-base font-bold opacity-70"
+                  style={{ background: "#F4B223", color: ink }}
+                  aria-disabled="true"
+                >
+                  {t("store-ios")}
+                </span>
               </div>
             </div>
             <div className="mt-10 md:mt-0 md:w-1/2">

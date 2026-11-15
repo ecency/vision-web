@@ -152,7 +152,7 @@ export function CommunityCreateAccountStep({
                 <Link
                   className="font-normal pl-1"
                   target="_blank"
-                  href="https://docs.ecency.com/communities/default-beneficiary"
+                  href="https://docs.ecency.com/hive/custom-beneficiary/"
                 >
                   {i18next.t("communities-create.default-beneficiary-docs")}
                 </Link>

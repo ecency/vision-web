@@ -176,20 +176,20 @@ export function ProposalsPage() {
               <div className="value">
                 {numeral(dailyFunded).format("0.00,")} {"HBD"}
               </div>
-              <div className="label">{i18next.t("daily-funded")}</div>
+              <div className="label">{i18next.t("proposals.daily-funded")}</div>
             </div>
             <div className="funding-number">
               <div className="value">
                 {numeral(dailyBudget).format("0.00,")} {"HBD"}
               </div>
-              <div className="label">{i18next.t("daily-budget")}</div>
+              <div className="label">{i18next.t("proposals.daily-budget")}</div>
             </div>
 
             <div className="funding-number">
               <div className="value">
                 {numeral(totalBudget).format("0.00,")} {"HBD"}
               </div>
-              <div className="label">{i18next.t("total-budget")}</div>
+              <div className="label">{i18next.t("proposals.total-budget")}</div>
             </div>
           </div>
 

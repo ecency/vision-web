@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { applyImageZoom } from '@/features/post-renderer/components/utils/imageZoomEnhancer'
+import mediumZoom from 'medium-zoom'
 
 // Mock medium-zoom
 vi.mock('medium-zoom', () => ({
   default: vi.fn(() => ({
     update: vi.fn(),
+    attach: vi.fn(),
+    detach: vi.fn(),
   })),
 }))
 
@@ -383,6 +386,125 @@ describe('applyImageZoom', () => {
 
       // Linked images are excluded (the check looks through <picture> to the <a>).
       expect(container.querySelector('.markdown-image-container')).toBeNull()
+    })
+  })
+
+  // medium-zoom adds document and window listeners per instance and detach()
+  // does not remove them. The entry page runs setupPostEnhancements again on
+  // every Edit History or raw toggle, so each run must reuse one instance and
+  // its cleanup must release only its own images (#2083).
+  describe('one medium-zoom instance across runs', () => {
+    const run = async () => {
+      const body = document.createElement('div')
+      body.classList.add('markdown-view')
+      const img = document.createElement('img')
+      img.src = `https://images.ecency.com/${Math.random()}.png`
+      body.appendChild(img)
+      document.body.appendChild(body)
+      const pending = applyImageZoom(body)
+      // jsdom never loads images; the enhancer waits for load first.
+      body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+      const handle = await pending
+      return { handle, zoomed: body.querySelector('img')! }
+    }
+
+    it('creates at most one instance and attaches later runs to it', async () => {
+      const before = vi.mocked(mediumZoom).mock.calls.length
+      await run()
+      const second = await run()
+      const third = await run()
+      expect(vi.mocked(mediumZoom).mock.calls.length - before).toBeLessThanOrEqual(1)
+      const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+
+      expect(zoom.attach).toHaveBeenCalledWith(second.zoomed)
+      expect(zoom.attach).toHaveBeenCalledWith(third.zoomed)
+
+      // Cleanup releases this run's images only, not the other runs'.
+      third.handle?.detach()
+      expect(zoom.detach).toHaveBeenLastCalledWith(third.zoomed)
+    })
+
+    it("a late cleanup of an earlier run on the same body leaves the later run's zoom alone", async () => {
+      const body = document.createElement('div')
+      body.classList.add('markdown-view')
+      body.appendChild(Object.assign(document.createElement('img'), { src: 'https://images.ecency.com/same.png' }))
+      document.body.appendChild(body)
+      const load = () =>
+        body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+
+      // Run A, then run B on the same images (Edit History closed and opened
+      // again before A's cleanup landed).
+      const pendingA = applyImageZoom(body)
+      load()
+      const a = await pendingA
+      const pendingB = applyImageZoom(body)
+      load()
+      const b = await pendingB
+      const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+      const img = body.querySelector('img')!
+      expect(zoom.attach).toHaveBeenLastCalledWith(img)
+      zoom.detach.mockClear()
+
+      a?.detach()
+      expect(zoom.detach).not.toHaveBeenCalled()
+
+      b?.detach()
+      expect(zoom.detach).toHaveBeenCalledWith(img)
+    })
+    // Each run waits for image load, a dynamic import and an animation frame,
+    // so an older run can finish after a newer one. Start order decides who
+    // owns a shared image, and a cancelled run attaches nothing.
+    describe('out-of-order completion', () => {
+      const setup = () => {
+        const body = document.createElement('div')
+        body.classList.add('markdown-view')
+        body.appendChild(Object.assign(document.createElement('img'), { src: `https://images.ecency.com/${Math.random()}.png` }))
+        document.body.appendChild(body)
+        const frames: FrameRequestCallback[] = []
+        const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+          frames.push(cb)
+          return frames.length
+        })
+        const load = () => body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+        return { body, frames, raf, load }
+      }
+
+      it("an older run that resolves last does not take the newer run's image", async () => {
+        const { body, frames, raf, load } = setup()
+        const pendingA = applyImageZoom(body)
+        const pendingB = applyImageZoom(body)
+        load()
+        await vi.waitFor(() => expect(frames).toHaveLength(2))
+        frames[1](0) // B completes first
+        frames[0](0) // then the older A
+        const [a, b] = await Promise.all([pendingA, pendingB])
+        raf.mockRestore()
+        const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+        const img = body.querySelector('img')!
+        zoom.detach.mockClear()
+
+        a?.detach()
+        expect(zoom.detach).not.toHaveBeenCalled()
+        b?.detach()
+        expect(zoom.detach).toHaveBeenCalledWith(img)
+      })
+
+      it('a run cancelled before it attaches attaches nothing', async () => {
+        const { body, frames, raf, load } = setup()
+        const controller = new AbortController()
+        const pending = applyImageZoom(body, controller.signal)
+        load()
+        await vi.waitFor(() => expect(frames).toHaveLength(1))
+        const zoom = vi.mocked(mediumZoom).mock.results.at(-1)?.value
+        zoom?.attach.mockClear()
+        const createdBefore = vi.mocked(mediumZoom).mock.calls.length
+        controller.abort()
+        frames[0](0)
+        expect(await pending).toBeNull()
+        expect(vi.mocked(mediumZoom).mock.calls.length).toBe(createdBefore)
+        if (zoom) expect(zoom.attach).not.toHaveBeenCalled()
+        raf.mockRestore()
+      })
     })
   })
 })

@@ -1,6 +1,7 @@
 import { createRoot, Root } from "react-dom/client";
 import { ThreeSpeakVideoRenderer } from "../extensions";
 import { injectThreeSpeakThumbnail } from "./threeSpeakThumbnail";
+import { setVideoPlaceholderVisible } from "./video-placeholder";
 
 /**
  * DOM utility enhancer
@@ -32,4 +33,20 @@ export function applyThreeSpeakVideos(container: HTMLElement, images?: string[])
     });
 
     return roots;
+}
+
+/**
+ * Undoes applyThreeSpeakVideos on the same DOM so a later run enhances the
+ * links again (the `er-speak` class and `data-enhanced` flag made it skip
+ * them, #2082). The caller unmounts the roots.
+ */
+export function resetThreeSpeakVideos(container: HTMLElement): void {
+    container
+        .querySelectorAll<HTMLElement>('.markdown-video-link-speak[data-enhanced="true"]')
+        .forEach((el) => {
+            el.querySelectorAll(":scope > .er-speak-frame").forEach((frame) => frame.remove());
+            delete el.dataset.enhanced;
+            el.classList.remove("er-speak", "speak-portrait", "speak-square");
+            setVideoPlaceholderVisible(el, true);
+        });
 }

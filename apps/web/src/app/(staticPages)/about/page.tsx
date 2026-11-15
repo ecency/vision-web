@@ -50,19 +50,9 @@ export default async function About() {
         </div>
 
         <div className="downloads" id="downloads">
-          <h2 className="downloads-title">Downloads</h2>
-          <div className="downloads-text">
-            Enjoy Ecency for iPhone, iPad and Android, as well as PC, Mac or Linux devices:
-          </div>
+          <h2 className="downloads-title">{i18next.t("static.about.downloads-title")}</h2>
+          <div className="downloads-text">{i18next.t("static.about.downloads-text")}</div>
           <div className="download-buttons">
-            <a
-              className="download-button btn-desktop"
-              target="_blank"
-              href="https://github.com/ecency/ecency-vision/releases"
-              rel="noopener noreferrer"
-            >
-              DESKTOP
-            </a>
             <a
               className="download-button btn-ios"
               target="_blank"

@@ -1,10 +1,12 @@
 import { createRoot, Root } from "react-dom/client";
 import { HivePostLinkRenderer } from "../extensions";
 import { findPostLinkElements, isWaveLikePost } from "../functions";
+import { swapIn } from "./dom-swap";
 
 export function applyHivePostLinks(
     container: HTMLElement,
     postLinkElements: HTMLAnchorElement[] = findPostLinkElements(container),
+    undos: (() => void)[] = [],
 ): Root[] {
     const roots: Root[] = [];
 
@@ -32,7 +34,7 @@ export function applyHivePostLinks(
 
                 // Final safety check before replacing
                 if (el.isConnected && el.parentElement) {
-                    el.parentElement.replaceChild(wrapper, el);
+                    undos.push(swapIn(el, wrapper));
                 }
             } catch (error) {
                 console.warn("Error enhancing Hive post link element:", error);

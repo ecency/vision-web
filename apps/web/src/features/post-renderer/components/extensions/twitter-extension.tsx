@@ -2,19 +2,23 @@
 
 import React, { RefObject, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { fillWith, runUndos } from "../utils/dom-swap";
 
 export function TwitterExtension({
   containerRef,
   ComponentInstance,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   ComponentInstance: React.FC<{ id: string }>;
+  /** The rendered body. A change replaces the links, so they are enhanced again (#2083). */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+  const undosRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    rootsRef.current.forEach(r => r.unmount());
-    rootsRef.current = [];
 
     const elements = Array.from(
         containerRef.current?.querySelectorAll<HTMLElement>(
@@ -61,13 +65,15 @@ export function TwitterExtension({
 
             const container = document.createElement("div");
             container.classList.add("er-twitter-frame");
-            element.classList.add("ecency-renderer-twitter-extension");
-
-            element.innerHTML = "";
 
             // Final safety check before appending
             if (element.isConnected && element.parentNode) {
-              element.appendChild(container);
+              element.classList.add("ecency-renderer-twitter-extension");
+              const restore = fillWith(element, container);
+              undosRef.current.push(() => {
+                restore();
+                element.classList.remove("ecency-renderer-twitter-extension");
+              });
 
               const root = createRoot(container);
               rootsRef.current.push(root);
@@ -79,10 +85,11 @@ export function TwitterExtension({
         });
 
     return () => {
-      rootsRef.current.forEach(r => r.unmount());
+      unmountRootsLater(rootsRef.current);
       rootsRef.current = [];
+      runUndos(undosRef.current);
     };
-  }, [containerRef]);
+  }, [containerRef, html]);
 
   return null;
 }

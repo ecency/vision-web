@@ -75,4 +75,34 @@ describe("EntryPageStaticBody", () => {
       expect.objectContaining({ extra: expect.objectContaining({ author: "alice", permlink: "boom" }) })
     );
   });
+
+  // #2083: closing Edit History calls router.replace, the server page renders
+  // again and hands #post-body a fresh {__html} object with the same string.
+  // React writes innerHTML whenever that object changes, which wiped every
+  // enhancement the body viewer had re-applied (tweets, videos, hive ops).
+  it("keeps the enhanced body DOM when it re-renders with the same html", () => {
+    vi.mocked(renderPostBody).mockReturnValue("<p>hello</p>");
+    const { container, rerender } = render(
+      <EntryPageStaticBody entry={mockEntry({ body: "hello" })} />
+    );
+    const body = container.querySelector("#post-body")!;
+    const enhancement = document.createElement("div");
+    enhancement.className = "er-twitter-frame";
+    body.appendChild(enhancement);
+
+    rerender(<EntryPageStaticBody entry={mockEntry({ body: "hello" })} />);
+
+    expect(container.querySelector("#post-body")).toBe(body);
+    expect(body.querySelector(".er-twitter-frame")).toBe(enhancement);
+  });
+
+  it("replaces the body when the html changes", () => {
+    vi.mocked(renderPostBody).mockReturnValue("<p>one</p>");
+    const { container, rerender } = render(
+      <EntryPageStaticBody entry={mockEntry({ body: "one" })} />
+    );
+    vi.mocked(renderPostBody).mockReturnValue("<p>two</p>");
+    rerender(<EntryPageStaticBody entry={mockEntry({ body: "two" })} />);
+    expect(container.querySelector("#post-body")?.innerHTML).toBe("<p>two</p>");
+  });
 });

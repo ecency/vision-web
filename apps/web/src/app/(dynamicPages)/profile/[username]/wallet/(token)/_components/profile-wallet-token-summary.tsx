@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { type ReactNode } from "react";
 
 import { useGlobalStore } from "@/core/global-store";
@@ -27,6 +28,7 @@ import {
   useProfileWalletHiveClaimState,
 } from "./profile-wallet-hive-claim-rewards-button";
 import { ProfileWalletHbdInterest } from "./profile-wallet-hbd-interest";
+import { SavingsWithdrawPendingLink } from "../../../_components/savings-withdraw";
 
 function format(value: number) {
   return formatAssetBalance(value);
@@ -85,24 +87,26 @@ export function ProfileWalletTokenSummary() {
   const hasSavingsBalance = parts.some((part) => part.name === "savings");
 
   const normalizedCurrency = currency?.toUpperCase();
-  const fiatBalanceLabel =
-    normalizedCurrency === "USD" || normalizedCurrency === "HBD"
-      ? "USD Balance"
-      : `${normalizedCurrency ?? "USD"} Balance`;
+  const fiatBalanceLabel = i18next.t("profile-wallet.summary-fiat-balance", {
+    currency:
+      normalizedCurrency === "USD" || normalizedCurrency === "HBD"
+        ? "USD"
+        : (normalizedCurrency ?? "USD")
+  });
 
   const fiatBalance = liquidBalance * (data?.price ?? 0);
   const formattedApr = formatApr(data?.apr);
   const cards: { label: string; value: ReactNode }[] = [
     {
       label: hasSavingsBalance
-        ? "Current Balance"
-        : "Available",
+        ? i18next.t("profile-wallet.summary-current-balance")
+        : i18next.t("profile-wallet.summary-available"),
       value: format(liquidBalance),
     },
     ...(hasStakedBalance
       ? [
           {
-            label: "Staked",
+            label: i18next.t("profile-wallet.summary-staked"),
             value: format(stakedBalance),
           },
         ]
@@ -110,7 +114,7 @@ export function ProfileWalletTokenSummary() {
     ...(hasSavingsBalance
       ? [
           {
-            label: "Savings Balance",
+            label: i18next.t("profile-wallet.summary-savings-balance"),
             value: format(savingsBalance),
           },
         ]
@@ -122,7 +126,7 @@ export function ProfileWalletTokenSummary() {
     ...(formattedApr
       ? [
           {
-            label: "APR",
+            label: i18next.t("profile-wallet.summary-apr"),
             value: `${formattedApr}%`,
           },
         ]
@@ -208,6 +212,9 @@ export function ProfileWalletTokenSummary() {
             </div>
           ))}
         </div>
+        {(tokenWithFallback === "HIVE" || tokenWithFallback === "HBD") && (
+          <SavingsWithdrawPendingLink username={cleanUsername} tokenType={tokenWithFallback} />
+        )}
       </div>
       {tokenWithFallback === "HBD" && (
         <ProfileWalletHbdInterest username={cleanUsername} />

@@ -57,7 +57,7 @@ export function PublishOnboardingToolbar() {
         ))}
         <Link
           className="text-sm"
-          href="https://docs.ecency.com/publish/#keyboard-shortcuts"
+          href="https://docs.ecency.com/ecency/publish/#keyboard-shortcuts"
           target="_blank"
         >
           {i18next.t("publish.get-started.more-shortcuts")}

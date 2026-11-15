@@ -1,11 +1,13 @@
 "use client";
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { isProMember } from "@/features/pro";
 import { error, success } from "@/features/shared";
 import { Button, TabItem } from "@/features/ui";
 import { getAccessToken, useCountdown } from "@/utils";
 import {
   getGameStatusCheckQueryOptions,
+  getProMembersQueryOptions,
   getQuestsQueryOptions,
   QUEST_CATALOG,
   STREAK_FREEZE_MAX_OWNED,
@@ -56,6 +58,18 @@ export function PerksQuestsSection() {
 
   const { data: quests } = useQuery(getQuestsQueryOptions(username));
   const { data: spin } = useQuery(getGameStatusCheckQueryOptions(username, code, "spin"));
+  // Pro members get streak freezes for free, so do not quote them the Points price.
+  // Until the roster has loaded (or when it failed with no earlier data) nobody is quoted a
+  // price and the purchase is disabled, so nobody is charged without seeing the price. A failed
+  // background refetch keeps the last roster, so the label stays.
+  const { data: proMembers } = useQuery(getProMembersQueryOptions());
+  const roster: unknown = proMembers?.members;
+  const members =
+    Array.isArray(roster) && roster.every((m): m is string => typeof m === "string")
+      ? roster
+      : undefined;
+  const rosterLoaded = members !== undefined;
+  const isPro = isProMember(members, username);
 
   const [tier, setTier] = useState<QuestTier>("daily");
   const [showTopup, setShowTopup] = useState(false);
@@ -139,9 +153,13 @@ export function PerksQuestsSection() {
                   outline={true}
                   onClick={handleBuyFreeze}
                   isLoading={isBuyingFreeze}
-                  disabled={isBuyingFreeze}
+                  disabled={isBuyingFreeze || !rosterLoaded}
                 >
-                  {i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
+                  {!rosterLoaded
+                    ? i18next.t("perks.quests.buy-freeze-neutral")
+                    : isPro
+                      ? i18next.t("perks.quests.buy-freeze-free")
+                      : i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
                 </Button>
               )}
               {showTopup && (

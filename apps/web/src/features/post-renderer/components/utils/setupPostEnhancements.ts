@@ -4,10 +4,14 @@ import {
     applyHiveOperations,
     applyYoutubeVideos,
     applyThreeSpeakVideos,
+    resetYoutubeVideos,
+    resetThreeSpeakVideos,
     applyWaveLikePosts,
     applyTwitterEmbeds
 } from "../utils";
 import { findPostLinkElements } from "../functions";
+import { unmountRootsLater } from "./unmount-roots-later";
+import { runUndos } from "./dom-swap";
 import { Root } from "react-dom/client";
 import React from "react";
 
@@ -35,22 +39,34 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
     images?: string[]
 }): () => void {
     const postLinkElements = findPostLinkElements(container);
+    // How to put back the links the enhancers swapped out (#2083).
+    const undos: (() => void)[] = [];
 
     const allRoots: Root[] = [
-        ...applyHivePostLinks(container, postLinkElements),
-        ...applyHiveOperations(container, options?.onHiveOperationClick),
+        ...applyHivePostLinks(container, postLinkElements, undos),
+        ...applyHiveOperations(container, options?.onHiveOperationClick, undos),
         ...applyYoutubeVideos(container),
         ...applyThreeSpeakVideos(container, options?.images),
-        ...applyWaveLikePosts(container, postLinkElements),
-        ...applyTwitterEmbeds(container, options?.TwitterComponent ?? TwitterFallback)
+        ...applyWaveLikePosts(container, postLinkElements, undos),
+        ...applyTwitterEmbeds(container, options?.TwitterComponent ?? TwitterFallback, undos)
     ];
 
     // Apply image zoom and store the promise for cleanup
-    const zoomPromise = applyImageZoom(container);
+    // Aborted by cleanup so a run still waiting on images attaches nothing.
+    const zoomAbort = new AbortController();
+    const zoomPromise = applyImageZoom(container, zoomAbort.signal);
 
     // Return cleanup function
     return () => {
-        allRoots.forEach((root) => root.unmount());
+        // Called from an effect cleanup, where a synchronous root.unmount()
+        // logs "Attempted to synchronously unmount a root while React was
+        // already rendering". The video links are restored right away so a
+        // re-run on the same DOM enhances them again (#2082).
+        unmountRootsLater(allRoots);
+        resetYoutubeVideos(container);
+        resetThreeSpeakVideos(container);
+        runUndos(undos);
+        zoomAbort.abort();
         zoomPromise.then((zoom) => {
             zoom?.detach();
         }).catch(() => {

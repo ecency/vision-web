@@ -26,7 +26,7 @@ export function NotificationCheckinsType({ sourceLink, notification }: Props) {
         </span>
       </div>
       <div className="second-line">
-        {i18next.t("notification.checkins", { count, suffix: count === 1 ? "" : "s" })}
+        {i18next.t("notification.checkins", { count })}
       </div>
     </div>
   );

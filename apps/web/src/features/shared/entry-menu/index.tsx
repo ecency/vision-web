@@ -256,10 +256,10 @@ export const EntryMenu = ({
           onlyDialog={true}
           entry={entry}
           community={community}
-          onSuccess={(entry, mute) => {
+          onSuccess={(_entry, muted) => {
             setMute(false);
 
-            if (pin) {
+            if (muted) {
               success(i18next.t("entry-menu.mute-success"));
             } else {
               success(i18next.t("entry-menu.unmute-success"));

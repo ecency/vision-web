@@ -26,8 +26,10 @@ export function EntryListItemMutedContent({ entry: entryProp, isThumbLcp }: Prop
 
   const location = useEntryLocation(entryProp);
 
+  // A cross-post card shows the original post, and all its links lead there,
+  // like the rest of the card (EntryListItem). Only the cross-post banner
+  // names the wrapper's author and community.
   const entry = useMemo(() => entryProp.original_entry || entryProp, [entryProp]);
-  const isCrossPost = useMemo(() => !!entry.original_entry, [entry.original_entry]);
   const summary = useMemo(() => entrySummary(entry), [entry]);
 
   // Which rule fired (moderator action, downvotes, low-trust promo) is decided in
@@ -84,15 +86,13 @@ export function EntryListItemMutedContent({ entry: entryProp, isThumbLcp }: Prop
       <div className={shouldShowMutedOverlay ? "entry-preview opacity-50" : "entry-preview"}>
         {(!nsfw || showNsfw || globalNsfw) && (
           <EntryListItemThumbnail
-            entryProp={entryProp}
-            isCrossPost={isCrossPost}
             noImage="/assets/noimage.png"
             entry={entry}
             isThumbLcp={isThumbLcp}
           />
         )}
         <div className="item-summary overflow-x-hidden">
-          <EntryLink entry={isCrossPost ? entryProp : entry}>
+          <EntryLink entry={entry}>
             <div className="item-title !mb-0">{entry.title}</div>
           </EntryLink>
           {location?.coordinates && (
@@ -106,7 +106,7 @@ export function EntryListItemMutedContent({ entry: entryProp, isThumbLcp }: Prop
               {location.address}
             </Link>
           )}
-          <EntryLink entry={isCrossPost ? entryProp : entry}>
+          <EntryLink entry={entry}>
             <div className="item-body">{summary}</div>
           </EntryLink>
         </div>

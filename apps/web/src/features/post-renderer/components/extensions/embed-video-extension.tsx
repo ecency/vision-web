@@ -3,6 +3,8 @@
 import React, { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 /**
  * Click-to-play for the video providers that have no thumbnail we can derive
@@ -76,12 +78,15 @@ export function EmbedVideoExtension({
 }: {
   containerRef: RefObject<HTMLElement | null>;
   /**
-   * The rendered post body. Not read — it is a change signal. The container is
-   * populated via dangerouslySetInnerHTML, so when the body changes React swaps
-   * the nodes underneath us: the anchors we enhanced are detached and the new
-   * ones carry no marker or listener. Depending on it re-runs the pass.
+   * The rendered html of the post body. Not read, it is a change signal. The
+   * container is populated via dangerouslySetInnerHTML, so when the html
+   * changes React swaps the nodes underneath us: the anchors we enhanced are
+   * detached and the new ones carry no marker or listener. Depending on it
+   * re-runs the pass. It must be the html, not the markdown: a markdown change
+   * that renders the same html keeps the nodes, and a re-run would stop a
+   * playing video (#2082).
    */
-  body?: string;
+  body?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
   // The `er-embed` marker and the appended frame are DOM mutations on nodes
@@ -93,13 +98,12 @@ export function EmbedVideoExtension({
   const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
 
   const reset = useCallback(() => {
-    for (const r of rootsRef.current) {
-      r.unmount();
-    }
+    unmountRootsLater(rootsRef.current);
     rootsRef.current = [];
     for (const { element, frame } of enhancedRef.current) {
       element.classList.remove("er-embed");
       frame.remove();
+      setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
   }, []);
