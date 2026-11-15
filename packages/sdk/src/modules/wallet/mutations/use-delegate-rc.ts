@@ -28,7 +28,7 @@ export function useDelegateRc(
       ]);
     },
     auth,
-    'active',
+    'posting',
     { broadcastMode }
   );
 }
