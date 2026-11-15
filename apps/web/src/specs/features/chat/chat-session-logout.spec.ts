@@ -7,10 +7,21 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useMattermostMarkChannelViewed } from "@/features/chat/mattermost-api";
+import { useMattermostBootstrap, useMattermostMarkChannelViewed } from "@/features/chat/mattermost-api";
+import { MattermostWebSocket } from "@/features/chat/mattermost-websocket";
+import { getQueryClient } from "@/core/react-query";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { waitFor } from "@testing-library/react";
 
 vi.mock("@/core/sentry/lazy-sentry", () => ({
   sentry: { setUser: vi.fn() }
+}));
+
+vi.mock("@/utils", async () => ({
+  ...(await vi.importActual<object>("@/utils")),
+  random: vi.fn(),
+  getAccessToken: vi.fn(() => "mock-token"),
+  getRefreshToken: vi.fn(() => "")
 }));
 
 const SESSION_URL = "/api/mattermost/session";
@@ -179,5 +190,152 @@ describe("chat page requests after a switch (#2023 follow-up)", () => {
       "utf8"
     );
     expect(source.match(/[^A-Za-z.]fetch\(/g) ?? []).toEqual([]);
+  });
+});
+
+// #2023 review: switching A -> B -> A within the bootstrap's 5 minute
+// staleTime found A's cached bootstrap still fresh. Nothing set A's chat cookie
+// again after the second switch expired it, so every chat call answered 401.
+describe("chat client state on an account switch (#2023)", () => {
+  const fetchMock = vi.fn();
+  let user = "alice";
+
+  beforeEach(() => {
+    resetChatApiGuard();
+    window.localStorage.clear();
+    ls.set("user_alice", "x");
+    ls.set("user_bob", "x");
+    getQueryClient().clear();
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (input: string) =>
+      input === SESSION_URL
+        ? ok()
+        : new Response(JSON.stringify({ ok: true, userId: "u1", channelId: "c1" }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: user }, username: user }) as any
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    getQueryClient().clear();
+  });
+
+  function calls() {
+    return fetchMock.mock.calls.map(([input, init]) => {
+      const method = (init as RequestInit | undefined)?.method ?? "GET";
+      const body = (init as RequestInit | undefined)?.body;
+      const who = body ? ` ${JSON.parse(String(body)).username}` : "";
+      return `${method} ${input}${who}`;
+    });
+  }
+
+  it("bootstraps A again after A -> B -> A", async () => {
+    const queryClient = getQueryClient();
+    const { rerender } = renderHook(() => useMattermostBootstrap(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children)
+    });
+    await waitFor(() => expect(calls()).toHaveLength(1));
+
+    actionsFor("alice").setActiveUser("bob");
+    user = "bob";
+    rerender();
+    await waitFor(() => expect(calls()).toHaveLength(3));
+
+    actionsFor("bob").setActiveUser("alice");
+    user = "alice";
+    rerender();
+    await waitFor(() => expect(calls()).toHaveLength(5));
+
+    expect(calls()).toEqual([
+      "POST /api/mattermost/bootstrap alice",
+      `DELETE ${SESSION_URL}`,
+      "POST /api/mattermost/bootstrap bob",
+      `DELETE ${SESSION_URL}`,
+      "POST /api/mattermost/bootstrap alice"
+    ]);
+  });
+
+  it("drops every cached chat query and keeps the rest", () => {
+    const queryClient = getQueryClient();
+    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], { ok: true });
+    queryClient.setQueryData(["mattermost-unread", "alice"], { total: 1 });
+    queryClient.setQueryData(["mattermost-posts-infinite", "c1"], { pages: [] });
+    queryClient.setQueryData(["mattermost", "dm-privacy"], "all");
+    queryClient.setQueryData(["posts", "entry", "/@a/p"], { author: "a" });
+
+    actionsFor("alice").setActiveUser("bob");
+
+    expect(queryClient.getQueryData(["mattermost-bootstrap", "alice", undefined])).toBeUndefined();
+    expect(queryClient.getQueryData(["mattermost-unread", "alice"])).toBeUndefined();
+    expect(queryClient.getQueryData(["mattermost-posts-infinite", "c1"])).toBeUndefined();
+    expect(queryClient.getQueryData(["mattermost", "dm-privacy"])).toBeUndefined();
+    expect(queryClient.getQueryData(["posts", "entry", "/@a/p"])).toEqual({ author: "a" });
+  });
+
+  it("closes the open chat websocket", () => {
+    const socket = new MattermostWebSocket();
+    const disconnect = vi.spyOn(socket, "disconnect");
+
+    actionsFor("alice").setActiveUser(null);
+
+    expect(disconnect).toHaveBeenCalled();
+  });
+
+  it("asks the bootstrap again when a chat call answers 401", async () => {
+    const queryClient = getQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    fetchMock.mockResolvedValue(new Response("", { status: 401 }));
+
+    await chatApiFetch("/api/mattermost/channels/unreads");
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-bootstrap"] });
+  });
+});
+
+// #2023 review: AbortSignal.timeout is missing on older Safari, and a sync
+// throw from the reset must not abort the logout.
+describe("chat session reset robustness (#2023)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("settles a hung reset after its timeout without AbortSignal.timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("AbortSignal", { ...AbortSignal, timeout: undefined });
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+    const { resetChatSession, chatSessionSettled } = await import("@/features/chat/chat-session");
+
+    void resetChatSession();
+    let settled = false;
+    void chatSessionSettled().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(settled).toBe(true);
+  });
+
+  it("logs out even when fetch throws synchronously", () => {
+    window.localStorage.clear();
+    ls.set("user_alice", "x");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        throw new TypeError("sync");
+      })
+    );
+    const state = { activeUser: { username: "alice" } as any };
+    const actions = createAuthenticationActions(
+      (patch) => Object.assign(state, patch),
+      () => state as any
+    );
+
+    expect(() => actions.setActiveUser(null)).not.toThrow();
+    expect(state.activeUser).toBeNull();
   });
 });

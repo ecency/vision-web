@@ -55,6 +55,14 @@ export type ConnectionStatus = "live" | "connected" | "disconnected";
 // Global instance tracker to prevent duplicate connections
 let globalInstance: MattermostWebSocket | null = null;
 
+/**
+ * Closes the chat websocket that is open, if any. A logout or account switch
+ * calls it: the socket was authenticated as the previous account (#2023).
+ */
+export function disconnectActiveChatSocket(): void {
+  globalInstance?.disconnect();
+}
+
 export class MattermostWebSocket {
   private ws: WebSocket | null = null;
   private channelId: string | null = null;

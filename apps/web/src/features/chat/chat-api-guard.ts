@@ -11,6 +11,7 @@
  *    into a request storm.
  */
 
+import { getQueryClient } from "@/core/react-query";
 import { chatSessionFetch } from "./chat-session";
 
 const DEFAULT_PAUSE_MS = 10 * 60_000; // matches the edge rate-limit block window
@@ -18,6 +19,11 @@ const MAX_PAUSE_MS = 15 * 60_000;
 const MAX_POLL_MS = 10 * 60_000;
 
 let pausedUntil = 0;
+
+// A 401 means the chat cookie is gone or belongs to another account: ask the
+// bootstrap again (it sets the cookie), at most once a minute.
+const REBOOTSTRAP_AFTER_401_MS = 60_000;
+let lastRebootstrapAt = 0;
 
 /**
  * `errorUpdateCount` at the last successful fetch, per query hash. Consecutive
@@ -34,6 +40,7 @@ export function chatApiPauseRemaining(now = Date.now()): number {
 /** Test-only helper. */
 export function resetChatApiGuard(): void {
   pausedUntil = 0;
+  lastRebootstrapAt = 0;
   errorBaselines.clear();
 }
 
@@ -61,6 +68,13 @@ export async function chatApiFetch(input: string, init?: RequestInit): Promise<R
   // After a logout or switch, waits for the previous account's chat cookie to
   // be expired so this request cannot run as that account.
   const res = await chatSessionFetch(input, init);
+
+  if (res.status === 401 && Date.now() - lastRebootstrapAt >= REBOOTSTRAP_AFTER_401_MS) {
+    lastRebootstrapAt = Date.now();
+    void getQueryClient()
+      .invalidateQueries({ queryKey: ["mattermost-bootstrap"] })
+      .catch(() => undefined);
+  }
 
   if (res.status === 429) {
     const pauseMs = Math.min(parseRetryAfterMs(res.headers.get("Retry-After")), MAX_PAUSE_MS);

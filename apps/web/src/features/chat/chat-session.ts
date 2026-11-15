@@ -10,6 +10,9 @@
  * expiry does. Chat requests therefore wait for `chatSessionSettled()`.
  */
 
+import { getQueryClient } from "@/core/react-query";
+import { disconnectActiveChatSocket } from "./mattermost-websocket";
+
 export const CHAT_SESSION_URL = "/api/mattermost/session";
 
 // A hung request must not stall chat for the rest of the page's life.
@@ -17,18 +20,64 @@ const RESET_TIMEOUT_MS = 10_000;
 
 let pendingReset: Promise<void> | null = null;
 
+/** Every chat query: "mattermost-<what>" keys and ["mattermost", ...] ones. */
+function isChatQueryKey(queryKey: readonly unknown[]): boolean {
+  const head = queryKey[0];
+  return typeof head === "string" && (head === "mattermost" || head.startsWith("mattermost-"));
+}
+
+/**
+ * Drops what the browser holds of the previous account's chat: the cached
+ * chat queries and the open websocket. A cached bootstrap is the important
+ * one: switching A -> B -> A within its staleTime found A's bootstrap still
+ * fresh, so nothing set A's cookie again and every chat call answered 401.
+ */
+function clearChatClientState(): void {
+  try {
+    getQueryClient().removeQueries({ predicate: (query) => isChatQueryKey(query.queryKey) });
+  } catch {
+    // Never block a logout on the cache.
+  }
+  try {
+    disconnectActiveChatSocket();
+  } catch {
+    // Same for the socket.
+  }
+}
+
+/** Resolves when `promise` settles or after `ms`, whichever is first. */
+function settleWithin(promise: Promise<unknown>, ms: number): Promise<void> {
+  // Not AbortSignal.timeout: older Safari does not have it.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return Promise.race([promise.then(() => undefined), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 export function resetChatSession(): Promise<void> {
-  const reset: Promise<void> = fetch(CHAT_SESSION_URL, {
-    method: "DELETE",
-    credentials: "same-origin",
-    // A logout can be followed by a navigation; let the request finish.
-    keepalive: true,
-    signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(RESET_TIMEOUT_MS) : undefined
-  })
+  clearChatClientState();
+
+  let request: Promise<unknown>;
+  try {
+    request = fetch(CHAT_SESSION_URL, {
+      method: "DELETE",
+      credentials: "same-origin",
+      // A logout can be followed by a navigation; let the request finish.
+      keepalive: true
+    });
+  } catch (error) {
+    request = Promise.reject(error);
+  }
+
+  const reset: Promise<void> = settleWithin(request, RESET_TIMEOUT_MS)
     .then(
       () => undefined,
-      // Failure leaves the old cookie in place, and the server still answers
-      // for whoever it belongs to. Never block chat on it.
+      // Failure leaves the old cookie in place; the server-side account
+      // binding keeps it from answering for the new account. Never block chat
+      // on it.
       () => undefined
     )
     .finally(() => {

@@ -50,7 +50,12 @@ export const createAuthenticationActions = (
     // must not carry over (#2023). A page load restoring the persisted account
     // starts from null and keeps the session it already has.
     if (currentUsername) {
-      void resetChatSession();
+      // A sync throw here must not abort the logout itself.
+      try {
+        void resetChatSession();
+      } catch {
+        // The server-side account binding still keeps the old session out.
+      }
     }
 
     if (name) {
