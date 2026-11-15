@@ -8,6 +8,7 @@ import i18next from "i18next";
 import { useState } from "react";
 import { ProCheckout } from "./pro-checkout";
 import { ProBlogClaim } from "./pro-blog-claim";
+import { withProMember } from "./pro-config";
 
 interface Props {
   /** The authenticated buyer. */
@@ -40,11 +41,9 @@ export function ProDialog({ username, onHide, resumePaymentIntent }: Props) {
   const handleActivated = async () => {
     setDone(true);
     await queryClient.cancelQueries({ queryKey: QueryKeys.accounts.proMembers() });
-    queryClient.setQueryData<ProMembersResponse>(QueryKeys.accounts.proMembers(), (prev) => {
-      const members = prev?.members ?? [];
-      if (members.includes(username)) return prev;
-      return { members: [...members, username], count: (prev?.count ?? 0) + 1 };
-    });
+    queryClient.setQueryData<ProMembersResponse>(QueryKeys.accounts.proMembers(), (prev) =>
+      withProMember(prev, username)
+    );
   };
 
   // Redirect-based methods send the buyer to /perks and Stripe re-appends payment_intent; the
