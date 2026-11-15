@@ -4,6 +4,7 @@ import Cookies from "js-cookie";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { sentry } from "@/core/sentry/lazy-sentry";
 import { clearSessionActiveKey } from "@/utils/session-active-key";
+import { resetChatSession } from "@/features/chat/chat-session";
 
 const makeActiveUser = (username: string): ActiveUser => ({
   username,
@@ -44,6 +45,13 @@ export const createAuthenticationActions = (
     }
 
     const nextActiveUser = name ? load(name) : null;
+
+    // Logout or switch away from a signed-in account: its chat session cookie
+    // must not carry over (#2023). A page load restoring the persisted account
+    // starts from null and keeps the session it already has.
+    if (currentUsername) {
+      void resetChatSession();
+    }
 
     if (name) {
       ls.set("active_user", name);

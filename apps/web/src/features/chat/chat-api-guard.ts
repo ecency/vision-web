@@ -11,6 +11,8 @@
  *    into a request storm.
  */
 
+import { chatSessionSettled } from "./chat-session";
+
 const DEFAULT_PAUSE_MS = 10 * 60_000; // matches the edge rate-limit block window
 const MAX_PAUSE_MS = 15 * 60_000;
 const MAX_POLL_MS = 10 * 60_000;
@@ -55,6 +57,10 @@ export async function chatApiFetch(input: string, init?: RequestInit): Promise<R
   if (remaining > 0) {
     throw new Error(`Chat API paused for ${Math.ceil(remaining / 1000)}s after rate limiting`);
   }
+
+  // After a logout or switch, wait for the previous account's chat cookie to
+  // be expired so this request cannot run as that account.
+  await chatSessionSettled();
 
   const res = await fetch(input, init);
 

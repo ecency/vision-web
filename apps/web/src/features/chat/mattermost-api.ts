@@ -8,6 +8,7 @@ import { getAccessToken, getRefreshToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";
 import { hsTokenRenew } from "@ecency/sdk";
 import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-guard";
+import { chatSessionSettled } from "./chat-session";
 
 /** Safely parse JSON from a fetch response, falling back to a readable error */
 async function safeJson<T>(res: Response): Promise<T> {
@@ -155,6 +156,10 @@ export function useMattermostBootstrap(community?: string) {
       if (!accessToken && !refreshToken) {
         throw new Error("Authentication required");
       }
+
+      // A logout or switch may still be expiring the previous account's chat
+      // cookie. Let it land first, or it would wipe the cookie set below.
+      await chatSessionSettled();
 
       // First attempt with existing tokens
       let res = await fetch("/api/mattermost/bootstrap", {

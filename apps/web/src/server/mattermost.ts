@@ -964,6 +964,24 @@ export function withMattermostTokenCookie(response: NextResponse, token: string)
   return response;
 }
 
+/**
+ * Expires the chat session cookie. It is httpOnly, so the browser cannot drop
+ * it itself: logout and account switch call the session route, which uses this.
+ * Same attributes as when it was set, or the browser keeps the original.
+ */
+export function clearMattermostTokenCookie(response: NextResponse) {
+  response.cookies.set({
+    name: MATTERMOST_TOKEN_COOKIE,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0
+  });
+  return response;
+}
+
 export async function getMattermostTokenFromCookies(): Promise<string | null> {
   // 1) Check X-MM-Token header first (mobile clients send token explicitly
   //    to avoid race conditions with async cookie jar on React Native)
