@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CHAT_BOOTSTRAP_QUERY_PREFIX } from "@/features/chat/chat-session";
+import { ChatAccountInactiveError } from "@/features/chat/chat-session-errors";
+import type { AuthenticationState } from "@/core/global-store/modules/authentication-module";
+import type { ActiveUser } from "@/entities";
 import { createAuthenticationActions } from "@/core/global-store/modules/authentication-module";
 import { chatApiFetch, resetChatApiGuard } from "@/features/chat/chat-api-guard";
 import * as ls from "@/utils/local-storage";
@@ -44,10 +48,12 @@ vi.mock("@/utils", async () => ({
 const SESSION_URL = "/api/mattermost/session";
 
 function actionsFor(currentUsername: string | null) {
-  const state = { activeUser: currentUsername ? ({ username: currentUsername } as any) : null };
+  const state: AuthenticationState = {
+    activeUser: currentUsername ? ({ username: currentUsername } as ActiveUser) : null
+  };
   return createAuthenticationActions(
     (patch) => Object.assign(state, patch),
-    () => state as any
+    () => state
   );
 }
 
@@ -58,7 +64,7 @@ function ok() {
 /** A mounted bootstrap query, as on the chat pages, without a network call. */
 function mountBootstrap(username = "alice") {
   const queryClient = getQueryClient();
-  const queryKey = ["mattermost-bootstrap", username, undefined];
+  const queryKey = [...CHAT_BOOTSTRAP_QUERY_PREFIX, username, undefined];
   queryClient.setQueryData(queryKey, { ok: true, userId: "u1", channelId: "c1" });
   const observer = new QueryObserver(queryClient, {
     queryKey,
@@ -66,6 +72,11 @@ function mountBootstrap(username = "alice") {
     staleTime: Infinity
   });
   return observer.subscribe(() => undefined);
+}
+
+/** This tab's account in the real global store. */
+function setTabAccount(username: string | null) {
+  useGlobalStore.setState({ activeUser: username ? ({ username } as ActiveUser) : null });
 }
 
 function urlOf(call: unknown[]) {
@@ -307,17 +318,17 @@ describe("chat client state on an account switch (#2023)", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     vi.mocked(useActiveAccount).mockImplementation(
-      () => ({ activeUser: { username: user }, username: user }) as any
+      () => ({ activeUser: { username: user }, username: user }) as unknown as ReturnType<typeof useActiveAccount>
     );
     // This tab's account is the one active in the browser.
-    useGlobalStore.setState({ activeUser: { username: "alice" } } as any);
+    setTabAccount("alice");
     Cookies.set("active_user", "alice");
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     getQueryClient().clear();
-    useGlobalStore.setState({ activeUser: null } as any);
+    setTabAccount(null);
     Cookies.remove("active_user");
   });
 
@@ -340,11 +351,13 @@ describe("chat client state on an account switch (#2023)", () => {
 
     actionsFor("alice").setActiveUser("bob");
     user = "bob";
+    setTabAccount("bob");
     rerender();
     await waitFor(() => expect(calls()).toHaveLength(3));
 
     actionsFor("bob").setActiveUser("alice");
     user = "alice";
+    setTabAccount("alice");
     rerender();
     await waitFor(() => expect(calls()).toHaveLength(5));
 
@@ -398,7 +411,7 @@ describe("chat client state on an account switch (#2023)", () => {
     // This tab is still on alice; another tab made bob active.
     Cookies.set("active_user", "bob");
     queryClient.setQueryData(
-      ["mattermost-bootstrap", "alice", undefined],
+      [...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined],
       { ok: true, userId: "u1", channelId: "c1" },
       { updatedAt: 1 }
     );
@@ -420,7 +433,7 @@ describe("chat client state on an account switch (#2023)", () => {
 
   it("drops every cached chat query and keeps the rest", () => {
     const queryClient = getQueryClient();
-    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], { ok: true });
+    queryClient.setQueryData([...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined], { ok: true });
     queryClient.setQueryData(["mattermost-unread", "alice"], { total: 1 });
     queryClient.setQueryData(["mattermost-posts-infinite", "c1"], { pages: [] });
     queryClient.setQueryData(["mattermost", "dm-privacy"], "all");
@@ -428,7 +441,7 @@ describe("chat client state on an account switch (#2023)", () => {
 
     actionsFor("alice").setActiveUser("bob");
 
-    expect(queryClient.getQueryData(["mattermost-bootstrap", "alice", undefined])).toBeUndefined();
+    expect(queryClient.getQueryData([...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined])).toBeUndefined();
     expect(queryClient.getQueryData(["mattermost-unread", "alice"])).toBeUndefined();
     expect(queryClient.getQueryData(["mattermost-posts-infinite", "c1"])).toBeUndefined();
     expect(queryClient.getQueryData(["mattermost", "dm-privacy"])).toBeUndefined();
@@ -496,7 +509,7 @@ describe("chat client state on an account switch (#2023)", () => {
     await chatApiFetch("/api/mattermost/channels/unreads");
     unmount();
 
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-bootstrap"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: CHAT_BOOTSTRAP_QUERY_PREFIX });
   });
 
   it("recovers the channel list once the bootstrap after a 401 succeeds (#2023 review)", async () => {
@@ -504,7 +517,7 @@ describe("chat client state on an account switch (#2023)", () => {
     const defaults = queryClient.getDefaultOptions();
     queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retryDelay: 5 } });
     // The bootstrap is cached and fresh, but the chat cookie is gone.
-    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], {
+    queryClient.setQueryData([...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined], {
       ok: true,
       userId: "u1",
       channelId: "c1"
@@ -550,7 +563,7 @@ describe("chat client state on an account switch (#2023)", () => {
     const defaults = queryClient.getDefaultOptions();
     queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retryDelay: 5 } });
     // The bootstrap is cached and fresh, but the chat cookie is gone.
-    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], {
+    queryClient.setQueryData([...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined], {
       ok: true,
       userId: "u1",
       channelId: "c1"
@@ -638,10 +651,10 @@ describe("chat session reset robustness (#2023)", () => {
         throw new TypeError("sync");
       })
     );
-    const state = { activeUser: { username: "alice" } as any };
+    const state: AuthenticationState = { activeUser: { username: "alice" } as ActiveUser };
     const actions = createAuthenticationActions(
       (patch) => Object.assign(state, patch),
-      () => state as any
+      () => state
     );
 
     expect(() => actions.setActiveUser(null)).not.toThrow();
@@ -662,19 +675,20 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(Date, "now").mockImplementation(() => now);
-    useGlobalStore.setState({ activeUser: { username: "alice" } } as any);
+    setTabAccount("alice");
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     Cookies.remove("active_user");
-    useGlobalStore.setState({ activeUser: null } as any);
+    setTabAccount(null);
   });
 
   function bootstrapAsks(invalidate: ReturnType<typeof vi.spyOn>) {
     return invalidate.mock.calls.filter(
-      ([filters]) => JSON.stringify((filters as any)?.queryKey) === '["mattermost-bootstrap"]'
+      ([filters]) => JSON.stringify((filters as { queryKey?: unknown } | undefined)?.queryKey) ===
+        JSON.stringify(CHAT_BOOTSTRAP_QUERY_PREFIX)
     ).length;
   }
 
@@ -685,9 +699,13 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
     fetchMock.mockResolvedValue(new Response("", { status: 401 }));
     const unmount = mountBootstrap();
 
-    await chatApiFetch("/api/mattermost/channels/unreads");
+    // The stale tab sends nothing at all (#2087 review), so no 401 either.
+    await expect(chatApiFetch("/api/mattermost/channels/unreads")).rejects.toBeInstanceOf(
+      ChatAccountInactiveError
+    );
     unmount();
 
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(bootstrapAsks(invalidate)).toBe(0);
   });
 

@@ -12,7 +12,12 @@ import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-guard";
 // Every request here goes through chatSessionFetch, which waits for a pending
 // logout/switch session reset (#2023). Keep bare fetch out of this module.
-import { chatSessionFetch, chatSessionGeneration, chatSessionSettled } from "./chat-session";
+import {
+  CHAT_BOOTSTRAP_QUERY_PREFIX,
+  chatSessionFetch,
+  chatSessionGeneration,
+  chatSessionSettled
+} from "./chat-session";
 import { ChatAccountInactiveError, ChatSessionChangedError } from "./chat-session-errors";
 
 export { ChatAccountInactiveError, ChatSessionChangedError };
@@ -151,7 +156,7 @@ export function useMattermostBootstrap(community?: string) {
   const users = useGlobalStore((state) => state.users);
 
   return useQuery({
-    queryKey: ["mattermost-bootstrap", username, community],
+    queryKey: [...CHAT_BOOTSTRAP_QUERY_PREFIX, username, community],
     enabled: Boolean(username),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,

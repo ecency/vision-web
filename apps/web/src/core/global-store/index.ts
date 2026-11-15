@@ -9,6 +9,7 @@ import { createUsersActions } from "@/core/global-store/modules/users-module";
 import { createAuthenticationActions } from "@/core/global-store/modules/authentication-module";
 import { createSigningKeyActions } from "@/core/global-store/modules/signing-key-module";
 import { createNotificationsActions } from "@/core/global-store/modules/notifications-module";
+import { registerChatTabAccountReader } from "@/features/chat/chat-session";
 
 export const useGlobalStore = create(
   combine(INITIAL_STATE, (set, getState, store) => ({
@@ -20,3 +21,6 @@ export const useGlobalStore = create(
     ...createNotificationsActions(set, getState)
   }))
 );
+
+// Chat requests check this tab's account against the browser's active one.
+registerChatTabAccountReader(() => useGlobalStore.getState().activeUser?.username);

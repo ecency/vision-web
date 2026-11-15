@@ -17,7 +17,11 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams()
 }));
 vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: any) => (
+  default: ({
+    href,
+    children,
+    ...rest
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
     <a href={href} {...rest}>
       {children}
     </a>

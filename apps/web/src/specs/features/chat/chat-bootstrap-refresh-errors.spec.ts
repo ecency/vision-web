@@ -5,7 +5,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { getQueryClient } from "@/core/react-query";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { resetChatSession } from "@/features/chat/chat-session";
+import { CHAT_BOOTSTRAP_QUERY_PREFIX, resetChatSession } from "@/features/chat/chat-session";
 
 const hsTokenRenew = vi.hoisted(() => vi.fn());
 
@@ -41,7 +41,7 @@ describe("bootstrap token refresh keeps the session guard errors", () => {
         : new Response("{}", { status: 200 })
     );
     vi.mocked(useActiveAccount).mockImplementation(
-      () => ({ activeUser: { username: "alice" }, username: "alice" }) as any
+      () => ({ activeUser: { username: "alice" }, username: "alice" }) as unknown as ReturnType<typeof useActiveAccount>
     );
     Cookies.set("active_user", "alice");
   });
@@ -98,7 +98,7 @@ describe("bootstrap token refresh keeps the session guard errors", () => {
     // A fresh cached bootstrap, so mounting runs nothing: the reset removes
     // the query, so its own rejection is not observable through the hook.
     // Run its query function directly instead.
-    const queryKey = ["mattermost-bootstrap", "alice", undefined];
+    const queryKey = [...CHAT_BOOTSTRAP_QUERY_PREFIX, "alice", undefined];
     getQueryClient().setQueryData(queryKey, { ok: true, userId: "u1", channelId: "c1" });
     mount();
     const queryFn = getQueryClient().getQueryCache().find({ queryKey })?.options.queryFn as (

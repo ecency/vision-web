@@ -10,6 +10,7 @@ import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
 import {
   MATTERMOST_OWNER_COOKIE,
   MATTERMOST_TOKEN_COOKIE,
+  chatAccountMatchesCookies,
   mattermostCookieToken,
   ownerlessMattermostSession
 } from "./mattermost-session-cookie";
@@ -1021,6 +1022,9 @@ export async function getMattermostTokenFromCookies(
   // 2) Fall back to httpOnly cookie (web clients), only for the active account
   const cookieStore = await cookies();
   const readCookie = (name: string) => cookieStore.get(name)?.value;
+  if (!chatAccountMatchesCookies(headerStore.get("x-chat-account"), readCookie)) {
+    return null;
+  }
   const token = mattermostCookieToken(readCookie);
   if (token) {
     return token;

@@ -51,3 +51,19 @@ export function ownerlessMattermostSession(
   const active = decodeCookie(readCookie(ACTIVE_USER_COOKIE));
   return active ? { token, active } : null;
 }
+
+/**
+ * Whether a web chat request may use the session cookies: a request naming
+ * its tab's account (`X-Chat-Account`) only while that is the account active
+ * in the browser. The cookies are shared by every tab, so after another tab
+ * switched account they answer as that account; a stale tab must not send as
+ * it (#2087 review). A request without the header is not limited here.
+ */
+export function chatAccountMatchesCookies(
+  requested: string | null | undefined,
+  readCookie: (name: string) => string | undefined
+): boolean {
+  const account = requested?.trim().toLowerCase();
+  if (!account) return true;
+  return account === decodeCookie(readCookie(ACTIVE_USER_COOKIE));
+}

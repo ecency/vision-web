@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthenticationState } from "@/core/global-store/modules/authentication-module";
+import type { ActiveUser } from "@/entities";
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -19,14 +21,14 @@ vi.mock("@/core/sentry/lazy-sentry", () => ({ sentry: { setUser: vi.fn() } }));
 describe("stale tab notice with no account active in the browser", () => {
   beforeEach(() => {
     vi.mocked(useActiveAccount).mockImplementation(
-      () => ({ activeUser: { username: "alice" }, username: "alice" }) as any
+      () => ({ activeUser: { username: "alice" }, username: "alice" }) as unknown as ReturnType<typeof useActiveAccount>
     );
-    useGlobalStore.setState({ login: false } as any);
+    useGlobalStore.setState({ login: false });
     Cookies.remove("active_user");
   });
 
   afterEach(() => {
-    useGlobalStore.setState({ login: false } as any);
+    useGlobalStore.setState({ login: false });
     Cookies.remove("active_user");
   });
 
@@ -53,10 +55,10 @@ describe("stale tab notice with no account active in the browser", () => {
   it("logging in again as this tab's account makes it the browser's active account", () => {
     window.localStorage.clear();
     ls.set("user_alice", "x");
-    const state = { activeUser: { username: "alice" } as any };
+    const state: AuthenticationState = { activeUser: { username: "alice" } as ActiveUser };
     const actions = createAuthenticationActions(
       (patch) => Object.assign(state, patch),
-      () => state as any
+      () => state
     );
 
     // The login dialog ends in setActiveUser for the same account.

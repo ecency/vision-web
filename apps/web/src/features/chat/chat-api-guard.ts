@@ -15,7 +15,7 @@ import Cookies from "js-cookie";
 import { ACTIVE_USER_COOKIE_NAME, CHAT_SESSION_HEADER } from "@/consts";
 import { useGlobalStore } from "@/core/global-store";
 import { getQueryClient } from "@/core/react-query";
-import { chatSessionFetch, isChatQueryKey } from "./chat-session";
+import { CHAT_BOOTSTRAP_QUERY_PREFIX, chatSessionFetch, isChatQueryKey } from "./chat-session";
 
 const DEFAULT_PAUSE_MS = 10 * 60_000; // matches the edge rate-limit block window
 const MAX_PAUSE_MS = 15 * 60_000;
@@ -86,7 +86,7 @@ function shouldRebootstrap(): boolean {
   // Elsewhere the 401 renews nothing, so it must not spend the throttle or
   // the cap that /chats needs later.
   const bootstrapMounted =
-    getQueryClient().getQueryCache().findAll({ queryKey: ["mattermost-bootstrap"], type: "active" })
+    getQueryClient().getQueryCache().findAll({ queryKey: CHAT_BOOTSTRAP_QUERY_PREFIX, type: "active" })
       .length > 0;
   if (!bootstrapMounted) return false;
 
@@ -107,15 +107,15 @@ function shouldRebootstrap(): boolean {
 async function rebootstrapChat(): Promise<void> {
   const queryClient = getQueryClient();
   const since = Date.now();
-  await queryClient.invalidateQueries({ queryKey: ["mattermost-bootstrap"] });
+  await queryClient.invalidateQueries({ queryKey: CHAT_BOOTSTRAP_QUERY_PREFIX });
   const renewed = queryClient
     .getQueryCache()
-    .findAll({ queryKey: ["mattermost-bootstrap"] })
+    .findAll({ queryKey: CHAT_BOOTSTRAP_QUERY_PREFIX })
     .some((query) => query.state.status === "success" && query.state.dataUpdatedAt >= since);
   if (!renewed) return;
   await queryClient.invalidateQueries({
     predicate: (query) =>
-      isChatQueryKey(query.queryKey) && query.queryKey[0] !== "mattermost-bootstrap"
+      isChatQueryKey(query.queryKey) && query.queryKey[0] !== CHAT_BOOTSTRAP_QUERY_PREFIX[0]
   });
 }
 
