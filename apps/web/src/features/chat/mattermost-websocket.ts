@@ -1,5 +1,6 @@
 import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 import type { MattermostPost, MattermostPostsResponse } from "@/features/chat/mattermost-api";
+import { registerChatSocketCloser } from "./chat-session";
 
 declare global {
   interface Window {
@@ -62,6 +63,9 @@ let globalInstance: MattermostWebSocket | null = null;
 export function disconnectActiveChatSocket(): void {
   globalInstance?.disconnect();
 }
+
+// chat-session calls this on a reset without importing this module (#2023).
+registerChatSocketCloser(disconnectActiveChatSocket);
 
 export class MattermostWebSocket {
   private ws: WebSocket | null = null;

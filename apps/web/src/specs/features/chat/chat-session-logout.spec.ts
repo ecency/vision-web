@@ -348,6 +348,14 @@ describe("chat client state on an account switch (#2023)", () => {
     expect(disconnect).toHaveBeenCalled();
   });
 
+  it("keeps the websocket out of the module graph of every page (#2023 review)", () => {
+    // chat-session is imported by the global store's authentication module,
+    // so a static import of the websocket here would ship it on every page.
+    const source = readFileSync(resolve(__dirname, "../../../features/chat/chat-session.ts"), "utf8");
+    expect(source).not.toMatch(/from\s+["']\.\/mattermost-websocket["']/);
+    expect(source).not.toMatch(/import\(\s*["']\.\/mattermost-websocket["']/);
+  });
+
   it("asks the bootstrap again when a chat call answers 401", async () => {
     const queryClient = getQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");

@@ -11,7 +11,6 @@
  */
 
 import { getQueryClient } from "@/core/react-query";
-import { disconnectActiveChatSocket } from "./mattermost-websocket";
 
 export const CHAT_SESSION_URL = "/api/mattermost/session";
 
@@ -19,6 +18,15 @@ export const CHAT_SESSION_URL = "/api/mattermost/session";
 const RESET_TIMEOUT_MS = 10_000;
 
 let pendingReset: Promise<void> | null = null;
+
+// Set by the websocket module when it loads. chat-session sits in every
+// page's graph (the global store imports it), the websocket must not.
+let closeChatSocket: (() => void) | null = null;
+
+/** The websocket module registers how to close the open chat socket. */
+export function registerChatSocketCloser(closer: () => void): void {
+  closeChatSocket = closer;
+}
 
 /** Every chat query: "mattermost-<what>" keys and ["mattermost", ...] ones. */
 function isChatQueryKey(queryKey: readonly unknown[]): boolean {
@@ -39,7 +47,7 @@ function clearChatClientState(): void {
     // Never block a logout on the cache.
   }
   try {
-    disconnectActiveChatSocket();
+    closeChatSocket?.();
   } catch {
     // Same for the socket.
   }
