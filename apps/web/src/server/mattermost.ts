@@ -1165,6 +1165,14 @@ export async function requireMattermostSuperAdmin(
 }
 
 export function handleMattermostError(error: unknown) {
+  // A 403 is a permission answer (not a member of the channel, not allowed),
+  // not a lost session: a 401 makes the web client bootstrap again and refetch
+  // every chat query (#2023). The channel view reads "forbidden" / 403 as not
+  // a member, as it does a 401.
+  if (error instanceof MattermostError && error.status === 403) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   if (isMattermostUnauthorizedError(error)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
