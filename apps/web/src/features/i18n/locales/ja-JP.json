@@ -1853,7 +1853,7 @@
     "reblogged": "{{source}} があなたの投稿をリブログしました",
     "transfer": "{{source}} が {{amount}}を送信しました",
     "delegations": "{{source}} があなたに {{amount}}を委任しました",
-    "checkins_other": "あなたは今週 {{count}} 日 にチェックインしました。続けてください！",
+    "checkins_other": "あなたは今週 {{count}} 日にチェックインしました。続けてください！",
     "payouts": "コンテンツの支払いの準備ができました。",
     "payouts-amount": "{{amount}} の支払いを受け取りました。",
     "payouts-amount-usd": "${{amount_usd}} ({{amount}}) を獲得しました。",

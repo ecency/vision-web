@@ -1860,7 +1860,7 @@
     "payouts-amount-usd": "आपने ${{amount_usd}} ({{amount}}) कमाए।",
     "payouts-title": "{{body}} \"{{title}}\"",
     "monthly-posts_one": "आपने इस महीने {{count}} पोस्ट बनाई। ऐसे ही जारी रखें!",
-    "monthly-posts_other": "आपने इस महीने {{count}} पोस्ट बनाई। ऐसे ही जारी रखें!",
+    "monthly-posts_other": "आपने इस महीने {{count}} पोस्ट बनाईं। ऐसे ही जारी रखें!",
     "weekly-earnings": "आपने इस सप्ताह ${{total}} कमाए - पोस्ट से ${{author}}, क्यूरेशन से ${{curation}}।",
     "weekly-earnings-short": "आपने इस सप्ताह अपनी पोस्ट और क्यूरेशन से ${{total}} कमाए।"
   },
