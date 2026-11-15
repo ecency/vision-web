@@ -113,7 +113,23 @@ export async function loadLocale(lang: string) {
   if (i18n.getResourceBundle(lang, "translation")?.g) return;
 
   const mod = await localeLoaders[lang]();
-  i18n.addResourceBundle(lang, "translation", mod.default || mod);
+  const bundle = mod.default || mod;
+  i18n.addResourceBundle(lang, "translation", bundle);
+  // i18next canonicalises the language before it looks up bundles
+  // (Intl.getCanonicalLocales("sr-CS") is "sr-RS"), so a bundle kept only
+  // under the stored code is never found and the UI falls back to English.
+  // Register it under the canonical code as well; the stored code and the
+  // picker keep "sr-CS" (#2081).
+  const canonical = canonicalLanguage(lang);
+  if (canonical !== lang) i18n.addResourceBundle(canonical, "translation", bundle);
+}
+
+function canonicalLanguage(lang: string): string {
+  try {
+    return Intl.getCanonicalLocales(lang)[0] ?? lang;
+  } catch {
+    return lang;
+  }
 }
 
 const supportedCodes = new Set(langOptions.map((l) => l.code));
