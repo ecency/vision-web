@@ -375,7 +375,8 @@ describe("call sites feed the tracker — adaptive behavior end to end", () => {
   // a lagging node out. The result is unchanged.
   it("callRPCWithFallback tells onAnswer which node produced the result", async () => {
     config.nodes = ["https://q-down.test", "https://q-up.test"];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any, init: any) =>
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url: string | URL | Request, init?: RequestInit) =>
       String(url).includes("q-down") ? new Response("down", { status: 503 }) : jsonOk(init, null)
     );
     const nodes: string[] = [];
@@ -391,7 +392,8 @@ describe("call sites feed the tracker — adaptive behavior end to end", () => {
   // #2002: the observer reports each node's outcome and changes nothing else.
   it("callWithQuorum tells an observer what each node answered or threw, same outcome", async () => {
     config.nodes = ["https://q-a.test", "https://q-b.test"];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any, init: any) =>
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url: string | URL | Request, init?: RequestInit) =>
       String(url).includes("q-a")
         ? new Response("down", { status: 503 })
         : jsonOk(init, null)
@@ -410,5 +412,32 @@ describe("call sites feed the tracker — adaptive behavior end to end", () => {
     const byNode = Object.fromEntries(outcomes.map((o) => [o.node, o]));
     expect(byNode["https://q-b.test"]).toEqual({ node: "https://q-b.test", result: null });
     expect(String(byNode["https://q-a.test"].error)).toContain("HTTP 503");
+  });
+
+  // #2087 review: a null result never was a consensus for any caller (the
+  // loop treated the falsy pick as "keep asking"), so every node answering
+  // null still ends in the same rejection. What changed is only that the
+  // null group no longer shadows a later node's real result.
+  it("callWithQuorum: every node answering null still rejects, as before", async () => {
+    config.nodes = ["https://q-a.test", "https://q-b.test"];
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (_url: string | URL | Request, init?: RequestInit) => jsonOk(init, null)
+    );
+    await expect(
+      callWithQuorum("bridge.get_post", { author: "a", permlink: "p" }, 1)
+    ).rejects.toThrow("No more nodes available.");
+  });
+
+  it("callWithQuorum: a null from one node does not hide a later node's result", async () => {
+    config.nodes = ["https://q-a.test", "https://q-b.test"];
+    // Keep config order: the null node is asked first.
+    vi.spyOn(Math, "random").mockReturnValue(0.99);
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (url: string | URL | Request, init?: RequestInit) =>
+        String(url).includes("q-a") ? jsonOk(init, null) : jsonOk(init, { author: "a" })
+    );
+    await expect(
+      callWithQuorum("bridge.get_post", { author: "a", permlink: "p" }, 1)
+    ).resolves.toEqual({ author: "a" });
   });
 });

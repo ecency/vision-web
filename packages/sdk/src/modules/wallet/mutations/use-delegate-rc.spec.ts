@@ -14,6 +14,7 @@ vi.mock("@/modules/core/mutations", async (importOriginal) => {
 
 import { useDelegateRc } from "./use-delegate-rc";
 import { QueryKeys } from "@/modules/core";
+import type { AuthContextV2, PlatformAdapter } from "@/modules/core/types";
 
 // #1973: delegate_rc is a custom_json signed by required_posting_auths. Since
 // HF28's strict authority checks an active key can not sign a posting-auth op,
@@ -25,7 +26,8 @@ describe("useDelegateRc", () => {
   });
 
   it("asks for posting authority, matching the op's required_posting_auths", () => {
-    useDelegateRc("alice", { adapter: {} } as any, "sync");
+    const auth: AuthContextV2 = { adapter: {} as PlatformAdapter };
+    useDelegateRc("alice", auth, "sync");
     const [key, username, buildOps, , , authority, options] =
       mockUseBroadcastMutation.mock.calls[0];
 
@@ -44,8 +46,9 @@ describe("useDelegateRc", () => {
   // must refresh, not one entry keyed by the raw string.
   it("refreshes every delegatee of a list after the broadcast", async () => {
     mockInvalidate.mockResolvedValue(undefined);
-    const adapter = {};
-    useDelegateRc("alice", { adapter } as any, "sync");
+    const adapter = {} as PlatformAdapter;
+    const auth: AuthContextV2 = { adapter };
+    useDelegateRc("alice", auth, "sync");
     const onSuccess = mockUseBroadcastMutation.mock.calls[0][3];
 
     await onSuccess({}, { to: "bob, carol,", maxRc: 5 });
