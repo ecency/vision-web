@@ -66,6 +66,14 @@ vi.mock("@/features/shared/notifications/hooks", () => ({
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NotificationsDialog } from "@/features/shared/notifications";
 
+/** The panel's Retry buttons use the outline style of its other actions: the
+ * filled secondary one was white on mid grey in the light theme (#2022). */
+function expectOutlineRetry(button: HTMLElement) {
+  expect(button.className).toContain("border-solid");
+  expect(button.className).toContain("text-blue-dark-sky");
+  expect(button.className).not.toContain("bg-gray-600");
+}
+
 function renderBellAndPanel() {
   return renderWithQueryClient(
     <>
@@ -96,6 +104,7 @@ describe("notifications bell (#2022)", () => {
 
     await waitFor(() => expect(document.querySelector(".notification-list")).toBeInTheDocument());
     expect(await screen.findByText("notifications.load-failed")).toBeInTheDocument();
+    expectOutlineRetry(screen.getByRole("button", { name: "g.retry" }));
 
     api.list.mockResolvedValue([]);
     const callsBefore = api.list.mock.calls.length;
@@ -161,6 +170,7 @@ describe("notifications bell (#2022)", () => {
       });
       const retry = await screen.findByRole("button", { name: "g.retry" });
       expect(screen.getByText("notifications.load-more-failed")).toBeInTheDocument();
+      expectOutlineRetry(retry);
       expect(screen.getByText("row-n1")).toBeInTheDocument();
 
       api.list.mockImplementation(async (pageParam?: string) =>

@@ -112,7 +112,7 @@ export function NotificationList({
           // leave the panel looking empty: say so and offer a retry.
           <div className="empty-text flex flex-col items-center gap-3" role="alert">
             <span>{i18next.t("notifications.load-failed")}</span>
-            <Button size="sm" appearance="secondary" onClick={() => refetch()}>
+            <Button size="sm" outline onClick={() => refetch()}>
               {i18next.t("g.retry")}
             </Button>
           </div>
@@ -143,7 +143,7 @@ export function NotificationList({
           // the next page instead of stopping silently.
           <div className="flex items-center justify-center gap-3 py-3" role="alert">
             <span className="text-sm">{i18next.t("notifications.load-more-failed")}</span>
-            <Button size="sm" appearance="secondary" onClick={() => fetchNextPage()}>
+            <Button size="sm" outline onClick={() => fetchNextPage()}>
               {i18next.t("g.retry")}
             </Button>
           </div>
