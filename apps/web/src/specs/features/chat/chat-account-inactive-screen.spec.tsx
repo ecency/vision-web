@@ -72,15 +72,20 @@ describe.each([
     expect(screen.queryByText(/Another account is active/)).not.toBeInTheDocument();
     // Not the session expired screen, which asks for a new login.
     expect(screen.queryByText("login-required")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "g.retry" })).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "g.retry" });
+    expect(retry).toHaveAttribute("type", "button");
+    expect(retry.className).toContain("focus-visible:ring-2");
+    expect(screen.getByRole("status")).toContainElement(message);
   });
 
-  it("says no account is active when the browser has none", () => {
+  it("says no account is active and offers the login, not a Retry that cannot work", () => {
     bootstrapError = new ChatAccountInactiveError(undefined);
     render(view());
 
     expect(screen.getByText("chat.no-account-active")).toBeInTheDocument();
     expect(screen.queryByText(/No account is active/)).not.toBeInTheDocument();
+    expect(screen.getByText("login-required")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "g.retry" })).not.toBeInTheDocument();
   });
 
   it("still shows the session expired screen for an auth error", () => {
