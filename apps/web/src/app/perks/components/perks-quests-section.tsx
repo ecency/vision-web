@@ -59,7 +59,8 @@ export function PerksQuestsSection() {
   const { data: quests } = useQuery(getQuestsQueryOptions(username));
   const { data: spin } = useQuery(getGameStatusCheckQueryOptions(username, code, "spin"));
   // Pro members get streak freezes for free, so do not quote them the Points price.
-  const { data: proMembers } = useQuery(getProMembersQueryOptions());
+  // Until the roster has loaded (or when it failed) nobody is quoted a price.
+  const { data: proMembers, isSuccess: rosterLoaded } = useQuery(getProMembersQueryOptions());
   const isPro = isProMember(proMembers?.members, username);
 
   const [tier, setTier] = useState<QuestTier>("daily");
@@ -146,9 +147,11 @@ export function PerksQuestsSection() {
                   isLoading={isBuyingFreeze}
                   disabled={isBuyingFreeze}
                 >
-                  {isPro
-                    ? i18next.t("perks.quests.buy-freeze-free")
-                    : i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
+                  {!rosterLoaded
+                    ? i18next.t("perks.quests.buy-freeze-neutral")
+                    : isPro
+                      ? i18next.t("perks.quests.buy-freeze-free")
+                      : i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
                 </Button>
               )}
               {showTopup && (

@@ -3563,6 +3563,7 @@
       "freeze-explain": "If you miss a day, a freeze is used automatically to keep your streak alive.",
       "buy-freeze": "Protect streak ({{price}} Points)",
       "buy-freeze-free": "Protect streak (free with Pro)",
+      "buy-freeze-neutral": "Protect streak",
       "freeze-bought": "Streak freeze ready. Your streak is protected.",
       "freeze-insufficient": "Not enough Points for a freeze.",
       "freeze-error": "Could not buy a streak freeze. Please try again.",
