@@ -53,16 +53,26 @@ afterAll(() => {
 
 describe("post renderer link enhancers survive re-renders and re-runs (#2083)", () => {
   let host: HTMLDivElement;
+  let consoleError: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     host = document.createElement("div");
     document.body.appendChild(host);
+    consoleError = vi.spyOn(console, "error");
   });
 
   afterEach(() => {
     host.remove();
     vi.mocked(renderPostBody).mockReset();
+    consoleError.mockRestore();
   });
+
+  // The extensions tear their roots down from an effect cleanup; a synchronous
+  // root.unmount() there makes React log this error (#1939).
+  const expectNoSyncUnmount = () =>
+    expect(
+      consoleError.mock.calls.map((call) => String(call[0])).filter((m) => m.includes("synchronously unmount"))
+    ).toEqual([]);
 
   it("EcencyRenderer enhances the tweet and the hive operation again when the html changes", async () => {
     vi.mocked(renderPostBody).mockReturnValue(`<p>${tweetLink("1")} ${opLink}</p>`);
@@ -79,19 +89,24 @@ describe("post renderer link enhancers survive re-renders and re-runs (#2083)", 
 
     expect(Array.from(host.querySelectorAll(".tweet"), (t) => t.textContent)).toEqual(["2"]);
     expect(host.querySelectorAll(".er-hive-op .er-hive-op-label")).toHaveLength(1);
+    expectNoSyncUnmount();
   });
 
   it("EcencyRenderer enhances post and wave links again when the html changes", async () => {
     vi.mocked(renderPostBody).mockReturnValue(`<p>${postLink}</p><p>${waveLink}</p>`);
-    const { rerender } = render(<EcencyRenderer value="one" />, { container: host });
+    // At embedDepth 1 a wave link renders its stub right away, with no fetch.
+    const { rerender } = render(<EcencyRenderer value="one" embedDepth={1} />, {
+      container: host
+    });
     await flush();
     vi.mocked(renderPostBody).mockReturnValue(`<p>${postLink} </p><p>${waveLink}</p>`);
-    rerender(<EcencyRenderer value="two" />);
+    rerender(<EcencyRenderer value="two" embedDepth={1} />);
     await flush();
 
     expect(host.querySelectorAll(".er-post-link a.er-post-link-link")).toHaveLength(1);
-    expect(host.querySelectorAll(".er-wave")).toHaveLength(1);
+    expect(host.querySelectorAll(".er-wave .er-wave-renderer--stub")).toHaveLength(1);
     expect(host.querySelector('a.markdown-post-link[href$="wave-abc"]')).toBeNull();
+    expectNoSyncUnmount();
   });
 
   it("EcencyRenderer wraps the new images for zoom when the html changes", async () => {
@@ -113,7 +128,7 @@ describe("post renderer link enhancers survive re-renders and re-runs (#2083)", 
     );
     render(
       <React.StrictMode>
-        <EcencyRenderer value="one" TwitterComponent={Tweet} />
+        <EcencyRenderer value="one" TwitterComponent={Tweet} embedDepth={1} />
       </React.StrictMode>,
       { container: host }
     );
@@ -123,9 +138,12 @@ describe("post renderer link enhancers survive re-renders and re-runs (#2083)", 
     expect(host.querySelectorAll(".er-hive-op .er-hive-op-label")).toHaveLength(1);
     expect(host.querySelectorAll(".er-post-link a.er-post-link-link")).toHaveLength(1);
     expect(host.querySelectorAll(".er-wave")).toHaveLength(1);
+    expect(host.querySelectorAll(".er-wave .er-wave-renderer--stub")).toHaveLength(1);
     expect(host.querySelector('a.markdown-post-link[href$="wave-abc"]')).toBeNull();
-    // The wave preview is empty until its post loads, so it is counted above.
-    expect(host.querySelectorAll(".er-hive-op:empty, .er-post-link:empty")).toHaveLength(0);
+    expect(
+      host.querySelectorAll(".er-twitter-frame:empty, .er-hive-op:empty, .er-post-link:empty, .er-wave:empty")
+    ).toHaveLength(0);
+    expectNoSyncUnmount();
   });
 
   it("setupPostEnhancements run, cleaned up and run again enhances each link once, no empty wrapper", async () => {
