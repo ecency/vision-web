@@ -56,7 +56,8 @@ export function CommunityCreateDetailsStep({
             onInvalid={(e: any) => handleInvalid(e, "communities-create.", "title-validation")}
             onInput={(e: any) => e.target.setCustomValidity("")}
             name="title"
-            aria-invalid={title.length <= 2 || title.length >= 21}
+            // Not while empty: an untouched field is not an error (#2075).
+            aria-invalid={title !== "" && (title.length <= 2 || title.length >= 21)}
             placeholder={i18next.t("communities-create.title")}
           />
         </div>
