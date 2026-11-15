@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getNotificationsInfiniteQueryOptions } from "./get-notifications-infinite-query-options";
 import {
   getHbdAssetTransactionsQueryOptions,
@@ -21,5 +21,44 @@ describe("infinite query options carry no initialData seed", () => {
 
   it.each(factories)("%s", (_name, factory) => {
     expect(factory()).not.toHaveProperty("initialData");
+  });
+});
+
+// Issue #2080: a failed request must reach the caller as an error, and an empty
+// page must end the list, or the panel never shows its error or empty state.
+describe("getNotificationsInfiniteQueryOptions (#2080)", () => {
+  const options = () => getNotificationsInfiniteQueryOptions("alice", "code");
+  const run = (pageParam = "") =>
+    (options().queryFn as (ctx: { pageParam: string }) => Promise<unknown>)({ pageParam });
+  const nextPage = (lastPage: { id: string }[] | undefined) =>
+    (options().getNextPageParam as (p: unknown) => unknown)(lastPage);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects when the endpoint answers 500", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("oops", { status: 500 }))
+    );
+    await expect(run()).rejects.toThrow(/500/);
+  });
+
+  it("resolves the page on 200", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify([{ id: "n1" }]), { status: 200 }))
+    );
+    await expect(run()).resolves.toEqual([{ id: "n1" }]);
+  });
+
+  it("has no next page after an empty page", () => {
+    expect(nextPage([])).toBeUndefined();
+    expect(nextPage(undefined)).toBeUndefined();
+  });
+
+  it("continues from the last id after a non-empty page", () => {
+    expect(nextPage([{ id: "a" }, { id: "b" }])).toBe("b");
   });
 });

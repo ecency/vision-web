@@ -13,8 +13,13 @@ const api = vi.hoisted(() => ({
   unread: vi.fn<() => Promise<number>>()
 }));
 
-vi.mock("@ecency/sdk", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@ecency/sdk")>()),
+vi.mock("@ecency/sdk", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ecency/sdk")>();
+  // The SDK's own paging rule, so the empty-list case runs against the real one.
+  const sdkGetNextPageParam = actual.getNotificationsInfiniteQueryOptions("tester", "token")
+    .getNextPageParam as (lastPage: unknown) => unknown;
+  return {
+  ...actual,
   getNotificationsUnreadCountQueryOptions: (username?: string) => ({
     queryKey: ["notifications", "unread", username],
     queryFn: () => api.unread(),
@@ -24,10 +29,11 @@ vi.mock("@ecency/sdk", async (importOriginal) => ({
     queryKey: ["notifications", "list", username, filter],
     queryFn: () => api.list(),
     initialPageParam: "",
-    getNextPageParam: () => undefined,
+    getNextPageParam: sdkGetNextPageParam,
     enabled: !!username
   })
-}));
+  };
+});
 
 const activeAccount = { activeUser: { username: "tester" } };
 vi.mock("@/core/hooks", async (importOriginal) => ({
@@ -102,6 +108,15 @@ describe("notifications bell (#2022)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
 
     await waitFor(() => expect(document.querySelector(".notification-list")).toBeInTheDocument());
+  });
+
+  it("shows the empty-list message for an account with no notifications (#2080)", async () => {
+    api.list.mockResolvedValue([]);
+    renderBellAndPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
+
+    expect(await screen.findByText("g.empty-list")).toBeInTheDocument();
   });
 
   it("lets a click on the unread badge through to the bell", async () => {

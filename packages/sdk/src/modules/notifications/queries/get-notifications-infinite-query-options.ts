@@ -32,8 +32,10 @@ export function getNotificationsInfiniteQueryOptions(
         }
       );
 
+      // Throw, do not answer []: an empty page reads as "no notifications" and
+      // hides the failure from the consumer's error state and retry (#2080).
       if (!response.ok) {
-        return [];
+        throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
 
       try {
@@ -46,7 +48,11 @@ export function getNotificationsInfiniteQueryOptions(
     // No initialData here: an empty seed counts as fresh for the whole staleTime,
     // so consumers that only read `data` would render an empty list with no fetch.
     initialPageParam: "",
-    getNextPageParam: (lastPage) => lastPage?.[lastPage.length - 1]?.id ?? "",
+    // `undefined` ends the list. Any other value, "" included, counts as a next
+    // page, so an empty page must not answer "" (#2080). The server's page size
+    // is not part of this contract, so only an empty page ends it; a short last
+    // page costs one more request that comes back empty.
+    getNextPageParam: (lastPage) => lastPage?.[lastPage.length - 1]?.id ?? undefined,
     refetchOnMount: true,
   });
 }
