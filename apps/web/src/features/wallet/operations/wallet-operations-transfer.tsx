@@ -429,7 +429,7 @@ export function WalletOperationsTransfer({
           <div className="flex justify-between items-center p-4">
             <div className="flex flex-col text-sm">
               <div className="uppercase text-xs font-semibold text-gray-600 dark:text-gray-400">
-                fee
+                {i18next.t("transfer.fee")}
               </div>
               <div className="text-black dark:text-white font-semibold">0.0%</div>
             </div>

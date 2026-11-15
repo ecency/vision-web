@@ -2,7 +2,7 @@ import { useBroadcastMutation } from "@/modules/core/mutations";
 import type { BroadcastMode } from "@/modules/core/mutations";
 import type { AuthContextV2 } from "@/modules/core/types";
 import { EcencyAnalytics } from "@/modules/analytics";
-import { getQueryClient } from "@/modules/core";
+import { getQueryClient, QueryKeys } from "@/modules/core";
 import type { AuthorityLevel } from "@/modules/operations/authority-map";
 import { AssetOperation } from "../types";
 import {
@@ -190,6 +190,11 @@ export function useWalletOperation(
 
       // Invalidate portfolio (prefix-matches all currency/filter variants)
       keysToInvalidate.push(["wallet", "portfolio", "v2", username]);
+
+      // A savings withdrawal is pending for 3 days: refetch the list of them.
+      if (operation === AssetOperation.WithdrawFromSavings && username) {
+        keysToInvalidate.push(QueryKeys.wallet.savingsWithdraw(username));
+      }
 
       // Delay invalidation to allow blockchain to process
       setTimeout(() => {

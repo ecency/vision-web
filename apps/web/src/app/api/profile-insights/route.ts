@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     ({ visionFeatures }) => visionFeatures.plausible.enabled
   );
   if (!isEnabled) {
-    return Response.json({ status: 404 });
+    return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
   let body: Record<string, unknown>;

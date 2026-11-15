@@ -11,7 +11,7 @@ export function NotificationMonthlyPostsType({ sourceLink, notification }: Props
   const count = notification.count ?? 0;
   const body =
     count > 0
-      ? i18next.t("notification.monthly-posts", { count, suffix: count === 1 ? "" : "s" })
+      ? i18next.t("notification.monthly-posts", { count })
       : notification.title;
 
   return (

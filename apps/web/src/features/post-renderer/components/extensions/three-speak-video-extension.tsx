@@ -1,9 +1,11 @@
 "use client";
 
-import React, { RefObject, useEffect, useRef, useState } from "react";
+import React, { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
 import { injectThreeSpeakThumbnail } from "../utils/threeSpeakThumbnail";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 type VideoOrientation = "landscape" | "portrait" | "square";
 
@@ -27,13 +29,7 @@ export function ThreeSpeakVideoRenderer({
   }, [container]);
 
   useEffect(() => {
-    if (show) {
-      const thumb = container.querySelector(".video-thumbnail");
-      const playBtn = container.querySelector(".markdown-video-play");
-
-      if (thumb) (thumb as HTMLElement).style.display = "none";
-      if (playBtn) (playBtn as HTMLElement).style.display = "none";
-    }
+    if (show) setVideoPlaceholderVisible(container, false);
   }, [show, container]);
 
   // Listen for 3speak-player-ready to auto-detect video orientation
@@ -145,25 +141,52 @@ function embedThreeSpeakDirect(element: HTMLElement, embedSrc: string): () => vo
   window.addEventListener("message", handleMessage);
   return () => {
     window.removeEventListener("message", handleMessage);
-    element.classList.remove("speak-portrait", "speak-square");
+    element.classList.remove("speak-portrait", "speak-square", "er-speak");
+    // Undo the DOM changes too, so a re-run (Strict Mode) embeds it again.
+    wrapper.remove();
+    if (playBtn) (playBtn as HTMLElement).style.display = "";
   };
 }
 
 export function ThreeSpeakVideoExtension({
   containerRef,
   images,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   images?: string[];
+  /** The rendered body. A change replaces the links, so they are enhanced again. */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
   const cleanupFnsRef = useRef<(() => void)[]>([]);
+  // The `er-speak` marker and the appended frame are DOM mutations on nodes
+  // React does not own, so cleanup undoes them. Left behind, Strict Mode's
+  // setup-cleanup-setup cycle skipped every element on the second setup
+  // (`:not(.er-speak)`) and the placeholders never played (#1939).
+  const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
+  // Callers pass json_metadata.image, often as a new array with the same
+  // content on every render. Re-running on identity would stop a playing
+  // video, so the effect keys on the content and reads the latest array.
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  const imagesKey = JSON.stringify(images ?? null);
 
-  useEffect(() => {
-    rootsRef.current.forEach(r => r.unmount());
+  const reset = useCallback(() => {
+    unmountRootsLater(rootsRef.current);
     rootsRef.current = [];
     cleanupFnsRef.current.forEach(fn => fn());
     cleanupFnsRef.current = [];
+    for (const { element, frame } of enhancedRef.current) {
+      element.classList.remove("er-speak");
+      frame.remove();
+      setVideoPlaceholderVisible(element, true);
+    }
+    enhancedRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    reset();
 
     const elements = Array.from(
       containerRef.current?.querySelectorAll<HTMLElement>(
@@ -183,11 +206,12 @@ export function ThreeSpeakVideoExtension({
           cleanupFnsRef.current.push(cleanup);
         } else {
           // Entry pages: click-to-play with thumbnail
-          injectThreeSpeakThumbnail(element, images);
+          injectThreeSpeakThumbnail(element, imagesRef.current);
 
           const container = document.createElement("div");
           container.classList.add("er-speak-frame");
           element.classList.add("er-speak");
+          enhancedRef.current.push({ element, frame: container });
 
           const root = createRoot(container);
           rootsRef.current.push(root);
@@ -207,13 +231,8 @@ export function ThreeSpeakVideoExtension({
       }
     });
 
-    return () => {
-      rootsRef.current.forEach(r => r.unmount());
-      rootsRef.current = [];
-      cleanupFnsRef.current.forEach(fn => fn());
-      cleanupFnsRef.current = [];
-    };
-  }, [images]);
+    return reset;
+  }, [imagesKey, reset, html]);
 
   return <></>;
 }

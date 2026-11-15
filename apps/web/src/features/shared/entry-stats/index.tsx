@@ -1,5 +1,6 @@
 "use client";
 
+import { EcencyConfigManager } from "@/config";
 import { useActiveAccount } from "@/core/hooks";
 import { Entry } from "@/entities";
 import dayjs from "@/utils/dayjs";
@@ -25,6 +26,10 @@ interface Props {
 export function EntryStats({ entry, iconClassName }: Props) {
   const { activeUser } = useActiveAccount();
   const [showStats, setShowStats] = useState(false);
+  // Without Plausible the stats API answers 404: ask nothing, show nothing.
+  const statsEnabled = EcencyConfigManager.getConfigValue(
+    ({ visionFeatures }) => visionFeatures.plausible.enabled
+  );
 
   // Canonical post path (`/@author/permlink`). The recorded Plausible page varies
   // by entry route — bare `/@author/permlink`, community `/hive-123/@author/permlink`,
@@ -55,7 +60,7 @@ export function EntryStats({ entry, iconClassName }: Props) {
       url: pathname,
       metrics: ["visitors", "visits"],
       dateRange,
-      enabled: !!activeUser
+      enabled: !!activeUser && statsEnabled
     })
   );
   const totalVisitors = useMemo(() => stats?.results?.[0]?.metrics?.[0] || 0, [stats?.results]);
@@ -72,7 +77,7 @@ export function EntryStats({ entry, iconClassName }: Props) {
       metrics: ["visit_duration"],
       filterBy: "visit:entry_page",
       dateRange,
-      enabled: !!activeUser
+      enabled: !!activeUser && statsEnabled
     })
   );
   const avgVisitDuration = useMemo(() => {
@@ -82,7 +87,7 @@ export function EntryStats({ entry, iconClassName }: Props) {
     return minutes > 0 ? `${minutes}m ${String(secs).padStart(2, "0")}s` : `${secs}s`;
   }, [durationStats?.results]);
 
-  if (!activeUser) return null;
+  if (!activeUser || !statsEnabled) return null;
 
   return (
     <>

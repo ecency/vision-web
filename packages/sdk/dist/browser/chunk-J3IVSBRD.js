@@ -1,0 +1,2 @@
+import {a}from'./chunk-PDIUUNDQ.js';import {k}from'./chunk-GGPLY7NR.js';import {queryOptions}from'@tanstack/react-query';function d(r){return queryOptions({queryKey:a.wallet.savingsWithdraw(r),queryFn:()=>k("condenser_api.get_savings_withdraw_from",[r]),select:i=>i.sort((s,o)=>s.request_id-o.request_id)})}export{d as a};//# sourceMappingURL=chunk-J3IVSBRD.js.map
+//# sourceMappingURL=chunk-J3IVSBRD.js.map

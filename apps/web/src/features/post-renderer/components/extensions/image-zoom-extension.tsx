@@ -6,8 +6,11 @@ import { zoomReplaceTarget, zoomEffectiveParent } from "../utils/picture-zoom";
 
 export function ImageZoomExtension({
  containerRef,
+ html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  /** The rendered body. A change replaces the images, so they are wrapped again (#2083). */
+  html?: string | null;
 }) {
   const zoomRef = useRef<Zoom>(undefined);
 
@@ -201,10 +204,18 @@ export function ImageZoomExtension({
             }
 
             try {
-              zoomRef.current = mediumZoom(stillConnected, {
-                background: "#131111",
-                margin: 24, // Add margin for better centering
-              });
+              // One instance per mount: medium-zoom adds document and window
+              // listeners per instance that detach() does not remove, so a
+              // re-run (html change, Strict Mode) re-attaches the images to
+              // the existing instance instead of creating another (#2083).
+              if (zoomRef.current) {
+                zoomRef.current.attach(...stillConnected);
+              } else {
+                zoomRef.current = mediumZoom(stillConnected, {
+                  background: "#131111",
+                  margin: 24, // Add margin for better centering
+                });
+              }
             } catch (error) {
               console.warn("Failed to initialize medium-zoom:", error);
             }
@@ -226,7 +237,7 @@ export function ImageZoomExtension({
       }
       zoomRef.current?.detach();
     };
-  }, [containerRef]);
+  }, [containerRef, html]);
 
   return <></>;
 }

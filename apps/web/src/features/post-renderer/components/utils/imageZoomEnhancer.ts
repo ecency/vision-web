@@ -1,11 +1,35 @@
 import type { Zoom } from "medium-zoom";
 import { zoomReplaceTarget, zoomEffectiveParent } from "./picture-zoom";
 
+/** Releases the images one applyImageZoom run attached. */
+export interface ImageZoomHandle {
+    detach: () => void;
+}
+
+// One medium-zoom instance for the page. Each instance adds document click and
+// keyup and window scroll and resize listeners that detach() does not remove,
+// and the entry page runs the enhancements again on every Edit History or raw
+// toggle, so every run attaches its images to this one instance (#2083).
+let sharedZoom: Zoom | null = null;
+// The newest run (by start order) that attached each image. Two runs can
+// cover the same <img> (a re-run before the previous cleanup landed), they
+// finish asynchronously and in any order, and attach() de-dupes, so a late
+// detach from the earlier run would strip the zoom the later run set up. A
+// run claims an image only when no newer run owns it, and its handle
+// releases only the images it still owns.
+const owners = new WeakMap<HTMLElement, { seq: number }>();
+let runCount = 0;
+
 /**
  * Apply medium-zoom to images in a container.
- * Returns the zoom instance for cleanup (caller should call .detach() when done).
+ * Resolves to a handle for cleanup (caller should call .detach() when done).
  */
-export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
+export function applyImageZoom(
+    container: HTMLElement,
+    signal?: AbortSignal
+): Promise<ImageZoomHandle | null> {
+    // Start order, not completion order, decides which run owns a shared image.
+    const run = { seq: ++runCount };
     const elements = Array.from(
         container.querySelectorAll<HTMLElement>(
             ".markdown-view:not(.markdown-view-pure) img"
@@ -125,7 +149,7 @@ export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
     });
 
     // apply medium zoom with final safety check
-    return new Promise<Zoom | null>((resolveZoom) => {
+    return new Promise<ImageZoomHandle | null>((resolveZoom) => {
         try {
             // Filter elements one more time to ensure they're still connected before passing to medium-zoom
             // This prevents "Cannot read property 'parentNode' of null" errors during hydration
@@ -204,17 +228,33 @@ export function applyImageZoom(container: HTMLElement): Promise<Zoom | null> {
                         }
                     });
 
-                    if (stillConnected.length === 0) {
+                    // Cleanup already ran: attach nothing it would have to undo.
+                    if (stillConnected.length === 0 || signal?.aborted) {
                         resolveZoom(null);
                         return;
                     }
 
                     try {
-                        const zoom = mediumZoom(stillConnected, {
-                            background: "#131111",
-                            margin: 24, // Add margin for better centering
+                        if (sharedZoom) {
+                            sharedZoom.attach(...stillConnected);
+                        } else {
+                            sharedZoom = mediumZoom(stillConnected, {
+                                background: "#131111",
+                                margin: 24, // Add margin for better centering
+                            });
+                        }
+                        const zoom = sharedZoom;
+                        stillConnected.forEach((img) => {
+                            const current = owners.get(img);
+                            if (!current || current.seq < run.seq) owners.set(img, run);
                         });
-                        resolveZoom(zoom);
+                        resolveZoom({
+                            detach: () => {
+                                const mine = stillConnected.filter((img) => owners.get(img) === run);
+                                mine.forEach((img) => owners.delete(img));
+                                if (mine.length > 0) zoom.detach(...mine);
+                            }
+                        });
                     } catch (error) {
                         console.warn("Failed to initialize medium-zoom:", error);
                         resolveZoom(null);

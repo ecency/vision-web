@@ -275,8 +275,8 @@ export default function Privacy() {
             Applicable law may require or permit us to decline your request. If we decline your
             request, we will tell you why, subject to legal restrictions. If you would like to
             submit a complaint about our use of your personal information or response to your
-            requests regarding your personal information, you may contact us at privacy@hive.io or
-            submit a complaint to the data protection regulator in your jurisdiction..
+            requests regarding your personal information, you may contact us at info@ecency.com or
+            submit a complaint to the data protection regulator in your jurisdiction.
           </p>
           <p>Cross-Border Data Transfer</p>
           <p>

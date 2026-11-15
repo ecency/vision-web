@@ -67,17 +67,11 @@ export class NotificationsWebSocket {
         return i18next.t("notification.delegations", { source, amount: data.extra.amount });
       case "checkins": {
         const count = Number(data.extra?.count ?? 0);
-        return i18next.t("notification.checkins", {
-          count,
-          suffix: count === 1 ? "" : "s"
-        });
+        return i18next.t("notification.checkins", { count });
       }
       case "checkin": {
         const count = Number(data.extra?.count ?? 0);
-        return i18next.t("notification.checkins", {
-          count,
-          suffix: count === 1 ? "" : "s"
-        });
+        return i18next.t("notification.checkins", { count });
       }
       case "payouts": {
         const amount = data.extra?.amount;
@@ -93,17 +87,11 @@ export class NotificationsWebSocket {
       }
       case "monthly-posts": {
         const count = Number(data.extra?.count ?? 0);
-        return i18next.t("notification.monthly-posts", {
-          count,
-          suffix: count === 1 ? "" : "s"
-        });
+        return i18next.t("notification.monthly-posts", { count });
       }
       case "monthly_posts": {
         const count = Number(data.extra?.count ?? 0);
-        return i18next.t("notification.monthly-posts", {
-          count,
-          suffix: count === 1 ? "" : "s"
-        });
+        return i18next.t("notification.monthly-posts", { count });
       }
       case "weekly_earnings": {
         const total = data.extra?.total_usd ?? "0";

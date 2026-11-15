@@ -9,6 +9,8 @@ import React, {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { swapIn, runUndos } from "../utils/dom-swap";
 import {
   findPostLinkElements,
   isInvalidPermlinkLink,
@@ -125,14 +127,16 @@ export function HivePostLinkRenderer({ link }: { link: string }) {
 
 export function HivePostLinkExtension({
   containerRef,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  /** The rendered body. A change replaces the links, so they are enhanced again (#2083). */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+  const undosRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    rootsRef.current.forEach(r => r.unmount());
-    rootsRef.current = [];
 
     const container = containerRef.current;
     if (!container) {
@@ -175,7 +179,7 @@ export function HivePostLinkExtension({
 
           // Final safety check before replacing
           if (element.isConnected && element.parentElement) {
-            element.parentElement.replaceChild(container, element);
+            undosRef.current.push(swapIn(element as HTMLElement, container));
           }
         } catch (error) {
           console.warn("Error enhancing Hive post link element:", error);
@@ -183,10 +187,11 @@ export function HivePostLinkExtension({
       });
 
     return () => {
-      rootsRef.current.forEach(r => r.unmount());
+      unmountRootsLater(rootsRef.current);
       rootsRef.current = [];
+      runUndos(undosRef.current);
     };
-  }, []);
+  }, [html]);
 
   return null;
 }

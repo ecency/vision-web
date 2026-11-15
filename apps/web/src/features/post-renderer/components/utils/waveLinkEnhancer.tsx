@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { WaveLikePostRenderer } from "../extensions";
 import { findPostLinkElements, isWaveLikePost } from "../functions";
 import { getQueryClient } from "@/core/react-query";
+import { swapIn } from "./dom-swap";
 
 /**
  * Progressive DOM enhancer for wave-like post links
@@ -10,6 +11,7 @@ import { getQueryClient } from "@/core/react-query";
 export function applyWaveLikePosts(
     container: HTMLElement,
     postLinkElements: HTMLAnchorElement[] = findPostLinkElements(container),
+    undos: (() => void)[] = [],
 ): Root[] {
     const roots: Root[] = [];
     const queryClient = getQueryClient();
@@ -43,7 +45,7 @@ export function applyWaveLikePosts(
 
                 // Final safety check before replacing
                 if (el.isConnected && el.parentElement) {
-                    el.parentElement.replaceChild(wrapper, el);
+                    undos.push(swapIn(el, wrapper));
                 }
             } catch (error) {
                 console.warn("Error enhancing wave-like post link element:", error);

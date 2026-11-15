@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.2
+
+### Patch Changes
+
+- Bug batch: plurals, Serbian locale, post renderer re-enhancement, editor preview video, copy fixes (#2086)
+
+- [#2086](https://github.com/ecency/vision-web/pull/2086) [`693add3`](https://github.com/ecency/vision-web/commit/693add39c0d8bad1dbe87267df78a6f5cfefb1ae) Thanks [@feruzm](https://github.com/feruzm)! - `useWalletOperation` refetches the pending savings withdrawals (`QueryKeys.wallet.savingsWithdraw`) after a successful savings withdrawal, so a list of them shows the new one without a reload. `getSavingsWithdrawFromQueryOptions` builds its key from `QueryKeys`.
+
 ## 2.8.1
 
 ### Patch Changes
