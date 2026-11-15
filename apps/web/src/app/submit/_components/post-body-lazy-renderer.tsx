@@ -22,8 +22,8 @@ interface Line {
 }
 
 /**
- * One rendered block of the preview. Its key is the hash of its HTML, so its
- * DOM never changes after mount: an edit elsewhere leaves it (and a playing
+ * One rendered block of the preview. Its key is the hash of its HTML (plus
+ * which copy of it, for identical blocks), so its DOM never changes after mount: an edit elsewhere leaves it (and a playing
  * video in it) alone, and an edit to it mounts a fresh line. That is why the
  * click-to-play extensions, which enhance only on mount, can be mounted per
  * line here rather than re-run over the whole preview on every keystroke.
@@ -64,13 +64,19 @@ export function PostBodyLazyRenderer({ rawBody, className }: Props) {
     tree.innerHTML = renderedBody;
 
     const nextLines: Line[] = [];
+    // Key = content hash + which copy of that content it is (the nth identical
+    // block), not its position: a block inserted above a line leaves the
+    // line's key, and a playing video in it, alone.
+    const seen = new Map<string, number>();
 
     for (let i = 0; i < tree.children.length; i++) {
       const element = tree.children.item(i)!!;
 
-      const hash = md5(element.outerHTML + `index-${i}`);
+      const contentHash = md5(element.outerHTML);
+      const ordinal = seen.get(contentHash) ?? 0;
+      seen.set(contentHash, ordinal + 1);
 
-      nextLines.push({ element, hash });
+      nextLines.push({ element, hash: `${contentHash}-${ordinal}` });
     }
 
     setLines(nextLines);

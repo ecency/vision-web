@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { clsx } from "clsx";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
 import { getYoutubeEmbedUrl } from "../utils/getYoutubeEmbedUrl";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
 
 export function YoutubeVideoRenderer({
    embedSrc,
@@ -52,10 +53,24 @@ export function YoutubeVideoExtension({
   containerRef: RefObject<HTMLElement | null>;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+  // The `er-youtube` marker and the appended frame are DOM mutations on nodes
+  // React does not own, so cleanup undoes them. Left behind, Strict Mode's
+  // setup-cleanup-setup cycle skipped every element on the second setup
+  // (`:not(.er-youtube)`) and the placeholders never played (#1939).
+  const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
+
+  const reset = useCallback(() => {
+    unmountRootsLater(rootsRef.current);
+    rootsRef.current = [];
+    for (const { element, frame } of enhancedRef.current) {
+      element.classList.remove("er-youtube");
+      frame.remove();
+    }
+    enhancedRef.current = [];
+  }, []);
 
   useEffect(() => {
-    for (const r of rootsRef.current) { r.unmount(); }
-    rootsRef.current = [];
+    reset();
 
     const elements = Array.from(
       containerRef.current?.querySelectorAll<HTMLElement>(
@@ -78,6 +93,7 @@ export function YoutubeVideoExtension({
 
         container.classList.add("er-youtube-frame");
         element.classList.add("er-youtube");
+        enhancedRef.current.push({ element, frame: container });
 
         // Use createRoot instead of hydrateRoot (no server-rendered content to hydrate)
         const root = createRoot(container);
@@ -93,11 +109,8 @@ export function YoutubeVideoExtension({
       }
     });
 
-    return () => {
-      for (const r of rootsRef.current) { r.unmount(); }
-      rootsRef.current = [];
-    };
-  }, [containerRef]);
+    return reset;
+  }, [containerRef, reset]);
 
   return null;
 }

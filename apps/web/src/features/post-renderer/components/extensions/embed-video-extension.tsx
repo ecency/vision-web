@@ -3,6 +3,7 @@
 import React, { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
 
 /**
  * Click-to-play for the video providers that have no thumbnail we can derive
@@ -93,9 +94,7 @@ export function EmbedVideoExtension({
   const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
 
   const reset = useCallback(() => {
-    for (const r of rootsRef.current) {
-      r.unmount();
-    }
+    unmountRootsLater(rootsRef.current);
     rootsRef.current = [];
     for (const { element, frame } of enhancedRef.current) {
       element.classList.remove("er-embed");

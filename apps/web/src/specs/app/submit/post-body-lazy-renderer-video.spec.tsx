@@ -1,7 +1,7 @@
-import React from "react";
+import React, { StrictMode } from "react";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostBodyLazyRenderer } from "@/app/submit/_components/post-body-lazy-renderer";
 
 /**
@@ -72,5 +72,78 @@ describe("classic editor preview: click-to-play video (#1939)", () => {
     await waitFor(() => expect(container.textContent).toContain("More, edited"));
     expect(first.isConnected).toBe(true);
     expect(first.querySelector("iframe")).not.toBeNull();
+  });
+
+  // Lines were keyed by their absolute index, so a block inserted ABOVE a
+  // playing video re-keyed its line and remounted it, killing the player.
+  it("keeps a playing video when a paragraph is inserted above it", async () => {
+    const { container, rerender } = render(<Preview body={`Intro\n\n${YOUTUBE}\n\nOutro`} />);
+    const [link] = await videoLinks(container, 1);
+    await clickAndExpectPlayer(link);
+    const iframe = link.querySelector("iframe");
+
+    rerender(<Preview body={`New first paragraph\n\nIntro\n\n${YOUTUBE}\n\nOutro`} />);
+    await waitFor(() => expect(container.textContent).toContain("New first paragraph"));
+    expect(link.isConnected).toBe(true);
+    expect(link.querySelector("iframe")).toBe(iframe);
+  });
+
+  it("keys identical blocks apart, so both copies of a video play", async () => {
+    const { container } = render(<Preview body={`${YOUTUBE}\n\nBetween\n\n${YOUTUBE}`} />);
+    const [first, second] = await videoLinks(container, 2);
+    await clickAndExpectPlayer(first);
+    await clickAndExpectPlayer(second);
+  });
+});
+
+// React 18+ StrictMode runs every effect setup, cleanup, setup on mount. The
+// YouTube and 3Speak extensions left their marker class behind on cleanup, so
+// the second setup skipped every placeholder and the play button did nothing.
+describe("classic editor preview under StrictMode (#1939)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function StrictPreview({ body }: { body: string }) {
+    return (
+      <StrictMode>
+        <Preview body={body} />
+      </StrictMode>
+    );
+  }
+
+  it("a YouTube placeholder plays on click", async () => {
+    const { container } = render(<StrictPreview body={`Intro\n\n${YOUTUBE}`} />);
+    const [link] = await videoLinks(container, 1);
+    await clickAndExpectPlayer(link);
+    expect(link.querySelectorAll(".er-youtube-frame")).toHaveLength(1);
+  });
+
+  it("a 3Speak placeholder plays on click", async () => {
+    const { container } = render(
+      <StrictPreview body={`Intro\n\nhttps://3speak.tv/watch?v=alice/abcdefgh`} />
+    );
+    const link = await waitFor(() => {
+      const found = container.querySelector<HTMLElement>(".markdown-video-link-speak");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    fireEvent.click(link.querySelector(".markdown-video-play") ?? link);
+    await waitFor(() => expect(link.querySelector("iframe")).not.toBeNull());
+    expect(link.querySelectorAll(".er-speak-frame")).toHaveLength(1);
+  });
+
+  it("unmounts no root synchronously during a render", async () => {
+    const consoleError = vi.spyOn(console, "error");
+    const { container, rerender, unmount } = render(<StrictPreview body={`Intro\n\n${YOUTUBE}`} />);
+    await videoLinks(container, 1);
+    rerender(<StrictPreview body={`Intro\n\n${YOUTUBE}\n\n${YOUTUBE_2}`} />);
+    await videoLinks(container, 2);
+    unmount();
+    await Promise.resolve();
+    const syncUnmount = consoleError.mock.calls.filter(([msg]) =>
+      String(msg).includes("synchronously unmount a root")
+    );
+    expect(syncUnmount).toHaveLength(0);
   });
 });
