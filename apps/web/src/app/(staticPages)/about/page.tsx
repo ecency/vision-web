@@ -50,10 +50,8 @@ export default async function About() {
         </div>
 
         <div className="downloads" id="downloads">
-          <h2 className="downloads-title">Downloads</h2>
-          <div className="downloads-text">
-            Enjoy Ecency for iPhone, iPad and Android devices:
-          </div>
+          <h2 className="downloads-title">{i18next.t("static.about.downloads-title")}</h2>
+          <div className="downloads-text">{i18next.t("static.about.downloads-text")}</div>
           <div className="download-buttons">
             <a
               className="download-button btn-ios"
