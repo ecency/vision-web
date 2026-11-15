@@ -986,17 +986,16 @@ export function withMattermostTokenCookie(response: NextResponse, token: string,
  * it itself: logout and account switch call the session route, which uses this.
  * Same attributes as when it was set, or the browser keeps the original.
  */
+function expiredSessionCookies() {
+  return [MATTERMOST_TOKEN_COOKIE, MATTERMOST_OWNER_COOKIE].map((name) => ({
+    ...sessionCookie(name, ""),
+    maxAge: 0
+  }));
+}
+
 export function clearMattermostTokenCookie(response: NextResponse) {
-  for (const name of [MATTERMOST_TOKEN_COOKIE, MATTERMOST_OWNER_COOKIE]) {
-    response.cookies.set({
-      name,
-      value: "",
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0
-    });
+  for (const cookie of expiredSessionCookies()) {
+    response.cookies.set(cookie);
   }
   return response;
 }
@@ -1028,21 +1027,31 @@ export async function getMattermostTokenFromCookies(): Promise<string | null> {
   if (!legacy) {
     return null;
   }
+  // Read-only cookie store (not a route handler): answer without writing.
+  const writeCookies = (cookiesToSet: ReturnType<typeof sessionCookie>[]) => {
+    try {
+      for (const cookie of cookiesToSet) cookieStore.set(cookie);
+    } catch {
+      // Nothing to do.
+    }
+  };
   let me: Pick<MattermostUser, "username"> | undefined;
   try {
     me = await mmUserFetch<Pick<MattermostUser, "username">>("/users/me", legacy.token);
-  } catch {
-    // Invalid token or chat unreachable: no session; the client bootstraps on the 401.
+  } catch (error) {
+    // A revoked token is a definitive answer: expire the cookie so later
+    // requests ask nothing. An outage or timeout says nothing about it: keep it.
+    if (error instanceof MattermostError && error.status === 401) {
+      writeCookies(expiredSessionCookies());
+    }
     return null;
   }
   if (me?.username?.toLowerCase() !== legacy.active) {
+    // Another account's session: never honour it, and drop it.
+    writeCookies(expiredSessionCookies());
     return null;
   }
-  try {
-    cookieStore.set(sessionCookie(MATTERMOST_OWNER_COOKIE, legacy.active));
-  } catch {
-    // Read-only cookie store (not a route handler): honour it without stamping.
-  }
+  writeCookies([sessionCookie(MATTERMOST_OWNER_COOKIE, legacy.active)]);
   return legacy.token;
 }
 

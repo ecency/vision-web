@@ -33,6 +33,14 @@ async function reader() {
   return getMattermostTokenFromCookies;
 }
 
+function expired() {
+  return setCookie.mock.calls
+    .map(([cookie]) => cookie as { name: string; value: string; maxAge?: number })
+    .filter((cookie) => cookie.maxAge === 0 && cookie.value === "")
+    .map((cookie) => cookie.name)
+    .sort();
+}
+
 function ownerStamps() {
   return setCookie.mock.calls.filter((call) => {
     const [first] = call;
@@ -75,17 +83,25 @@ describe("legacy chat session without an owner cookie (#2023)", () => {
     const read = await reader();
 
     expect(await read()).toBeNull();
-    expect(ownerStamps()).toHaveLength(0);
+    expect(ownerStamps().filter(([c]) => (c as { value: string }).value !== "")).toHaveLength(0);
+    // A definitive answer: expire the cookie so the next request asks nothing.
+    expect(expired()).toEqual(["mm_owner", "mm_pat"]);
   });
 
-  it("is no session when the token is no longer valid or chat is unreachable", async () => {
+  it("is no session, and expires the cookie, when the token is no longer valid", async () => {
     jar = { mm_pat: "tok-a", active_user: "alice" };
     meAnswers(null, 401);
     expect(await (await reader())()).toBeNull();
+    expect(expired()).toEqual(["mm_owner", "mm_pat"]);
+  });
 
+  it("is no session, and keeps the cookie, when chat is unreachable", async () => {
+    jar = { mm_pat: "tok-a", active_user: "alice" };
     meAnswers(null, 502);
     expect(await (await reader())()).toBeNull();
-    expect(ownerStamps()).toHaveLength(0);
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    expect(await (await reader())()).toBeNull();
+    expect(setCookie).not.toHaveBeenCalled();
   });
 
   it("asks chat nothing for a session that already names its owner, or without an active account", async () => {
