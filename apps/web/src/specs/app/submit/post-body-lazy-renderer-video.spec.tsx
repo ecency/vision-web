@@ -184,3 +184,30 @@ describe("SubmitPreviewContent: video placeholders play in the real editor struc
     await waitFor(() => expect(link.querySelector("iframe")).not.toBeNull());
   });
 });
+
+/**
+ * #235 review: a YouTube player the author pasted as an <iframe> has no
+ * `.markdown-video-link`, but the preview reserves room under it, so its line
+ * must still mount the YouTube extension that captions it and drops the room.
+ */
+describe("SubmitPreviewContent: a pasted YouTube iframe gets its caption", () => {
+  const IFRAME = '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>';
+  it.each([
+    ["on its own line", IFRAME],
+    ["inside <center><p>", `<center><p>${IFRAME}</p></center>`],
+    ["in a table cell", `<table><tr><td>${IFRAME}</td></tr></table>`]
+  ])("%s", async (_name, html) => {
+    const { container } = render(
+      <SubmitPreviewContent title="t" tags={["hive"]} body={`Intro\n\n${html}\n\nOutro`} />
+    );
+    const iframe = await waitFor(() => {
+      const found = container.querySelector<HTMLIFrameElement>('iframe[src*="youtube.com/embed/"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await waitFor(() => expect(iframe.dataset.enhanced).toBe("true"));
+    const captions = container.querySelectorAll(".er-youtube-source");
+    expect(captions).toHaveLength(1);
+    expect(captions[0].previousElementSibling).toBe(iframe);
+  });
+});

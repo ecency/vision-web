@@ -341,6 +341,31 @@ describe("a pasted YouTube iframe shows the video URL (#235)", () => {
     expect(sourceLinks(container)).toHaveLength(0);
   });
 
+  // render-helper strips the query, so a playlist or live embed reaches the
+  // client as embed/videoseries or embed/live_stream: not a video id.
+  it("adds no caption for a playlist or live stream embed, but drops its room", async () => {
+    for (const path of ["videoseries", "live_stream"]) {
+      const { container, unmount } = render(
+        <Body html={youtubeIframe(`https://www.youtube.com/embed/${path}`)} />
+      );
+      await flush();
+      expect(sourceLinks(container)).toHaveLength(0);
+      expect(container.querySelector<HTMLIFrameElement>("iframe")!.dataset.enhanced).toBe("true");
+      unmount();
+    }
+  });
+
+  // The sanitizer keeps an author-written class, so an iframe can carry
+  // markdown-video-link itself; it is still a pasted player.
+  it("captions an iframe that itself carries markdown-video-link", async () => {
+    const { container } = render(
+      <Body html={youtubeIframe(`https://www.youtube.com/embed/${ID}`, "markdown-video-link")} />
+    );
+    await flush();
+    expect(sourceLinks(container)).toHaveLength(1);
+    expect(container.querySelector("iframe")!.matches(IFRAME_RESERVE)).toBe(false);
+  });
+
   it("gets one caption from the entry page enhancer, removed by a reset, one again on re-run", async () => {
     const { applyYoutubeVideos, resetYoutubeVideos } = await import(
       "@/features/post-renderer/components/utils/youtubeVideosEnhancer"

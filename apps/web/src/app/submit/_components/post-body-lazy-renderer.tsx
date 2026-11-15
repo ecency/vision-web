@@ -54,6 +54,10 @@ const PreviewLine = memo(function PreviewLine({
   );
 });
 
+// A video placeholder, or a YouTube player the author pasted as an <iframe>,
+// which the YouTube extension captions (#235).
+const VIDEO_IN_LINE = '.markdown-video-link, iframe[src*="youtube.com/embed/"]';
+
 setProxyBase(defaults.imageServer);
 export function PostBodyLazyRenderer({ rawBody, className }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
@@ -93,8 +97,7 @@ export function PostBodyLazyRenderer({ rawBody, className }: Props) {
           key={hash}
           html={element.outerHTML}
           hasVideo={
-            element.matches(".markdown-video-link") ||
-            element.querySelector(".markdown-video-link") !== null
+            element.matches(VIDEO_IN_LINE) || element.querySelector(VIDEO_IN_LINE) !== null
           }
         />
       ))}

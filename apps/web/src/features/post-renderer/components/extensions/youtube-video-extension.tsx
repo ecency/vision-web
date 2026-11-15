@@ -10,6 +10,10 @@ import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/;
 const YOUTUBE_EMBED_SRC = /^(?:https?:)?\/\/(?:www\.|m\.)?youtube\.com\/embed\/([^?#/]+)/i;
+// A pasted player's id: exactly a video id. embed/videoseries (a playlist) and
+// embed/live_stream (a channel's stream) are 11 characters too, so they are
+// named: neither gets a watch link.
+const YOUTUBE_VIDEO_ID = /^(?!videoseries$|live_stream$)[A-Za-z0-9_-]{11}$/;
 
 /**
  * YouTube players the author pasted as an <iframe>: render-helper keeps them
@@ -27,7 +31,9 @@ const PASTED_YOUTUBE_IFRAMES =
  */
 export function attachYoutubeIframeSources(container: ParentNode): HTMLIFrameElement[] {
   const iframes = Array.from(container.querySelectorAll<HTMLIFrameElement>(PASTED_YOUTUBE_IFRAMES)).filter(
-    (iframe) => !iframe.closest(".markdown-video-link")
+    // The parent's ancestors, not the iframe itself: an author-written
+    // class="markdown-video-link" on the iframe does not make it a placeholder's.
+    (iframe) => !iframe.parentElement?.closest(".markdown-video-link")
   );
   for (const iframe of iframes) {
     iframe.dataset.enhanced = "true";
@@ -59,12 +65,13 @@ export function youtubeSourceUrl(element: HTMLElement): { href: string; label: s
   let portrait: boolean;
   let start: string;
   if (element instanceof HTMLIFrameElement) {
-    // A pasted player: render-helper keeps it as /embed/<id> and marks a Short's
-    // with portrait-embed.
+    // A pasted player: render-helper keeps it as /embed/<id> (query stripped, so
+    // there is no start time to keep) and marks a Short's with portrait-embed.
     const src = element.getAttribute("src") ?? "";
     id = YOUTUBE_EMBED_SRC.exec(src)?.[1] ?? "";
+    if (!YOUTUBE_VIDEO_ID.test(id)) return null;
     portrait = element.classList.contains("portrait-embed");
-    start = /[?&]start=(\d+)/.exec(src)?.[1] ?? "";
+    start = "";
   } else {
     id = (element.dataset.youtube ?? "").split("?")[0];
     portrait = element.classList.contains("markdown-video-link-youtube-portrait");
