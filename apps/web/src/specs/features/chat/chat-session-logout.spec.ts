@@ -435,6 +435,39 @@ describe("chat client state on an account switch (#2023)", () => {
     expect(queryClient.getQueryData(["posts", "entry", "/@a/p"])).toEqual({ author: "a" });
   });
 
+  it("drops chat answers the service worker cached for the previous account (#2023)", async () => {
+    const entries = [
+      "https://ecency.com/api/mattermost/channels/unreads",
+      "https://ecency.com/api/mattermost/channels",
+      "https://ecency.com/api/oembed?url=x"
+    ].map((url) => new Request(url));
+    const deleted: string[] = [];
+    const cache = {
+      keys: vi.fn(async () => entries),
+      delete: vi.fn(async (request: Request) => {
+        deleted.push(request.url);
+        return true;
+      })
+    };
+    vi.stubGlobal("caches", {
+      has: vi.fn(async (name: string) => name === "ecency-api"),
+      open: vi.fn(async () => cache)
+    });
+
+    actionsFor("alice").setActiveUser("bob");
+
+    await waitFor(() => expect(deleted).toHaveLength(2));
+    expect(deleted).toEqual([
+      "https://ecency.com/api/mattermost/channels/unreads",
+      "https://ecency.com/api/mattermost/channels"
+    ]);
+  });
+
+  it("switches account without a Cache API", () => {
+    vi.stubGlobal("caches", undefined);
+    expect(() => actionsFor("alice").setActiveUser("bob")).not.toThrow();
+  });
+
   it("closes the open chat websocket", () => {
     const socket = new MattermostWebSocket();
     const disconnect = vi.spyOn(socket, "disconnect");

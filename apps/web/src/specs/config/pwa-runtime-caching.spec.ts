@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const rules: Array<{ urlPattern: RegExp; options?: { cacheName?: string } }> = require(
+const rules: Array<{ urlPattern: RegExp; handler?: string; options?: { cacheName?: string } }> = require(
   "../../../pwa-runtime-caching.js"
 );
 
@@ -39,5 +39,23 @@ describe("service worker runtime caching", () => {
   it("still caches the app's own static images and data", () => {
     expect(ruleFor(`${APP_ORIGIN}/assets/logo.png`)?.options?.cacheName).toBe("local-images");
     expect(ruleFor(`${APP_ORIGIN}/geo/cities.json`)?.options?.cacheName).toBe("ecency-geo-data");
+  });
+
+  // #2023: the generic /api rule answered a slow or failed chat request from
+  // its cache, keyed by URL only, so after an account switch the badge and
+  // channel list could show the previous account's chat.
+  it.each([
+    "/api/mattermost/channels/unreads",
+    "/api/mattermost/channels",
+    "/api/mattermost/me",
+    "/api/mattermost/channels/c1/posts?per_page=30"
+  ])("never caches chat API answers: %s", (path) => {
+    const rule = ruleFor(`${APP_ORIGIN}${path}`);
+    expect(rule?.handler).toBe("NetworkOnly");
+    expect(rule?.options?.cacheName).toBeUndefined();
+  });
+
+  it("keeps the generic API cache for other routes", () => {
+    expect(ruleFor(`${APP_ORIGIN}/api/oembed?url=x`)?.options?.cacheName).toBe("ecency-api");
   });
 });

@@ -58,6 +58,30 @@ function clearChatClientState(): void {
   } catch {
     // Same for the socket.
   }
+  try {
+    void dropCachedChatResponses().catch(() => undefined);
+  } catch {
+    // Same for the service worker cache.
+  }
+}
+
+// The service worker's NetworkFirst cache for /api (pwa-runtime-caching.js).
+const SW_API_CACHE = "ecency-api";
+
+/**
+ * Deletes chat answers the service worker cached before chat was excluded
+ * from it: keyed by URL only, they would answer for the previous account.
+ */
+async function dropCachedChatResponses(): Promise<void> {
+  if (typeof caches === "undefined" || !caches) return;
+  if (!(await caches.has(SW_API_CACHE))) return;
+  const cache = await caches.open(SW_API_CACHE);
+  const requests = await cache.keys();
+  await Promise.all(
+    requests
+      .filter((request) => new URL(request.url).pathname.startsWith("/api/mattermost/"))
+      .map((request) => cache.delete(request))
+  );
 }
 
 /** Resolves when `promise` settles or after `ms`, whichever is first. */

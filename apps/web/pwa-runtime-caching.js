@@ -28,6 +28,14 @@ module.exports = [
     handler: 'NetworkOnly'
   },
   {
+    // Chat API answers belong to the account whose chat cookie sent them, and
+    // the cache below is keyed by URL only: after an account switch a slow or
+    // failed request was answered with the previous account's chat (#2023).
+    // Before the generic /api rule, which Workbox would pick first otherwise.
+    urlPattern: /^https:\/\/ecency\.com\/api\/mattermost\/.*/i,
+    handler: 'NetworkOnly'
+  },
+  {
     // Cache API responses with network-first strategy
     urlPattern: /^https:\/\/ecency\.com\/api\/.*/i,
     handler: 'NetworkFirst',
