@@ -1,0 +1,2 @@
+import {l}from'./chunk-AKHLPLZA.js';import {queryOptions}from'@tanstack/react-query';function s(e,r=50){return queryOptions({queryKey:["assets","hive-power","delegates",e],enabled:!!e,queryFn:()=>l("condenser_api.get_vesting_delegations",[e,"",r])})}export{s as a};//# sourceMappingURL=chunk-AMLXCG5I.js.map
+//# sourceMappingURL=chunk-AMLXCG5I.js.map

@@ -1,0 +1,2 @@
+import {l}from'./chunk-AKHLPLZA.js';import {queryOptions}from'@tanstack/react-query';function u(r){return queryOptions({queryKey:["wallet","withdraw-routes",r],queryFn:()=>l("condenser_api.get_withdraw_routes",[r,"outgoing"])})}export{u as a};//# sourceMappingURL=chunk-PWLRLG7K.js.map
+//# sourceMappingURL=chunk-PWLRLG7K.js.map

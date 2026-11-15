@@ -4,8 +4,8 @@ import { aJ as AuthContextV2, aK as PlatformAdapter, aL as BroadcastMode, A as A
 export { c as Asset, b as AssetOperation, aQ as AuthMethod, d as AuthorReward, aR as AuthorityLevel, aS as AuthorityType, C as CancelTransferFromSavings, e as ClaimRewardBalance, f as CollateralizedConvert, g as CommentBenefactor, h as CommentPayoutUpdate, i as CommentReward, j as CurationReward, D as DelegateVestingShares, E as EffectiveCommentVote, F as FillCollateralizedConvertRequest, l as FillConvertRequest, m as FillOrder, n as FillRecurrentTransfers, aT as FillTransferFromSavings, o as FillVestingWithdraw, G as GeneralAssetInfo, p as GeneralAssetTransaction, q as HIVE_ACCOUNT_OPERATION_GROUPS, r as HIVE_OPERATION_LIST, s as HIVE_OPERATION_NAME_BY_ID, t as HIVE_OPERATION_ORDERS, u as HiveBasedAssetSignType, v as HiveEngineMarketResponse, w as HiveEngineMetric, y as HiveEngineOrderBookEntry, z as HiveEngineToken, B as HiveEngineTokenBalance, I as HiveEngineTokenInfo, H as HiveEngineTokenMetadataResponse, J as HiveEngineTokenStatus, K as HiveEngineTransaction, L as HiveMarketMetric, M as HiveOperationFilter, N as HiveOperationFilterKey, O as HiveOperationFilterValue, P as HiveOperationGroup, Q as HiveOperationName, R as HiveTransaction, S as Interest, T as LimitOrderCancel, U as LimitOrderCreate, V as NaiMap, aU as OPERATION_AUTHORITY_MAP, X as PointTransaction, Y as PointTransactionType, Z as Points, _ as PointsResponse, $ as ProducerReward, a0 as ProposalPay, a2 as RecurrentTransfers, a3 as ReturnVestingDelegation, aV as SMTAsset, a4 as SetWithdrawRoute, a5 as Symbol, a6 as Token, a7 as TokenMetadata, a8 as Transfer, aW as TransferFromSavings, a9 as TransferToSavings, aa as TransferToVesting, ab as UpdateProposalVotes, aX as User, ac as VoteProxy, ad as WalletOperationPayload, ae as WithdrawVesting, aY as assertOperationsFitTransaction, aZ as broadcastOperations, a_ as broadcastOperationsAsync, a$ as broadcastOperationsWithKeys, b0 as broadcastWithMethod, b1 as calculateRCMana, b2 as calculateVPMana, b3 as claimPointsRequest, b4 as collectRequestedOperations, af as formattedNumber, ag as getAccountWalletAssetInfoQueryOptions, ah as getAllHiveEngineTokensQueryOptions, b5 as getCustomJsonAuthority, ai as getHbdAssetGeneralInfoQueryOptions, aj as getHbdAssetTransactionsQueryOptions, ak as getHiveAssetGeneralInfoQueryOptions, al as getHiveAssetMetricQueryOptions, am as getHiveAssetTransactionsQueryOptions, an as getHiveAssetWithdrawalRoutesQueryOptions, ao as getHiveEngineBalancesWithUsdQueryOptions, ap as getHiveEngineTokenGeneralInfoQueryOptions, aq as getHiveEngineTokenTransactionsQueryOptions, ar as getHiveEngineTokensBalancesQueryOptions, as as getHiveEngineTokensMarketQueryOptions, at as getHiveEngineTokensMetadataQueryOptions, au as getHiveEngineTokensMetricsQueryOptions, av as getHiveEngineUnclaimedRewardsQueryOptions, aw as getHivePowerAssetGeneralInfoQueryOptions, ax as getHivePowerAssetTransactionsQueryOptions, ay as getHivePowerDelegatesInfiniteQueryOptions, az as getHivePowerDelegatingsQueryOptions, b6 as getNextAccountHistoryPageParam, b7 as getOperationAuthority, aA as getPointsAssetGeneralInfoQueryOptions, aB as getPointsAssetTransactionsQueryOptions, aC as getPointsQueryOptions, b8 as getProposalAuthority, b9 as getRequiredAuthority, aD as isEmptyDate, ba as isWif, aE as parseAsset, bb as resolveAccountHistoryLimit, aF as resolveHiveOperationFilters, bc as sha256, bd as useBroadcastMutation, aG as useClaimPoints, aH as useWalletOperation, aI as vestsToHp } from './get-hive-engine-token-general-info-query-options-Cf5P2jqo.js';
 import { A as Authority, P as PrivateKey, b as PublicKey, O as Operation } from './utils-Cit-_MdN.js';
 export { c as AccountCreateOperation, d as AssetSymbol, B as BroadcastResult, C as CustomJsonOperation, e as OperationBody, a as OperationName, S as Signature, u as hiveTxUtils } from './utils-Cit-_MdN.js';
-import { A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, r as rpcProxyStats } from './hive-DJ6ZqUqA.js';
-export { C as CallRPCWithFallbackOptions, T as HiveTxTransaction, M as MIN_TRANSACTION_SIZE_LIMIT, a as Memo, b as RpcBatchAnswer, c as RpcCallSpec, d as RpcFallbackResult, e as TransactionReference, f as TransactionTooLargeError, g as callREST, h as callRPC, i as callRPCBatch, j as callRPCBroadcast, k as callRPCWithFallback, l as callWithQuorum, m as getTransactionReference, n as hiveTxConfig } from './hive-DJ6ZqUqA.js';
+import { A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, r as rpcProxyStats } from './hive-3Jnn5QwO.js';
+export { C as CallRPCWithFallbackOptions, T as HiveTxTransaction, M as MIN_TRANSACTION_SIZE_LIMIT, a as Memo, Q as QuorumNodeOutcome, b as RpcBatchAnswer, c as RpcCallSpec, d as RpcFallbackResult, e as TransactionReference, f as TransactionTooLargeError, g as callREST, h as callRPC, i as callRPCBatch, j as callRPCBroadcast, k as callRPCWithFallback, l as callWithQuorum, m as getTransactionReference, n as hiveTxConfig } from './hive-3Jnn5QwO.js';
 
 interface AiGenerationPrice {
     aspect_ratio: string;
@@ -1755,13 +1755,6 @@ declare function buildEngineOp(from: string, contractAction: string, contractPay
  * @returns Custom JSON operation
  */
 declare function buildEngineClaimOp(account: string, tokens: string[]): Operation;
-/**
- * Builds a delegate RC operation (custom_json).
- * @param from - Account delegating RC
- * @param delegatees - Single delegatee or comma-separated list
- * @param maxRc - Maximum RC to delegate (in mana units)
- * @returns Custom JSON operation for RC delegation
- */
 declare function buildDelegateRcOp(from: string, delegatees: string, maxRc: string | number): Operation;
 
 /**
@@ -3274,7 +3267,11 @@ declare function getProMembersQueryOptions(): _tanstack_react_query.OmitKeyof<_t
         [dataTagErrorSymbol]: Error;
     };
 };
-/** Lowercased set of member usernames for O(1), case-insensitive membership checks. */
+/**
+ * Lowercased set of member usernames for O(1), case-insensitive membership checks.
+ * The roster is an unvalidated JSON response, so a body that is not an array, or
+ * entries that are not strings, are skipped instead of throwing in every caller.
+ */
 declare function proMembersSet(members?: string[]): Set<string>;
 
 /** One row of `condenser_api.get_owner_history`. Times are UTC without a zone suffix. */
@@ -8132,7 +8129,7 @@ declare const POST_TOP_VOTES = 5;
  *
  * Endpoints: get_post, get_ranked_posts, get_account_posts, get_discussion.
  */
-declare function bridgeV2Call<T>(endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion", params: Record<string, unknown>, signal?: AbortSignal): Promise<T>;
+declare function bridgeV2Call<T>(endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion", params: Record<string, unknown>, signal?: AbortSignal, onAnswer?: (node: string) => void): Promise<T>;
 declare function resolvePost(post: Entry$1, observer: string, num?: number, signal?: AbortSignal): Promise<Entry$1>;
 declare function getPostsRanked(sort: string, start_author?: string, start_permlink?: string, limit?: number, tag?: string, observer?: string, signal?: AbortSignal): Promise<Entry$1[] | null>;
 declare function getAccountPosts(sort: string, account: string, start_author?: string, start_permlink?: string, limit?: number, observer?: string, signal?: AbortSignal): Promise<Entry$1[] | null>;
@@ -8149,17 +8146,23 @@ declare function getProfiles(accounts: string[], observer?: string): Promise<Pro
 
 /**
  * When the primary node returns null for a get_post call,
- * verify by querying multiple random nodes. If any node
+ * verify by querying the other nodes. If any node
  * returns the post, it exists (the first node was lagging).
  *
- * Uses callWithQuorum(quorum=1) which shuffles and queries
- * nodes in batches. Since it shuffles, it's unlikely to hit
- * the same node that just returned null first.
+ * Uses callWithQuorum(quorum=1), which shuffles every configured node, so it
+ * can ask `primaryNode` (the node that answered null first) again. A lagging
+ * node answers null again, so its answer does not count, unless no other node
+ * was asked at all (a pool of one node).
+ *
+ * Resolves the post when a node has it, and `null` only when another node
+ * answered (null, or an assert such as "does not exist"). When every other
+ * node failed (transport error, rate limit, timeout) it throws the last node
+ * error: a lookup that never got an answer is not "not found".
  *
  * Stays on v1 `bridge.get_post`: quorum picks random nodes, and every node
  * serves v1. The answer is normalized like any other read.
  */
-declare function verifyPostOnAlternateNode(author: string, permlink: string, observer: string): Promise<Entry$1 | null>;
+declare function verifyPostOnAlternateNode(author: string, permlink: string, observer: string, primaryNode?: string): Promise<Entry$1 | null>;
 
 declare function signUp(username: string, email: string, referral: string, captchaToken?: string): Promise<ApiResponse<Record<string, unknown>>>;
 declare function subscribeEmail(email: string): Promise<ApiResponse<Record<string, unknown>>>;
