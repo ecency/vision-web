@@ -6,6 +6,7 @@ import defaults from "@/defaults";
 import type { CSSProperties } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { EntryPageRawBody } from "./entry-page-raw-body";
+import { EntryPageBodyHtml } from "./entry-page-body-html";
 
 interface Props {
   entry: Entry;
@@ -60,12 +61,5 @@ export function EntryPageStaticBody({ entry }: Props) {
     return <EntryPageRawBody entry={entry} />;
   }
 
-  return (
-    <div
-      id="post-body"
-      className="entry-body markdown-view user-selectable client"
-      style={coverStyle}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+  return <EntryPageBodyHtml html={html} style={coverStyle} />;
 }
