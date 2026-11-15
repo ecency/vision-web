@@ -227,6 +227,23 @@ describe("post renderer video click-to-play survives re-renders (#2082)", () => 
     expect(link.querySelector("iframe.speak-iframe")).not.toBeNull();
   });
 
+  it("3Speak picks up a thumbnail from images that arrive after the first render", async () => {
+    // No thumbnail in the markup: it comes from the post's json_metadata.image.
+    const bare = SPEAK_LINK.replace(/<img[^>]*>/, "");
+    vi.mocked(renderPostBody).mockReturnValue(bare);
+    const { rerender } = render(<EcencyRenderer value="body" />, { container: host });
+    await flush();
+    const link = host.querySelector<HTMLElement>(".markdown-video-link-speak")!;
+    expect(link.querySelector(".video-thumbnail")).toBeNull();
+
+    rerender(<EcencyRenderer value="body" images={["https://images.3speak.tv/abc123.png"]} />);
+    await flush();
+
+    expect(link.querySelector(".video-thumbnail")?.getAttribute("src")).toBe(
+      "https://images.3speak.tv/abc123.png"
+    );
+  });
+
   it("an Odysee video keeps playing when the markdown changes but renders the same html", async () => {
     vi.mocked(renderPostBody).mockReturnValue(ODYSEE_LINK);
     const { rerender } = render(<EcencyRenderer value="one" />, { container: host });
