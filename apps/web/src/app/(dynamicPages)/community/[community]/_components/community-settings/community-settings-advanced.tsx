@@ -40,7 +40,7 @@ export function CommunitySettingsAdvanced() {
       <div className="p-2 md:px-4">
         <div className="text-sm flex px-3 items-center mb-2 gap-1">
           <div className="font-semibold">{i18next.t("communities-create.default-beneficiary")}</div>
-          <Link target="_blank" href="https://docs.ecency.com/communities/default-beneficiary">
+          <Link target="_blank" href="https://docs.ecency.com/hive/custom-beneficiary/">
             {i18next.t("communities-create.default-beneficiary-docs")}
           </Link>
         </div>
