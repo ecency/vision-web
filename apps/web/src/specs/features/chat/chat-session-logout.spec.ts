@@ -322,6 +322,42 @@ describe("chat client state on an account switch (#2023)", () => {
     ]);
   });
 
+  it("sends no bootstrap for B after a fast A -> B -> A (#2023 review)", async () => {
+    const pending: Array<() => void> = [];
+    fetchMock.mockImplementation((input: string) =>
+      input === SESSION_URL
+        ? new Promise<Response>((resolve) => pending.push(() => resolve(ok())))
+        : Promise.resolve(
+            new Response(JSON.stringify({ ok: true, userId: "u1", channelId: "c1" }), { status: 200 })
+          )
+    );
+    const queryClient = getQueryClient();
+
+    actionsFor("alice").setActiveUser("bob");
+    user = "bob";
+    const { rerender } = renderHook(() => useMattermostBootstrap(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children)
+    });
+    // B's bootstrap is now waiting for the A -> B reset.
+    await new Promise((r) => setTimeout(r, 0));
+
+    actionsFor("bob").setActiveUser("alice");
+    user = "alice";
+    rerender();
+    await new Promise((r) => setTimeout(r, 0));
+
+    pending.forEach((finish) => finish());
+    await waitFor(() =>
+      expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).not.toHaveLength(0)
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toEqual([
+      "POST /api/mattermost/bootstrap alice"
+    ]);
+  });
+
   it("drops every cached chat query and keeps the rest", () => {
     const queryClient = getQueryClient();
     queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], { ok: true });

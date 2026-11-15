@@ -18,6 +18,13 @@ export const CHAT_SESSION_URL = "/api/mattermost/session";
 const RESET_TIMEOUT_MS = 10_000;
 
 let pendingReset: Promise<void> | null = null;
+// Bumped by every reset, so work started for one account can tell that the
+// browser has moved on (a fast A -> B -> A switch).
+let generation = 0;
+
+export function chatSessionGeneration(): number {
+  return generation;
+}
 
 // Set by the websocket module when it loads. chat-session sits in every
 // page's graph (the global store imports it), the websocket must not.
@@ -66,6 +73,7 @@ function settleWithin(promise: Promise<unknown>, ms: number): Promise<void> {
 }
 
 export function resetChatSession(): Promise<void> {
+  generation += 1;
   clearChatClientState();
 
   let request: Promise<unknown>;

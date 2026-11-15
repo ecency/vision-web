@@ -10,7 +10,7 @@ import { hsTokenRenew } from "@ecency/sdk";
 import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-guard";
 // Every request here goes through chatSessionFetch, which waits for a pending
 // logout/switch session reset (#2023). Keep bare fetch out of this module.
-import { chatSessionFetch } from "./chat-session";
+import { chatSessionFetch, chatSessionGeneration, chatSessionSettled } from "./chat-session";
 
 /** Safely parse JSON from a fetch response, falling back to a readable error */
 async function safeJson<T>(res: Response): Promise<T> {
@@ -152,6 +152,18 @@ export function useMattermostBootstrap(community?: string) {
     retry: shouldRetryBootstrap,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     queryFn: async () => {
+      // A query started for this account, then removed by a switch away and
+      // back while it waited for the reset, must not set this account's
+      // cookie after the newer bootstrap does (#2023).
+      const generation = chatSessionGeneration();
+      const bootstrapFetch = async (init: RequestInit) => {
+        await chatSessionSettled();
+        if (chatSessionGeneration() !== generation) {
+          throw new Error("Chat session changed");
+        }
+        return chatSessionFetch("/api/mattermost/bootstrap", init);
+      };
+
       let accessToken = getAccessToken(username || "");
       let refreshToken = getRefreshToken(username || "");
 
@@ -160,7 +172,7 @@ export function useMattermostBootstrap(community?: string) {
       }
 
       // First attempt with existing tokens
-      let res = await chatSessionFetch("/api/mattermost/bootstrap", {
+      let res = await bootstrapFetch({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -195,7 +207,7 @@ export function useMattermostBootstrap(community?: string) {
           console.log("✓ Chat tokens refreshed successfully");
 
           // Retry bootstrap with refreshed tokens
-          res = await chatSessionFetch("/api/mattermost/bootstrap", {
+          res = await bootstrapFetch({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
