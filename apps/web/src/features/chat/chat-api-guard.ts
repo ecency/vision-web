@@ -11,6 +11,9 @@
  *    into a request storm.
  */
 
+import Cookies from "js-cookie";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { useGlobalStore } from "@/core/global-store";
 import { getQueryClient } from "@/core/react-query";
 import { chatSessionFetch, isChatQueryKey } from "./chat-session";
 
@@ -24,6 +27,12 @@ let pausedUntil = 0;
 // bootstrap again (it sets the cookie), at most once a minute.
 const REBOOTSTRAP_AFTER_401_MS = 60_000;
 let lastRebootstrapAt = 0;
+// Bootstraps after a 401 with no successful chat call since. Past the cap a
+// broken session stops re-bootstrapping until a chat call works again or the
+// tab's account changes.
+const MAX_UNCONFIRMED_REBOOTSTRAPS = 3;
+let unconfirmedRebootstraps = 0;
+let rebootstrapAccount: string | undefined;
 
 /**
  * `errorUpdateCount` at the last successful fetch, per query hash. Consecutive
@@ -41,6 +50,8 @@ export function chatApiPauseRemaining(now = Date.now()): number {
 export function resetChatApiGuard(): void {
   pausedUntil = 0;
   lastRebootstrapAt = 0;
+  unconfirmedRebootstraps = 0;
+  rebootstrapAccount = undefined;
   errorBaselines.clear();
 }
 
@@ -57,6 +68,25 @@ function parseRetryAfterMs(header: string | null): number {
     }
   }
   return DEFAULT_PAUSE_MS;
+}
+
+/**
+ * Whether a 401 may ask the bootstrap again. Not when another tab made another
+ * account active (the `active_user` cookie): this tab would put its account's
+ * chat cookie back over that one's, and the other tab would do the same, every
+ * minute. Not more than once a minute, and not past the cap.
+ */
+function shouldRebootstrap(): boolean {
+  const tabAccount = useGlobalStore.getState().activeUser?.username?.toLowerCase();
+  const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME)?.toLowerCase();
+  if (!tabAccount || tabAccount !== browserAccount) return false;
+
+  if (tabAccount !== rebootstrapAccount) {
+    rebootstrapAccount = tabAccount;
+    unconfirmedRebootstraps = 0;
+  }
+  if (unconfirmedRebootstraps >= MAX_UNCONFIRMED_REBOOTSTRAPS) return false;
+  return Date.now() - lastRebootstrapAt >= REBOOTSTRAP_AFTER_401_MS;
 }
 
 /**
@@ -90,8 +120,11 @@ export async function chatApiFetch(input: string, init?: RequestInit): Promise<R
   // be expired so this request cannot run as that account.
   const res = await chatSessionFetch(input, init);
 
-  if (res.status === 401 && Date.now() - lastRebootstrapAt >= REBOOTSTRAP_AFTER_401_MS) {
+  if (res.ok) {
+    unconfirmedRebootstraps = 0;
+  } else if (res.status === 401 && shouldRebootstrap()) {
     lastRebootstrapAt = Date.now();
+    unconfirmedRebootstraps += 1;
     void rebootstrapChat().catch(() => undefined);
   }
 

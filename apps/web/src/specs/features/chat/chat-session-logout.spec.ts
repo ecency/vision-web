@@ -16,6 +16,8 @@ import { MattermostWebSocket } from "@/features/chat/mattermost-websocket";
 import { getQueryClient } from "@/core/react-query";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { waitFor } from "@testing-library/react";
+import Cookies from "js-cookie";
+import { useGlobalStore } from "@/core/global-store";
 
 vi.mock("@/core/sentry/lazy-sentry", () => ({
   sentry: { setUser: vi.fn() }
@@ -283,11 +285,16 @@ describe("chat client state on an account switch (#2023)", () => {
     vi.mocked(useActiveAccount).mockImplementation(
       () => ({ activeUser: { username: user }, username: user }) as any
     );
+    // This tab's account is the one active in the browser.
+    useGlobalStore.setState({ activeUser: { username: "alice" } } as any);
+    Cookies.set("active_user", "alice");
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     getQueryClient().clear();
+    useGlobalStore.setState({ activeUser: null } as any);
+    Cookies.remove("active_user");
   });
 
   function calls() {
@@ -494,5 +501,67 @@ describe("chat session reset robustness (#2023)", () => {
 
     expect(() => actions.setActiveUser(null)).not.toThrow();
     expect(state.activeUser).toBeNull();
+  });
+});
+
+// #2023 review: a tab still on account A while another tab switched to B
+// (active_user = B) asked the bootstrap as A every minute, putting A's cookie
+// back over B's, forever.
+describe("bootstrap after a 401 in a stale tab (#2023)", () => {
+  const fetchMock = vi.fn();
+  let now = 1_000_000;
+
+  beforeEach(() => {
+    resetChatApiGuard();
+    getQueryClient().clear();
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    useGlobalStore.setState({ activeUser: { username: "alice" } } as any);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    Cookies.remove("active_user");
+    useGlobalStore.setState({ activeUser: null } as any);
+  });
+
+  function bootstrapAsks(invalidate: ReturnType<typeof vi.spyOn>) {
+    return invalidate.mock.calls.filter(
+      ([filters]) => JSON.stringify((filters as any)?.queryKey) === '["mattermost-bootstrap"]'
+    ).length;
+  }
+
+  it("does not bootstrap when another tab made another account active", async () => {
+    Cookies.set("active_user", "bob");
+    const invalidate = vi.spyOn(getQueryClient(), "invalidateQueries");
+    invalidate.mockClear();
+    fetchMock.mockResolvedValue(new Response("", { status: 401 }));
+
+    await chatApiFetch("/api/mattermost/channels/unreads");
+
+    expect(bootstrapAsks(invalidate)).toBe(0);
+  });
+
+  it("stops asking after a few bootstraps that no chat call confirmed, until one succeeds", async () => {
+    Cookies.set("active_user", "alice");
+    const invalidate = vi.spyOn(getQueryClient(), "invalidateQueries");
+    invalidate.mockClear();
+
+    fetchMock.mockImplementation(async () => new Response("", { status: 401 }));
+    for (let i = 0; i < 6; i++) {
+      now += 61_000;
+      await chatApiFetch("/api/mattermost/channels/unreads");
+    }
+    expect(bootstrapAsks(invalidate)).toBe(3);
+
+    fetchMock.mockImplementationOnce(async () => new Response("{}", { status: 200 }));
+    now += 61_000;
+    await chatApiFetch("/api/mattermost/channels/unreads");
+    now += 61_000;
+    await chatApiFetch("/api/mattermost/channels/unreads");
+
+    expect(bootstrapAsks(invalidate)).toBe(4);
   });
 });
