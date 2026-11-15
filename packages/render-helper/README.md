@@ -95,7 +95,7 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - LRU cache v11 (`src/cache.ts`) stores rendered HTML and extracted images
 - Cache keys include content hash (last_update, updated) to auto-invalidate
 - Separate cache entries for different image sizes and formats
-- Default size: 60 entries
+- Default size: 500 entries
 - Uses modern `LRUCache` named import from lru-cache v11
 
 ## File Structure
