@@ -45,7 +45,9 @@ export function NotificationList({
   const isFetchingNextPageRef = useRef(isFetchingNextPage);
   const fetchNextPageRef = useRef(fetchNextPage);
   const isLoadingRef = useRef(false);
+  const isFetchNextPageErrorRef = useRef(isFetchNextPageError);
 
+  isFetchNextPageErrorRef.current = isFetchNextPageError;
   hasNextPageRef.current = hasNextPage;
   isFetchingNextPageRef.current = isFetchingNextPage;
   fetchNextPageRef.current = fetchNextPage;
@@ -84,7 +86,11 @@ export function NotificationList({
           entries[0].isIntersecting &&
           !isLoadingRef.current &&
           hasNextPageRef.current &&
-          !isFetchingNextPageRef.current
+          !isFetchingNextPageRef.current &&
+          // After a failed next page only the Retry button asks again:
+          // scrolling to that row brings this sentinel into view, and an
+          // automatic refetch would hide the row while it retries (#2080).
+          !isFetchNextPageErrorRef.current
         ) {
           fetchNextPageRef.current();
         }

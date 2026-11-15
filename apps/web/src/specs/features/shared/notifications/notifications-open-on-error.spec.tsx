@@ -176,6 +176,61 @@ describe("notifications bell (#2022)", () => {
     }
   });
 
+  // #2080 screenshot pass: scrolling to the retry row brought the sentinel
+  // into view, which started the failed page again and hid the row.
+  it("does not refetch a failed next page when the sentinel comes into view; Retry does", async () => {
+    const observers: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          observers.push(cb);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const intersect = () =>
+      act(async () => {
+        for (const cb of observers) {
+          cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        }
+      });
+    const row = (id: string) => ({ id, type: "vote", read: 0, gk: "2026-11-15", gkf: false });
+    api.list.mockImplementation(async (pageParam?: string) => {
+      if (!pageParam) return [row("n1")];
+      throw new Error("Failed to fetch notifications: 503");
+    });
+    const nextPageCalls = () => api.list.mock.calls.filter(([page]) => page === "n1").length;
+    try {
+      renderBellAndPanel();
+      fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
+      expect(await screen.findByText("row-n1")).toBeInTheDocument();
+
+      await intersect();
+      await screen.findByText("notifications.load-more-failed");
+      const failedCalls = nextPageCalls();
+
+      // The user scrolls to the retry row: the sentinel is in view again.
+      await intersect();
+      await intersect();
+
+      expect(nextPageCalls()).toBe(failedCalls);
+      expect(screen.getByText("notifications.load-more-failed")).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "g.retry" }));
+      });
+      await waitFor(() => expect(nextPageCalls()).toBe(failedCalls + 1));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("lets a click on the unread badge through to the bell", async () => {
     // The badge is drawn over the bell's top-right corner, where a user aims
     // when there is a count. It must not swallow the click. jsdom applies no
