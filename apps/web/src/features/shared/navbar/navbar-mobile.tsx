@@ -187,7 +187,8 @@ export function NavbarMobile({
             className={activeClass(isActive("/chats"))}
           />
           {!unread?.truncated && unread?.totalUnread ? (
-            <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-black dark:text-white shadow">
+            // Drawn over the chat link's corner: let a tap on it reach the link (#2022).
+            <span className="pointer-events-none absolute -top-1 -right-1 inline-flex min-w-[18px] justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-black dark:text-white shadow">
               {unread.totalUnread}
             </span>
           ) : null}
