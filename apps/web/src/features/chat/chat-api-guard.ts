@@ -12,7 +12,7 @@
  */
 
 import Cookies from "js-cookie";
-import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import { ACTIVE_USER_COOKIE_NAME, CHAT_SESSION_HEADER } from "@/consts";
 import { useGlobalStore } from "@/core/global-store";
 import { getQueryClient } from "@/core/react-query";
 import { chatSessionFetch, isChatQueryKey } from "./chat-session";
@@ -129,7 +129,9 @@ export async function chatApiFetch(input: string, init?: RequestInit): Promise<R
   // be expired so this request cannot run as that account.
   const res = await chatSessionFetch(input, init);
 
-  if (res.ok) {
+  // Only an answer given with a session confirms one: the unread badge
+  // answers 200 zeros without a session, every minute (#2023).
+  if (res.ok && res.headers.get(CHAT_SESSION_HEADER) !== "none") {
     unconfirmedRebootstraps = 0;
   } else if (res.status === 401 && shouldRebootstrap()) {
     lastRebootstrapAt = Date.now();

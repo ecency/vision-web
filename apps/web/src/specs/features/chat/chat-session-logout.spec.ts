@@ -19,6 +19,12 @@ import { waitFor } from "@testing-library/react";
 import Cookies from "js-cookie";
 import { useGlobalStore } from "@/core/global-store";
 
+// The unread route reads the session from the request's cookies: none here.
+vi.mock("next/headers", () => ({
+  headers: async () => ({ get: () => null }),
+  cookies: async () => ({ get: () => undefined, set: () => undefined })
+}));
+
 vi.mock("@/core/sentry/lazy-sentry", () => ({
   sentry: { setUser: vi.fn() }
 }));
@@ -641,5 +647,31 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
 
     unmount();
     expect(bootstrapAsks(invalidate)).toBe(4);
+  });
+
+  it("the badge's no-session answer is not a working chat call: the cap holds", async () => {
+    const { GET } = await import("@/app/api/mattermost/channels/unreads/route");
+    // What the unread route answers without a session for this account.
+    const noSession = await GET();
+    expect(noSession.status).toBe(200);
+    expect(await noSession.clone().json()).toMatchObject({ totalUnread: 0, session: false });
+
+    Cookies.set("active_user", "alice");
+    const invalidate = vi.spyOn(getQueryClient(), "invalidateQueries");
+    invalidate.mockClear();
+    const unmount = mountBootstrap();
+
+    // The channel list answers 401, the badge poll answers "no session" in
+    // between, every minute.
+    for (let i = 0; i < 6; i++) {
+      now += 61_000;
+      fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }));
+      await chatApiFetch("/api/mattermost/channels");
+      fetchMock.mockResolvedValueOnce(await GET());
+      await chatApiFetch("/api/mattermost/channels/unreads");
+    }
+    unmount();
+
+    expect(bootstrapAsks(invalidate)).toBe(3);
   });
 });

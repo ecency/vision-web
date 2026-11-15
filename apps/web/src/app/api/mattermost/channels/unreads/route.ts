@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CHAT_SESSION_HEADER } from "@/consts/cookies";
 import {
   getMattermostTeamId,
   getMattermostTokenFromCookies,
@@ -86,13 +87,20 @@ export async function GET() {
   const token = await getMattermostTokenFromCookies();
 
   if (!token) {
-    return NextResponse.json({
-      channels: [],
-      totalMentions: 0,
-      totalDMs: 0,
-      totalThreads: 0,
-      totalUnread: 0
-    });
+    // No chat session for the active account: the badge reads 0. `session:
+    // false` (and the header, which the web chat guard reads without parsing
+    // the body) says this 200 is not a working chat call (#2023).
+    return NextResponse.json(
+      {
+        channels: [],
+        totalMentions: 0,
+        totalDMs: 0,
+        totalThreads: 0,
+        totalUnread: 0,
+        session: false
+      },
+      { headers: { [CHAT_SESSION_HEADER]: "none" } }
+    );
   }
 
   try {
