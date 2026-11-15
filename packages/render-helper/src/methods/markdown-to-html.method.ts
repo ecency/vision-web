@@ -1,4 +1,4 @@
-import { traverse } from './traverse.method'
+import { traverse, TraverseDepthError } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
@@ -188,41 +188,47 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
     output = serializer.serializeToString(doc)
   } catch (error) {
-    // @xmldom/xmldom is stricter than old xmldom and throws ParseError for malformed HTML
-    // Instead of returning empty string (bad UX), attempt graceful recovery
-    try {
-      // Strategy:
-      // 1. Pre-sanitize to remove XSS vectors
-      // 2. Use lenient htmlparser2 to auto-repair malformed HTML (auto-close unclosed tags)
-      // 3. Serialize the repaired HTML
-      // 4. Re-parse with @xmldom/xmldom (now well-formed)
-      // 5. Traverse and serialize as normal
-      // Reuse the markdown output already produced before the failing
-      // DOMParser pass — `md.render(input)` is the expensive step and
-      // re-running it costs ~100 ms per fallback hit on a 60 KB body.
-      const preSanitized = sanitizeHtml(output, renderOptions)
+    if (error instanceof TraverseDepthError) {
+      // Too deep to transform. Retrying through htmlparser2 below would only
+      // walk the same depth again, so take the sanitize-only output now.
+      output = sanitizeHtml(output, renderOptions)
+    } else {
+      // @xmldom/xmldom is stricter than old xmldom and throws ParseError for malformed HTML
+      // Instead of returning empty string (bad UX), attempt graceful recovery
+      try {
+        // Strategy:
+        // 1. Pre-sanitize to remove XSS vectors
+        // 2. Use lenient htmlparser2 to auto-repair malformed HTML (auto-close unclosed tags)
+        // 3. Serialize the repaired HTML
+        // 4. Re-parse with @xmldom/xmldom (now well-formed)
+        // 5. Traverse and serialize as normal
+        // Reuse the markdown output already produced before the failing
+        // DOMParser pass — `md.render(input)` is the expensive step and
+        // re-running it costs ~100 ms per fallback hit on a 60 KB body.
+        const preSanitized = sanitizeHtml(output, renderOptions)
 
-      // Use htmlparser2 to parse malformed HTML leniently
-      const dom = htmlparser2.parseDocument(preSanitized, {
-        // lenient options - don't throw on malformed HTML
-        lowerCaseTags: false,
-        lowerCaseAttributeNames: false,
-      })
+        // Use htmlparser2 to parse malformed HTML leniently
+        const dom = htmlparser2.parseDocument(preSanitized, {
+          // lenient options - don't throw on malformed HTML
+          lowerCaseTags: false,
+          lowerCaseAttributeNames: false,
+        })
 
-      // Serialize back to well-formed HTML (htmlparser2 auto-closes tags)
-      const repairedHtml = domSerializer(dom.children)
+        // Serialize back to well-formed HTML (htmlparser2 auto-closes tags)
+        const repairedHtml = domSerializer(dom.children)
 
-      // Now parse the well-formed HTML with @xmldom/xmldom
-      const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, 'text/html')
+        // Now parse the well-formed HTML with @xmldom/xmldom
+        const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, 'text/html')
 
-      traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
+        traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
-      output = serializer.serializeToString(doc)
-    } catch (fallbackError) {
-      // If DOM parsing fails, sanitize the Remarkable HTML output directly.
-      // This skips the traverse() image proxy/link rewriting but preserves
-      // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || md.render(input), renderOptions)
+        output = serializer.serializeToString(doc)
+      } catch (fallbackError) {
+        // If DOM parsing fails, sanitize the Remarkable HTML output directly.
+        // This skips the traverse() image proxy/link rewriting but preserves
+        // readable HTML content instead of showing escaped tags.
+        output = sanitizeHtml(output || md.render(input), renderOptions)
+      }
     }
   }
 

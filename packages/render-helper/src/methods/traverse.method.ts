@@ -5,9 +5,25 @@ import { p } from './p.method'
 import { text } from './text.method'
 import { RenderOptions, SeoContext } from '../types'
 
+// Explicit nesting cap (#1920). Real posts stay far below it; past it the body
+// is hostile or broken, and markdownToHTML() goes straight to its sanitize-only
+// output instead of grinding down to the JS engine's stack limit, which used to
+// cost seconds of CPU per render before the same fallback kicked in.
+export const MAX_TRAVERSE_DEPTH = 500
+
+export class TraverseDepthError extends Error {
+  constructor() {
+    super(`render-helper: nesting deeper than ${MAX_TRAVERSE_DEPTH} levels`)
+    this.name = 'TraverseDepthError'
+  }
+}
+
 export function traverse(node: Node, forApp: boolean, depth = 0, state = { firstImageFound: false }, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): void {
   if (!node || !node.childNodes) {
     return
+  }
+  if (depth > MAX_TRAVERSE_DEPTH) {
+    throw new TraverseDepthError()
   }
 
   // Walk siblings using nextSibling instead of indexing into the live NodeList.
