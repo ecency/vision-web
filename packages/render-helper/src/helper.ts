@@ -448,10 +448,13 @@ export function extractYtStartTime(url:string):string {
     const urlObj = new URL(url);
     const params = new URLSearchParams(urlObj.search);
     if(params.has('t')){
-      const t = params.get('t');
-      return '' + parseInt(t || '0'); //parsing is important as sometimes t is famated '123s';
+      // Seconds ("90", "90s") or YouTube's XhYmZs form ("1m30s", "1h2m3s").
+      const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/i.exec(params.get('t') || '');
+      if (!m || !(m[1] || m[2] || m[3])) return '';
+      return '' + ((+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0)));
     }else if (params.has('start')){
-      return params.get('start') || '';
+      const start = params.get('start') || '';
+      return /^\d+$/.test(start) ? start : '';
     }
     return '';
   } catch (error) {
