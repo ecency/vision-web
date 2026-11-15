@@ -12,11 +12,11 @@ interface Props {
 
 const ITEMS = [
   { value: "099points", title: i18next.t("purchase-qr.points-amount", { n: "500" }) },
-  { value: "199points", title: i18next.t("purchase-qr.points-amount", { n: "1100" }) },
-  { value: "499points", title: i18next.t("purchase-qr.points-amount", { n: "2700" }) },
-  { value: "999points", title: i18next.t("purchase-qr.points-amount", { n: "5500" }) },
-  { value: "4999points", title: i18next.t("purchase-qr.points-amount", { n: "28500" }) },
-  { value: "9999points", title: i18next.t("purchase-qr.points-amount", { n: "60000" }) }
+  { value: "199points", title: i18next.t("purchase-qr.points-amount", { n: "1200" }) },
+  { value: "499points", title: i18next.t("purchase-qr.points-amount", { n: "2800" }) },
+  { value: "999points", title: i18next.t("purchase-qr.points-amount", { n: "6000" }) },
+  { value: "4999points", title: i18next.t("purchase-qr.points-amount", { n: "31500" }) },
+  { value: "9999points", title: i18next.t("purchase-qr.points-amount", { n: "70000" }) }
 ];
 
 export const PurchaseQrTypes = ({ value, setValue, className }: Props) => {

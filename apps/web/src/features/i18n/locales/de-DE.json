@@ -1623,7 +1623,7 @@
     "with-extension": "Mit Erweiterung signieren",
     "with-extension-named": "Mit {{name}} anmelden",
     "no-extension-prompt": "Sie haben keine Hive-Erweiterung? Installieren Sie:",
-    "with-hiveauth": "Mit HiveAuh signieren",
+    "with-hiveauth": "Mit HiveAuth signieren",
     "invalid-key": "Ungültiges Schlüsselformat. Bitte überprüfen Sie ungültige Zeichen.",
     "key-error": "Fehler bei der Verarbeitung des Schlüssels. Bitte überprüfen Sie, ob er korrekt ist.",
     "sign-with-metamask": "Mit MetaMaske signieren"

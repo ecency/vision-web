@@ -17,6 +17,7 @@ import {
   WalletOperationWithdrawRoutesForm
 } from "./operations";
 import i18next from "i18next";
+import { getWalletOperationTitleKeys } from "./wallet-operation-title-keys";
 import { MarketSwapForm } from "../market";
 
 interface Props {
@@ -68,18 +69,10 @@ export function WalletOperationsDialog({
     }
   }, [controlled?.show]);
 
-  const [titleNamespace, titleKey, subTitleKey] = useMemo(() => {
-    if (operation === AssetOperation.WithdrawRoutes) {
-      return ["withdraw-routes", "title", "description"] as const;
-    }
-
-    const key =
-      operation === AssetOperation.Transfer && asset === AssetOperation.Gift
-        ? "transfer-title-point"
-        : `${operation}-title`;
-
-    return ["transfer", key, `${operation}-sub-title`] as const;
-  }, [asset, operation]);
+  const [titleNamespace, titleKey, subTitleKey] = useMemo(
+    () => getWalletOperationTitleKeys(operation, asset),
+    [asset, operation]
+  );
 
   return (
     <>

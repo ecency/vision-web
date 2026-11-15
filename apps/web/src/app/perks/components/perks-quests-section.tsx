@@ -1,11 +1,13 @@
 "use client";
 
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { isProMember } from "@/features/pro";
 import { error, success } from "@/features/shared";
 import { Button, TabItem } from "@/features/ui";
 import { getAccessToken, useCountdown } from "@/utils";
 import {
   getGameStatusCheckQueryOptions,
+  getProMembersQueryOptions,
   getQuestsQueryOptions,
   QUEST_CATALOG,
   STREAK_FREEZE_MAX_OWNED,
@@ -56,6 +58,9 @@ export function PerksQuestsSection() {
 
   const { data: quests } = useQuery(getQuestsQueryOptions(username));
   const { data: spin } = useQuery(getGameStatusCheckQueryOptions(username, code, "spin"));
+  // Pro members get streak freezes for free, so do not quote them the Points price.
+  const { data: proMembers } = useQuery(getProMembersQueryOptions());
+  const isPro = isProMember(proMembers?.members, username);
 
   const [tier, setTier] = useState<QuestTier>("daily");
   const [showTopup, setShowTopup] = useState(false);
@@ -141,7 +146,9 @@ export function PerksQuestsSection() {
                   isLoading={isBuyingFreeze}
                   disabled={isBuyingFreeze}
                 >
-                  {i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
+                  {isPro
+                    ? i18next.t("perks.quests.buy-freeze-free")
+                    : i18next.t("perks.quests.buy-freeze", { price: STREAK_FREEZE_PRICE })}
                 </Button>
               )}
               {showTopup && (

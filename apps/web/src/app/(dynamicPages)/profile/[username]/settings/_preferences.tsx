@@ -14,7 +14,7 @@ import React, { useCallback, useMemo } from "react";
 import { getNotificationsSettingsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks";
 import { getAccessToken } from "@/utils";
-import { ALLOWED_IMAGE_SERVERS } from "@/defaults";
+import { IMAGE_SERVER_OPTIONS } from "./_image-server-options";
 
 export function Preferences() {
   const { activeUser } = useActiveAccount();
@@ -158,15 +158,11 @@ export function Preferences() {
               type="select"
               onChange={(e: any) => setImageProxy(e.target.value)}
             >
-              <option value={ALLOWED_IMAGE_SERVERS[0]}>
-                {i18next.t("preferences.image-server-default")}
-              </option>
-              <option value={ALLOWED_IMAGE_SERVERS[1]}>
-                {i18next.t("preferences.image-server-hiveblog")}
-              </option>
-              <option value={ALLOWED_IMAGE_SERVERS[2]}>
-                {i18next.t("preferences.image-server-nocdn")}
-              </option>
+              {IMAGE_SERVER_OPTIONS.map(({ value, labelKey }) => (
+                <option key={value} value={value}>
+                  {i18next.t(labelKey)}
+                </option>
+              ))}
             </FormControl>
           </div>
         </div>
