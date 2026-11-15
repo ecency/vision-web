@@ -8,6 +8,43 @@ import { getYoutubeEmbedUrl } from "../utils/getYoutubeEmbedUrl";
 import { unmountRootsLater } from "../utils/unmount-roots-later";
 import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/;
+
+/**
+ * The posted video's own URL, rebuilt from the placeholder (render-helper drops
+ * the href): a Short links to its Shorts page, a start time is kept. Null when
+ * the id is not a YouTube video id.
+ */
+export function youtubeSourceUrl(element: HTMLElement): { href: string; label: string } | null {
+  const id = (element.dataset.youtube ?? "").split("?")[0];
+  if (!YOUTUBE_ID.test(id)) return null;
+  const path = element.classList.contains("markdown-video-link-youtube-portrait")
+    ? `shorts/${id}`
+    : `watch?v=${id}`;
+  const start = element.dataset.startTime ?? "";
+  const time = /^[1-9][0-9]{0,6}$/.test(start) ? `${path.includes("?") ? "&" : "?"}t=${start}s` : "";
+  const label = `youtube.com/${path}${time}`;
+  return { href: `https://www.${label}`, label };
+}
+
+/**
+ * Puts the video's URL right after the placeholder, outside it so a click opens
+ * the link instead of starting the video (#235). Returns the link to remove on
+ * cleanup, or null when there is no valid id.
+ */
+export function attachYoutubeSource(element: HTMLElement): HTMLAnchorElement | null {
+  const url = youtubeSourceUrl(element);
+  if (!url) return null;
+  const source = document.createElement("a");
+  source.className = "er-youtube-source";
+  source.href = url.href;
+  source.target = "_blank";
+  source.rel = "noopener noreferrer nofollow";
+  source.textContent = url.label;
+  element.after(source);
+  return source;
+}
+
 export function YoutubeVideoRenderer({
    embedSrc,
    container,
@@ -56,14 +93,17 @@ export function YoutubeVideoExtension({
   // React does not own, so cleanup undoes them. Left behind, Strict Mode's
   // setup-cleanup-setup cycle skipped every element on the second setup
   // (`:not(.er-youtube)`) and the placeholders never played (#1939).
-  const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
+  const enhancedRef = useRef<
+    { element: HTMLElement; frame: HTMLElement; source: HTMLElement | null }[]
+  >([]);
 
   const reset = useCallback(() => {
     unmountRootsLater(rootsRef.current);
     rootsRef.current = [];
-    for (const { element, frame } of enhancedRef.current) {
+    for (const { element, frame, source } of enhancedRef.current) {
       element.classList.remove("er-youtube");
       frame.remove();
+      source?.remove();
       setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
@@ -93,7 +133,9 @@ export function YoutubeVideoExtension({
 
         container.classList.add("er-youtube-frame");
         element.classList.add("er-youtube");
-        enhancedRef.current.push({ element, frame: container });
+
+        const source = attachYoutubeSource(element);
+        enhancedRef.current.push({ element, frame: container, source });
 
         // Use createRoot instead of hydrateRoot (no server-rendered content to hydrate)
         const root = createRoot(container);

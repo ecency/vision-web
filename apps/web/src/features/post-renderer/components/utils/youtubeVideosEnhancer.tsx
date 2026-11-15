@@ -1,5 +1,6 @@
 import { createRoot, Root } from "react-dom/client";
 import { YoutubeVideoRenderer } from "../extensions";
+import { attachYoutubeSource } from "../extensions/youtube-video-extension";
 import { getYoutubeEmbedUrl } from "./getYoutubeEmbedUrl";
 import { setVideoPlaceholderVisible } from "./video-placeholder";
 
@@ -30,6 +31,7 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
         roots.push(root);
 
         el.appendChild(wrapper);
+        attachYoutubeSource(el);
     });
 
     return roots;
@@ -46,6 +48,8 @@ export function resetYoutubeVideos(container: HTMLElement): void {
         .querySelectorAll<HTMLElement>('.markdown-video-link-youtube[data-enhanced="true"]')
         .forEach((el) => {
             el.querySelectorAll(":scope > .er-youtube-frame").forEach((frame) => frame.remove());
+            const next = el.nextElementSibling;
+            if (next?.classList.contains("er-youtube-source")) next.remove();
             delete el.dataset.enhanced;
             setVideoPlaceholderVisible(el, true);
         });

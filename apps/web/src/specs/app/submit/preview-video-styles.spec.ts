@@ -94,8 +94,9 @@ describe("classic editor preview video styles", () => {
     expect(selectors.length).toBeGreaterThan(0);
     for (const sel of selectors) {
       expect(sel.startsWith(".markdown-view ")).toBe(true);
+      // er-youtube-source: the video URL under a YouTube embed (#235).
       expect(sel).toMatch(
-        /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe/
+        /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe|er-youtube-source/
       );
     }
   });

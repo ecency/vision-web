@@ -117,6 +117,24 @@
     }
   }
 
+  // The video's own URL under a YouTube placeholder or player (#235): small and
+  // muted so it reads as a caption, centred like a Short above it.
+  a.er-youtube-source {
+    display: block;
+    margin: 0 auto 1rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+    @apply text-gray-600 dark:text-gray-400;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
   // Portrait embeds (9:16 aspect ratio)
   // Target iframe.portrait-embed since the class is applied to iframe elements, not anchors
   iframe.portrait-embed {
