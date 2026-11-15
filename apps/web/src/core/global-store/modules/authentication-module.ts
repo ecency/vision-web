@@ -42,6 +42,13 @@ export const createAuthenticationActions = (
     const currentUsername = getState().activeUser?.username;
 
     if (name === currentUsername) {
+      // Choosing this tab's account again (a login while another tab switched
+      // away or logged out) makes it the browser's active account again, or
+      // its chat stays refused as a stale tab (#2023).
+      if (name && Cookies.get(ACTIVE_USER_COOKIE_NAME) !== name) {
+        ls.set("active_user", name);
+        Cookies.set(ACTIVE_USER_COOKIE_NAME, name, { expires: 365 });
+      }
       return;
     }
 

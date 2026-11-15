@@ -78,14 +78,16 @@ describe.each([
     expect(screen.getByRole("status")).toContainElement(message);
   });
 
-  it("says no account is active and offers the login, not a Retry that cannot work", () => {
+  it("says no account is active and offers a login button next to Retry", () => {
     bootstrapError = new ChatAccountInactiveError(undefined);
     render(view());
 
     expect(screen.getByText("chat.no-account-active")).toBeInTheDocument();
     expect(screen.queryByText(/No account is active/)).not.toBeInTheDocument();
-    expect(screen.getByText("login-required")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "g.retry" })).not.toBeInTheDocument();
+    // Not LoginRequired: it renders nothing while this tab's store has an account.
+    expect(screen.queryByText("login-required")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "g.login" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "g.retry" })).toBeInTheDocument();
   });
 
   it("still shows the session expired screen for an auth error", () => {
