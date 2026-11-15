@@ -120,7 +120,10 @@ export function NotificationList({
         ) : (
           !isLoading &&
           filteredData.length === 0 &&
-          !hasNextPage && (
+          !hasNextPage &&
+          // Rows are loaded but none fits the view and the refresh failed: the
+          // refresh notice below says it, "empty" would not be known to be true.
+          !(isRefetchError && dataFlow.length > 0) && (
             <span className="empty-text">
               {!isQueryEnabled
                 ? i18next.t("notifications.auth-required-desc")

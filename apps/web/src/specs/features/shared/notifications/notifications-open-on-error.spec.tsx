@@ -65,6 +65,8 @@ vi.mock("@/features/shared/notifications/hooks", () => ({
 
 import { NavbarNotificationsButton } from "@/features/shared/navbar/navbar-notifications-button";
 import { NotificationsDialog } from "@/features/shared/notifications";
+import { NotificationList } from "@/features/shared/notifications/notification-list";
+import { NotificationViewType } from "@/enums";
 
 /** The panel's Retry buttons use the outline style of its other actions: the
  * filled secondary one was white on mid grey in the light theme (#2022). */
@@ -170,6 +172,8 @@ describe("notifications bell (#2022)", () => {
       });
       const retry = await screen.findByRole("button", { name: "g.retry" });
       expect(screen.getByText("notifications.load-more-failed")).toBeInTheDocument();
+      // A failed next page is not a failed refresh: one notice, not two.
+      expect(screen.queryByText("notifications.refresh-failed")).not.toBeInTheDocument();
       expectOutlineRetry(retry);
       expect(screen.getByText("row-n1")).toBeInTheDocument();
 
@@ -214,6 +218,55 @@ describe("notifications bell (#2022)", () => {
     });
     expect(await screen.findByText("row-n0")).toBeInTheDocument();
     expect(screen.queryByText("notifications.refresh-failed")).not.toBeInTheDocument();
+  });
+
+  // #2087 review: with the read/unread view empty but rows loaded, a failed
+  // refresh showed "empty list" next to the refresh notice.
+  it("shows only the refresh notice when the view is empty and a refresh fails", async () => {
+    const observers: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          observers.push(cb);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const row = (id: string) => ({ id, type: "vote", read: 1, gk: "2026-11-15", gkf: false });
+    api.list.mockImplementation(async (pageParam?: string) => (pageParam ? [] : [row("n1")]));
+    try {
+      const { queryClient } = renderWithQueryClient(
+        <NotificationList
+          currentStatus={NotificationViewType.UNREAD}
+          selectNotification={() => undefined}
+        />
+      );
+      await waitFor(() => expect(api.list).toHaveBeenCalled());
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+      // The sentinel loads the (empty) last page, so the list knows it has ended.
+      await act(async () => {
+        for (const cb of observers) {
+          cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        }
+      });
+      expect(await screen.findByText("g.empty-list")).toBeInTheDocument();
+
+      api.list.mockRejectedValue(new Error("Failed to fetch notifications: 503"));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: ["notifications", "list"] });
+      });
+
+      expect(await screen.findByText("notifications.refresh-failed")).toBeInTheDocument();
+      expect(screen.queryByText("g.empty-list")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // #2080 screenshot pass: scrolling to the retry row brought the sentinel
