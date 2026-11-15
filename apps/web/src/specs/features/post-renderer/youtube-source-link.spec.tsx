@@ -123,16 +123,21 @@ describe("entry page YouTube enhancer shows the video URL (#235)", () => {
       "@/features/post-renderer/components/utils/youtubeVideosEnhancer"
     );
     const host = document.createElement("div");
-    host.innerHTML = `<div class="markdown-view">${youtubeLink({ "data-start-time": "5" })}</div>`;
+    host.innerHTML = `<div class="markdown-view er-youtube-source-host">${youtubeLink({ "data-start-time": "5" })}</div>`;
     document.body.appendChild(host);
+    const placeholder = host.querySelector<HTMLElement>(".markdown-video-link-youtube")!;
+    expect(placeholder.matches(RESERVE)).toBe(true);
 
     let roots = applyYoutubeVideos(host);
+    expect(placeholder.matches(RESERVE)).toBe(false);
     expect(sourceLinks(host).map((a) => a.href)).toEqual([
       `https://www.youtube.com/watch?v=${ID}&t=5s`
     ]);
 
     resetYoutubeVideos(host);
     expect(sourceLinks(host)).toHaveLength(0);
+    // The reservation comes back with the link gone, so the gap height holds.
+    expect(placeholder.matches(RESERVE)).toBe(true);
 
     roots.forEach((r) => act(() => r.unmount()));
     roots = applyYoutubeVideos(host);
