@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     ({ visionFeatures }) => visionFeatures.plausible.enabled
   );
   if (!isEnabled) {
-    return Response.json({ status: 404 });
+    return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
   // A body that is not a JSON object is the caller's error: answer 400 instead of letting the
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
   } = payload as Record<string, unknown>;
 
   if (!url) {
-    return Response.json({ status: 400 });
+    return NextResponse.json({ error: "url is required" }, { status: 400 });
   }
 
   // This is an UNAUTHENTICATED public proxy for a single post's view stats, using the

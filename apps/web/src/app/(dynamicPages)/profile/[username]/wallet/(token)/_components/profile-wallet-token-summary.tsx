@@ -28,6 +28,7 @@ import {
   useProfileWalletHiveClaimState,
 } from "./profile-wallet-hive-claim-rewards-button";
 import { ProfileWalletHbdInterest } from "./profile-wallet-hbd-interest";
+import { SavingsWithdrawPendingLink } from "../../../_components/savings-withdraw";
 
 function format(value: number) {
   return formatAssetBalance(value);
@@ -211,6 +212,9 @@ export function ProfileWalletTokenSummary() {
             </div>
           ))}
         </div>
+        {(tokenWithFallback === "HIVE" || tokenWithFallback === "HBD") && (
+          <SavingsWithdrawPendingLink username={cleanUsername} tokenType={tokenWithFallback} />
+        )}
       </div>
       {tokenWithFallback === "HBD" && (
         <ProfileWalletHbdInterest username={cleanUsername} />

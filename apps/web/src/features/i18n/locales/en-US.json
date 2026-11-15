@@ -1937,7 +1937,8 @@
   },
   "savings-withdraw": {
     "title": "Withdraw from Savings",
-    "to": "To"
+    "to": "To",
+    "pending-link": "Pending savings withdrawals: {{n}}"
   },
   "open-orders-list": {
     "title": "Open orders",
@@ -4465,6 +4466,8 @@
     "submitting": "Processing...",
     "result-title": "Result",
     "apply-button": "Apply to post",
+    "apply-summarize-confirm": "Applying the recap replaces your whole post with the summary. Continue?",
+    "apply-summarize-confirm-button": "Replace post",
     "copy-button": "Copy",
     "copied": "Copied!",
     "try-again": "Try Again",

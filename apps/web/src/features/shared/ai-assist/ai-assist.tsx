@@ -111,6 +111,8 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
   const [text, setText] = useState(initialText.slice(0, maxInput));
   const [result, setResult] = useState<{ output: string; action: AiAssistAction } | null>(null);
   const [copied, setCopied] = useState(false);
+  // A Recap applied to the post replaces the whole body with the summary, so it asks first.
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   const selectedPrice = useMemo(() => {
     if (!selectedAction || !prices) return null;
@@ -177,10 +179,12 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
 
   const handleTryAgain = useCallback(() => {
     setResult(null);
+    setConfirmReplace(false);
   }, []);
 
   const handleTryAnother = useCallback(() => {
     setResult(null);
+    setConfirmReplace(false);
     setSelectedAction(null);
   }, []);
 
@@ -308,9 +312,30 @@ export function AiAssist({ onApply, initialText = "" }: Props) {
           </button>
         )}
 
+        {onApply && confirmReplace && (
+          <div className="flex flex-col gap-2 border border-[--border-color] rounded-xl p-3 text-sm">
+            <div>{i18next.t("ai-assist.apply-summarize-confirm")}</div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => onApply(getApplyValue(), result.action)}>
+                {i18next.t("ai-assist.apply-summarize-confirm-button")}
+              </Button>
+              <Button size="sm" appearance="gray-link" onClick={() => setConfirmReplace(false)}>
+                {i18next.t("g.cancel")}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 flex-wrap">
-          {onApply && (
-            <Button size="sm" onClick={() => onApply(getApplyValue(), result.action)}>
+          {onApply && !confirmReplace && (
+            <Button
+              size="sm"
+              onClick={() =>
+                result.action === "summarize"
+                  ? setConfirmReplace(true)
+                  : onApply(getApplyValue(), result.action)
+              }
+            >
               {i18next.t("ai-assist.apply-button")}
             </Button>
           )}
