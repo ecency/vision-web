@@ -11,6 +11,7 @@ import {
 } from "../utils";
 import { findPostLinkElements } from "../functions";
 import { unmountRootsLater } from "./unmount-roots-later";
+import { runUndos } from "./dom-swap";
 import { Root } from "react-dom/client";
 import React from "react";
 
@@ -38,14 +39,16 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
     images?: string[]
 }): () => void {
     const postLinkElements = findPostLinkElements(container);
+    // How to put back the links the enhancers swapped out (#2083).
+    const undos: (() => void)[] = [];
 
     const allRoots: Root[] = [
-        ...applyHivePostLinks(container, postLinkElements),
-        ...applyHiveOperations(container, options?.onHiveOperationClick),
+        ...applyHivePostLinks(container, postLinkElements, undos),
+        ...applyHiveOperations(container, options?.onHiveOperationClick, undos),
         ...applyYoutubeVideos(container),
         ...applyThreeSpeakVideos(container, options?.images),
-        ...applyWaveLikePosts(container, postLinkElements),
-        ...applyTwitterEmbeds(container, options?.TwitterComponent ?? TwitterFallback)
+        ...applyWaveLikePosts(container, postLinkElements, undos),
+        ...applyTwitterEmbeds(container, options?.TwitterComponent ?? TwitterFallback, undos)
     ];
 
     // Apply image zoom and store the promise for cleanup
@@ -60,6 +63,7 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
         unmountRootsLater(allRoots);
         resetYoutubeVideos(container);
         resetThreeSpeakVideos(container);
+        runUndos(undos);
         zoomPromise.then((zoom) => {
             zoom?.detach();
         }).catch(() => {

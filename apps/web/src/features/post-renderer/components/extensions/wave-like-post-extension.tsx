@@ -2,6 +2,8 @@
 
 import React, { RefObject, useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { swapIn, runUndos } from "../utils/dom-swap";
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { getPostQueryOptions, QueryKeys } from "@ecency/sdk";
 import { getQueryClient } from "@/core/react-query";
@@ -154,15 +156,17 @@ export function WaveLikePostRenderer({ link, depth = 1 }: { link: string; depth?
 export function WaveLikePostExtension({
   containerRef,
   embedDepth = 0,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   embedDepth?: number;
+  /** The rendered body. A change replaces the links, so they are enhanced again (#2083). */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+  const undosRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    rootsRef.current.forEach(r => r.unmount());
-    rootsRef.current = [];
 
     const container = containerRef.current;
     if (!container) {
@@ -198,7 +202,7 @@ export function WaveLikePostExtension({
 
           // Final safety check before replacing
           if (element.isConnected && element.parentElement) {
-            element.parentElement.replaceChild(container, element);
+            undosRef.current.push(swapIn(element, container));
           }
         } catch (error) {
           console.warn("Error enhancing wave-like post element:", error);
@@ -206,10 +210,11 @@ export function WaveLikePostExtension({
       });
 
     return () => {
-      rootsRef.current.forEach(r => r.unmount());
+      unmountRootsLater(rootsRef.current);
       rootsRef.current = [];
+      runUndos(undosRef.current);
     };
-  }, [embedDepth]);
+  }, [embedDepth, html]);
 
   return <></>;
 }

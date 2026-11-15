@@ -150,8 +150,8 @@ export function EcencyRenderer({
       )}
       {!pure && (
         <>
-          <ImageZoomExtension containerRef={ref} />
-          <HivePostLinkExtension containerRef={ref} />
+          <ImageZoomExtension containerRef={ref} html={html} />
+          <HivePostLinkExtension containerRef={ref} html={html} />
           {!renderOptions?.embedVideosDirectly && (
             <>
               <YoutubeVideoExtension containerRef={ref} html={html} />
@@ -159,14 +159,16 @@ export function EcencyRenderer({
               <EmbedVideoExtension containerRef={ref} body={html} />
             </>
           )}
-          <WaveLikePostExtension containerRef={ref} embedDepth={embedDepth} />
+          <WaveLikePostExtension containerRef={ref} embedDepth={embedDepth} html={html} />
           <TwitterExtension
             containerRef={ref}
             ComponentInstance={TwitterComponent}
+            html={html}
           />
           <HiveOperationExtension
             containerRef={ref}
             onClick={onHiveOperationClick}
+            html={html}
           />
         </>
       )}

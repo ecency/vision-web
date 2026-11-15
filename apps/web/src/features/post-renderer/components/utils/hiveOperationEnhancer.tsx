@@ -1,9 +1,11 @@
 import { createRoot, Root } from "react-dom/client";
 import { HiveOperationRenderer } from "../extensions";
+import { swapIn } from "./dom-swap";
 
 export function applyHiveOperations(
     container: HTMLElement,
-    onClick?: (op: string) => void
+    onClick?: (op: string) => void,
+    undos: (() => void)[] = []
 ): Root[] {
     const roots: Root[] = [];
 
@@ -37,7 +39,7 @@ export function applyHiveOperations(
 
                 // Final safety check before replacing
                 if (el.isConnected && el.parentElement) {
-                    el.parentElement.replaceChild(wrapper, el);
+                    undos.push(swapIn(el, wrapper));
                 }
             } catch (error) {
                 console.warn("Error enhancing Hive operation element:", error);

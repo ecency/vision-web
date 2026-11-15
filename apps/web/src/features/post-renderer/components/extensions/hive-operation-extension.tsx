@@ -4,6 +4,8 @@ import React, { RefObject, useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { Operation } from "@ecency/sdk";
 import defaults from "@/defaults";
+import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { swapIn, runUndos } from "../utils/dom-swap";
 
 interface Props {
     op: string;
@@ -72,11 +74,15 @@ export function HiveOperationRenderer({ op }: Props) {
 export function HiveOperationExtension({
     containerRef,
     onClick,
+    html,
 }: {
     containerRef: RefObject<HTMLElement | null>;
     onClick?: (op: string) => void;
+    /** The rendered body. A change replaces the links, so they are enhanced again (#2083). */
+    html?: string | null;
 }) {
     const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
+    const undosRef = useRef<(() => void)[]>([]);
     const onClickRef = useRef(onClick);
     useEffect(() => {
         onClickRef.current = onClick;
@@ -110,7 +116,7 @@ export function HiveOperationExtension({
 
                     // Final safety check before replacing
                     if (element.isConnected && element.parentElement) {
-                        element.parentElement.replaceChild(container, element);
+                        undosRef.current.push(swapIn(element, container));
                     }
                 } catch (error) {
                     console.warn("Error enhancing Hive operation element:", error);
@@ -118,10 +124,11 @@ export function HiveOperationExtension({
             });
 
         return () => {
-            for (const r of rootsRef.current) { r.unmount(); }
+            unmountRootsLater(rootsRef.current);
             rootsRef.current = [];
+            runUndos(undosRef.current);
         };
-    }, [containerRef]);
+    }, [containerRef, html]);
 
     return null;
 }

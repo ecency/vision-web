@@ -6,8 +6,11 @@ import { zoomReplaceTarget, zoomEffectiveParent } from "../utils/picture-zoom";
 
 export function ImageZoomExtension({
  containerRef,
+ html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  /** The rendered body. A change replaces the images, so they are wrapped again (#2083). */
+  html?: string | null;
 }) {
   const zoomRef = useRef<Zoom>(undefined);
 
@@ -226,7 +229,7 @@ export function ImageZoomExtension({
       }
       zoomRef.current?.detach();
     };
-  }, [containerRef]);
+  }, [containerRef, html]);
 
   return <></>;
 }

@@ -1,12 +1,14 @@
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
+import { fillWith } from "./dom-swap";
 
 /**
  * Utility to enhance Twitter links with embedded tweets
  */
 export function applyTwitterEmbeds(
     container: HTMLElement,
-    ComponentInstance: React.FC<{ id: string }>
+    ComponentInstance: React.FC<{ id: string }>,
+    undos: (() => void)[] = []
 ): Root[] {
     const roots: Root[] = [];
     const elements = Array.from(
@@ -54,8 +56,7 @@ export function applyTwitterEmbeds(
             const wrapper = document.createElement("div");
             wrapper.classList.add("er-twitter-frame");
 
-            el.innerHTML = ""; // clear existing link text
-            el.appendChild(wrapper);
+            undos.push(fillWith(el, wrapper)); // replaces the link text
 
             const root = createRoot(wrapper);
             root.render(<ComponentInstance id={tweetId} />);
