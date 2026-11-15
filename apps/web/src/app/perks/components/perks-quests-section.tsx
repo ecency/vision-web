@@ -63,7 +63,11 @@ export function PerksQuestsSection() {
   // price and the purchase is disabled, so nobody is charged without seeing the price. A failed
   // background refetch keeps the last roster, so the label stays.
   const { data: proMembers } = useQuery(getProMembersQueryOptions());
-  const members = Array.isArray(proMembers?.members) ? proMembers.members : undefined;
+  const roster: unknown = proMembers?.members;
+  const members =
+    Array.isArray(roster) && roster.every((m): m is string => typeof m === "string")
+      ? roster
+      : undefined;
   const rosterLoaded = members !== undefined;
   const isPro = isProMember(members, username);
 

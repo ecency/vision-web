@@ -68,9 +68,12 @@ describe("perks quests: streak freeze price waits for the Pro roster", () => {
     }
   );
 
-  it("treats a malformed roster response as unknown", () => {
+  it.each([
+    ["not an array", {}],
+    ["an array with non-string entries", [null, "bob"]]
+  ])("treats a malformed roster (%s) as unknown", (_label, members) => {
     roster.status = "success";
-    roster.members = {} as unknown as string[];
+    roster.members = members as unknown as string[];
     render(<PerksQuestsSection />);
     expect(screen.getByText("perks.quests.buy-freeze-neutral").closest("button")).toBeDisabled();
   });
