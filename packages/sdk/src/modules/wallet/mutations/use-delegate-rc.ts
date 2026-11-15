@@ -1,6 +1,7 @@
 import { useBroadcastMutation, invalidateAfterBroadcast, QueryKeys } from "@/modules/core";
 import type { BroadcastMode } from "@/modules/core";
 import { buildDelegateRcOp } from "@/modules/operations/builders";
+import { parseDelegateRcDelegatees } from "@/modules/operations/builders/wallet";
 import type { AuthContextV2 } from "@/modules/core/types";
 
 export interface DelegateRcPayload {
@@ -20,12 +21,16 @@ export function useDelegateRc(
       buildDelegateRcOp(username!, to, maxRc)
     ],
     async (_result, variables) => {
-      await invalidateAfterBroadcast(auth?.adapter, broadcastMode, [
-        QueryKeys.accounts.full(username),
-        QueryKeys.accounts.full(variables.to),
-        QueryKeys.resourceCredits.account(username!),
-        QueryKeys.resourceCredits.account(variables.to),
-      ]);
+      // `to` may be a comma separated list: refresh each delegatee.
+      const accounts = [username!, ...parseDelegateRcDelegatees(variables.to)];
+      await invalidateAfterBroadcast(
+        auth?.adapter,
+        broadcastMode,
+        accounts.flatMap((account) => [
+          QueryKeys.accounts.full(account),
+          QueryKeys.resourceCredits.account(account),
+        ])
+      );
     },
     auth,
     'posting',

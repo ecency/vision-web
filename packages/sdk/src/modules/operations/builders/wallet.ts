@@ -420,17 +420,24 @@ export function buildEngineClaimOp(
  * @param maxRc - Maximum RC to delegate (in mana units)
  * @returns Custom JSON operation for RC delegation
  */
+/**
+ * The delegatees of a delegate_rc: one account or a comma separated list.
+ * Empty names ("a,b," or "a,,b") are dropped, as the delegate form does when
+ * it counts the delegatees.
+ */
+export function parseDelegateRcDelegatees(delegatees: string | undefined): string[] {
+  return (delegatees ?? "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+}
+
 export function buildDelegateRcOp(
   from: string,
   delegatees: string,
   maxRc: string | number
 ): Operation {
-  // One account or a comma separated list. Empty names ("a,b," or "a,,b")
-  // are dropped, as the delegate form does when it counts the delegatees.
-  const delegateeArray = (delegatees ?? "")
-    .split(",")
-    .map((d) => d.trim())
-    .filter(Boolean);
+  const delegateeArray = parseDelegateRcDelegatees(delegatees);
 
   if (!from || delegateeArray.length === 0 || maxRc === undefined) {
     throw new Error("[SDK][buildDelegateRcOp] Missing required parameters");
