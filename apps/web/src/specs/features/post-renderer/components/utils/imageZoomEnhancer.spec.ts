@@ -451,5 +451,60 @@ describe('applyImageZoom', () => {
       b?.detach()
       expect(zoom.detach).toHaveBeenCalledWith(img)
     })
+    // Each run waits for image load, a dynamic import and an animation frame,
+    // so an older run can finish after a newer one. Start order decides who
+    // owns a shared image, and a cancelled run attaches nothing.
+    describe('out-of-order completion', () => {
+      const setup = () => {
+        const body = document.createElement('div')
+        body.classList.add('markdown-view')
+        body.appendChild(Object.assign(document.createElement('img'), { src: `https://images.ecency.com/${Math.random()}.png` }))
+        document.body.appendChild(body)
+        const frames: FrameRequestCallback[] = []
+        const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+          frames.push(cb)
+          return frames.length
+        })
+        const load = () => body.querySelectorAll('img').forEach((i) => i.dispatchEvent(new Event('load')))
+        return { body, frames, raf, load }
+      }
+
+      it("an older run that resolves last does not take the newer run's image", async () => {
+        const { body, frames, raf, load } = setup()
+        const pendingA = applyImageZoom(body)
+        const pendingB = applyImageZoom(body)
+        load()
+        await vi.waitFor(() => expect(frames).toHaveLength(2))
+        frames[1](0) // B completes first
+        frames[0](0) // then the older A
+        const [a, b] = await Promise.all([pendingA, pendingB])
+        raf.mockRestore()
+        const zoom = vi.mocked(mediumZoom).mock.results.at(-1)!.value
+        const img = body.querySelector('img')!
+        zoom.detach.mockClear()
+
+        a?.detach()
+        expect(zoom.detach).not.toHaveBeenCalled()
+        b?.detach()
+        expect(zoom.detach).toHaveBeenCalledWith(img)
+      })
+
+      it('a run cancelled before it attaches attaches nothing', async () => {
+        const { body, frames, raf, load } = setup()
+        const controller = new AbortController()
+        const pending = applyImageZoom(body, controller.signal)
+        load()
+        await vi.waitFor(() => expect(frames).toHaveLength(1))
+        const zoom = vi.mocked(mediumZoom).mock.results.at(-1)?.value
+        zoom?.attach.mockClear()
+        const createdBefore = vi.mocked(mediumZoom).mock.calls.length
+        controller.abort()
+        frames[0](0)
+        expect(await pending).toBeNull()
+        expect(vi.mocked(mediumZoom).mock.calls.length).toBe(createdBefore)
+        if (zoom) expect(zoom.attach).not.toHaveBeenCalled()
+        raf.mockRestore()
+      })
+    })
   })
 })

@@ -52,7 +52,9 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
     ];
 
     // Apply image zoom and store the promise for cleanup
-    const zoomPromise = applyImageZoom(container);
+    // Aborted by cleanup so a run still waiting on images attaches nothing.
+    const zoomAbort = new AbortController();
+    const zoomPromise = applyImageZoom(container, zoomAbort.signal);
 
     // Return cleanup function
     return () => {
@@ -64,6 +66,7 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
         resetYoutubeVideos(container);
         resetThreeSpeakVideos(container);
         runUndos(undos);
+        zoomAbort.abort();
         zoomPromise.then((zoom) => {
             zoom?.detach();
         }).catch(() => {

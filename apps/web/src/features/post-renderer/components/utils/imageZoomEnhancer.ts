@@ -11,17 +11,25 @@ export interface ImageZoomHandle {
 // and the entry page runs the enhancements again on every Edit History or raw
 // toggle, so every run attaches its images to this one instance (#2083).
 let sharedZoom: Zoom | null = null;
-// The run that last attached each image. Two runs can cover the same <img>
-// (a re-run before the previous cleanup landed), and attach() de-dupes, so a
-// late detach from the earlier run would strip the zoom the later run just
-// set up. A run's handle releases only the images it still owns.
-const owners = new WeakMap<HTMLElement, object>();
+// The newest run (by start order) that attached each image. Two runs can
+// cover the same <img> (a re-run before the previous cleanup landed), they
+// finish asynchronously and in any order, and attach() de-dupes, so a late
+// detach from the earlier run would strip the zoom the later run set up. A
+// run claims an image only when no newer run owns it, and its handle
+// releases only the images it still owns.
+const owners = new WeakMap<HTMLElement, { seq: number }>();
+let runCount = 0;
 
 /**
  * Apply medium-zoom to images in a container.
  * Resolves to a handle for cleanup (caller should call .detach() when done).
  */
-export function applyImageZoom(container: HTMLElement): Promise<ImageZoomHandle | null> {
+export function applyImageZoom(
+    container: HTMLElement,
+    signal?: AbortSignal
+): Promise<ImageZoomHandle | null> {
+    // Start order, not completion order, decides which run owns a shared image.
+    const run = { seq: ++runCount };
     const elements = Array.from(
         container.querySelectorAll<HTMLElement>(
             ".markdown-view:not(.markdown-view-pure) img"
@@ -220,7 +228,8 @@ export function applyImageZoom(container: HTMLElement): Promise<ImageZoomHandle 
                         }
                     });
 
-                    if (stillConnected.length === 0) {
+                    // Cleanup already ran: attach nothing it would have to undo.
+                    if (stillConnected.length === 0 || signal?.aborted) {
                         resolveZoom(null);
                         return;
                     }
@@ -235,8 +244,10 @@ export function applyImageZoom(container: HTMLElement): Promise<ImageZoomHandle 
                             });
                         }
                         const zoom = sharedZoom;
-                        const run = {};
-                        stillConnected.forEach((img) => owners.set(img, run));
+                        stillConnected.forEach((img) => {
+                            const current = owners.get(img);
+                            if (!current || current.seq < run.seq) owners.set(img, run);
+                        });
                         resolveZoom({
                             detach: () => {
                                 const mine = stillConnected.filter((img) => owners.get(img) === run);
