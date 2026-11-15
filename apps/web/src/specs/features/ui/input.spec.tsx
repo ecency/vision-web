@@ -225,4 +225,14 @@ describe("Input", () => {
       expect(input.value).toBe("50");
     });
   });
+
+  // #2075: in the dark theme the dark border class (same specificity, emitted
+  // later) beat aria-invalid:border-red, so an invalid input showed no red
+  // border. The stacked dark + aria-invalid variant has the higher specificity.
+  it("marks an invalid input red in both themes", () => {
+    render(<Input type="text" placeholder="Amount" aria-invalid={true} />);
+    const classes = screen.getByPlaceholderText("Amount").className.split(/\s+/);
+    expect(classes).toContain("aria-invalid:border-red");
+    expect(classes).toContain("dark:aria-invalid:border-red");
+  });
 });

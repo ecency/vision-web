@@ -6,7 +6,12 @@ export const INPUT_STYLES =
 export const INPUT_DARK_STYLES =
   "dark:border-dark-600-005-light dark:hover:border-dark-600-010-light dark:bg-dark-default";
 
-export const INVALID_INPUT_STYLES = "aria-invalid:border-red";
+// The dark variant matters: `dark:border-*` above has the same specificity as
+// `aria-invalid:border-red` and comes later in the CSS, so in the dark theme an
+// invalid input lost its red border. `dark:aria-invalid:` stacks a class, the
+// attribute and the dark selector, which wins over the dark border and its
+// hover in the dark theme (#2075).
+export const INVALID_INPUT_STYLES = "aria-invalid:border-red dark:aria-invalid:border-red";
 
 export const INPUT_IN_GROUP =
   "[&>input]:rounded-[0] [&>input:first-child]:rounded-l-xl [&>input:last-child]:rounded-r-xl";
