@@ -1001,7 +1001,15 @@ export function clearMattermostTokenCookie(response: NextResponse) {
 }
 
 
-export async function getMattermostTokenFromCookies(): Promise<string | null> {
+/**
+ * `readOnly`: for a route whose response may be publicly cached (the avatar
+ * route), which must not carry the session cookies. An ownerless session is
+ * then no session, without the lookup that would stamp or expire it; any
+ * other chat call stamps it.
+ */
+export async function getMattermostTokenFromCookies(
+  options: { readOnly?: boolean } = {}
+): Promise<string | null> {
   // 1) Check X-MM-Token header first (mobile clients send token explicitly
   //    to avoid race conditions with async cookie jar on React Native)
   const headerStore = await headers();
@@ -1023,7 +1031,7 @@ export async function getMattermostTokenFromCookies(): Promise<string | null> {
   //    there. Honour it once it proves to be the active account's (the chat
   //    username is the Hive username the bootstrap verified) and name the
   //    owner, so this lookup runs once per such cookie.
-  const legacy = ownerlessMattermostSession(readCookie);
+  const legacy = options.readOnly ? null : ownerlessMattermostSession(readCookie);
   if (!legacy) {
     return null;
   }

@@ -5,7 +5,9 @@ export const runtime = "nodejs";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params;
-  const token = await getMattermostTokenFromCookies();
+  // Read only: this response is publicly cacheable, so it must not carry the
+  // chat session cookies an ownerless session check would write (#2023).
+  const token = await getMattermostTokenFromCookies({ readOnly: true });
   if (!token) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
