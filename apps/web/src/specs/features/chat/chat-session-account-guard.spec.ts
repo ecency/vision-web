@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import Cookies from "js-cookie";
 import { useGlobalStore } from "@/core/global-store";
 import type { ActiveUser } from "@/entities";
@@ -9,6 +11,7 @@ import {
   resetChatSession
 } from "@/features/chat/chat-session";
 import { ChatAccountInactiveError } from "@/features/chat/chat-session-errors";
+import { MattermostWebSocket } from "@/features/chat/mattermost-websocket";
 
 // #2087 review: two follow-ups to the per-account chat session (#2023).
 // 1. Every outstanding reset holds chat requests back, and a reset that times
@@ -189,5 +192,106 @@ describe("server token reader and the request's account (#2087 review)", () => {
     headerValues["x-mm-token"] = "tok-mobile";
     headerValues["x-chat-account"] = "alice";
     expect(await (await reader())()).toBe("tok-mobile");
+  });
+});
+
+// #2087 review: a stale tab's socket reconnecting (network blip, idle, a hidden
+// tab coming back) sent the shared cookies, so it came back as the other
+// account: its events in this tab, and typing sent as it.
+describe("chat websocket in a stale tab (#2087 review)", () => {
+  class FakeSocket {
+    static urls: string[] = [];
+    onopen: (() => void) | null = null;
+    onclose: ((evt: { code: number; wasClean: boolean }) => void) | null = null;
+    onmessage: ((evt: { data: string }) => void) | null = null;
+    onerror: ((evt: unknown) => void) | null = null;
+    readyState = 0;
+    send = vi.fn();
+    close = vi.fn();
+    constructor(public url: string) {
+      FakeSocket.urls.push(url);
+      sockets.push(this);
+    }
+  }
+  const sockets: FakeSocket[] = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.urls = [];
+    sockets.length = 0;
+    vi.stubGlobal("WebSocket", FakeSocket);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setTabAccount("alice");
+    Cookies.set("active_user", "alice");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    setTabAccount(null);
+    Cookies.remove("active_user");
+  });
+
+  it("names this tab's account when it connects", async () => {
+    const ws = new MattermostWebSocket();
+    await ws.connect();
+    expect(FakeSocket.urls).toHaveLength(1);
+    expect(new URL(FakeSocket.urls[0]).searchParams.get("account")).toBe("alice");
+    ws.disconnect();
+  });
+
+  it("does not connect when another account is active", async () => {
+    Cookies.set("active_user", "bob");
+    const ws = new MattermostWebSocket();
+    await ws.connect();
+    expect(FakeSocket.urls).toHaveLength(0);
+    ws.disconnect();
+  });
+
+  it("does not reconnect after another tab switched account", async () => {
+    const ws = new MattermostWebSocket();
+    await ws.connect();
+    sockets[0].onopen?.();
+
+    Cookies.set("active_user", "bob");
+    sockets[0].onclose?.({ code: 1006, wasClean: false });
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(FakeSocket.urls).toHaveLength(1);
+    ws.disconnect();
+  });
+
+  it("closes the open socket when a chat request finds the tab stale", async () => {
+    vi.useRealTimers();
+    const ws = new MattermostWebSocket();
+    const disconnect = vi.spyOn(ws, "disconnect");
+    Cookies.set("active_user", "bob");
+
+    await expect(chatSessionFetch("/api/mattermost/channels/unreads")).rejects.toBeInstanceOf(
+      ChatAccountInactiveError
+    );
+    expect(disconnect).toHaveBeenCalled();
+  });
+});
+
+describe("websocket route session cookie (#2087 review)", () => {
+  it("refuses the cookie session for a socket naming another account", async () => {
+    const { mattermostCookieTokenFor } = await import("@/server/mattermost-session-cookie");
+    const cookies: Record<string, string> = { mm_pat: "tok-bob", mm_owner: "bob", active_user: "bob" };
+    const read = (name: string) => cookies[name];
+    expect(mattermostCookieTokenFor("alice", read)).toBeNull();
+    expect(mattermostCookieTokenFor("bob", read)).toBe("tok-bob");
+    // A socket that names no account (older bundle) keeps the binding only.
+    expect(mattermostCookieTokenFor(null, read)).toBe("tok-bob");
+  });
+
+  it("the route reads the account the socket names", () => {
+    const source = readFileSync(
+      resolve(__dirname, "../../../app/api/mattermost/websocket/route.ts"),
+      "utf8"
+    );
+    expect(source).toMatch(/mattermostCookieTokenFor\(\s*request\.nextUrl\.searchParams\.get\(/);
   });
 });

@@ -13,7 +13,7 @@
 import Cookies from "js-cookie";
 import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { getQueryClient } from "@/core/react-query";
-import { ChatAccountInactiveError } from "./chat-session-errors";
+import { ChatAccountInactiveError, ChatSessionChangedError } from "./chat-session-errors";
 
 export const CHAT_SESSION_URL = "/api/mattermost/session";
 
@@ -24,6 +24,8 @@ export const CHAT_SESSION_URL = "/api/mattermost/session";
  * names another account.
  */
 export const CHAT_ACCOUNT_HEADER = "X-Chat-Account";
+/** The same for the chat websocket, which cannot send headers. */
+export const CHAT_ACCOUNT_QUERY_PARAM = "account";
 
 // A hung request must not stall chat for the rest of the page's life.
 const RESET_TIMEOUT_MS = 10_000;
@@ -87,6 +89,33 @@ function clearChatClientState(): void {
   }
 }
 
+// Every chat bootstrap request in flight. A reset aborts them: one sent for
+// the previous account could otherwise answer after the next account's
+// bootstrap and leave its own session cookie behind (#2087 review).
+const pendingBootstraps = new Set<AbortController>();
+
+function abortPendingBootstraps(): void {
+  pendingBootstraps.forEach((controller) => controller.abort());
+  pendingBootstraps.clear();
+}
+
+/**
+ * Sends a chat bootstrap request that a session reset aborts. An aborted one
+ * rejects with ChatSessionChangedError, like one the reset caught before sending.
+ */
+export async function chatBootstrapFetch(input: string, init: RequestInit): Promise<Response> {
+  const controller = typeof AbortController === "function" ? new AbortController() : undefined;
+  if (controller) pendingBootstraps.add(controller);
+  try {
+    return await chatSessionFetch(input, { ...init, signal: controller?.signal });
+  } catch (error) {
+    if (controller?.signal.aborted) throw new ChatSessionChangedError();
+    throw error;
+  } finally {
+    if (controller) pendingBootstraps.delete(controller);
+  }
+}
+
 /** Resolves when `promise` settles or after `ms`, whichever is first. */
 function settleWithin(promise: Promise<unknown>, ms: number): Promise<void> {
   // Not AbortSignal.timeout: older Safari does not have it.
@@ -99,9 +128,22 @@ function settleWithin(promise: Promise<unknown>, ms: number): Promise<void> {
   });
 }
 
-export function resetChatSession(): Promise<void> {
+/**
+ * Ends this tab's chat session: drops the client state and, unless
+ * `expireServerSession` is false, expires the session cookies on the server.
+ * Pass false when the cookies are not this tab's account's any more (another
+ * tab already made another account active), so the expiry would only wipe
+ * that account's session.
+ */
+export function resetChatSession(
+  { expireServerSession = true }: { expireServerSession?: boolean } = {}
+): Promise<void> {
   generation += 1;
   clearChatClientState();
+  abortPendingBootstraps();
+  if (!expireServerSession) {
+    return Promise.resolve();
+  }
 
   const controller = typeof AbortController === "function" ? new AbortController() : undefined;
   let request: Promise<unknown>;
@@ -153,18 +195,39 @@ export async function chatSessionSettled(): Promise<void> {
  * account, and a new account's bootstrap cannot have its fresh cookie wiped by
  * a late expiry.
  */
-export async function chatSessionFetch(input: string, init?: RequestInit): Promise<Response> {
-  await chatSessionSettled();
-
-  // Another tab switched account or logged out: the shared session cookies
-  // are not this tab's account's any more, so send nothing (#2087 review).
+/**
+ * This tab's account for chat, or null when it has none. Throws
+ * ChatAccountInactiveError when another tab made another account (or none)
+ * the browser's active one: the shared session cookies are not this tab's
+ * account's any more, so it must send nothing with them (#2087 review).
+ */
+export function chatTabAccount(): string | null {
   const tabAccount = readTabAccount?.()?.toLowerCase();
-  if (!tabAccount) {
-    return fetch(input, init);
-  }
+  if (!tabAccount) return null;
   const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME);
   if (browserAccount?.toLowerCase() !== tabAccount) {
     throw new ChatAccountInactiveError(browserAccount);
+  }
+  return tabAccount;
+}
+
+export async function chatSessionFetch(input: string, init?: RequestInit): Promise<Response> {
+  await chatSessionSettled();
+
+  let tabAccount: string | null;
+  try {
+    tabAccount = chatTabAccount();
+  } catch (error) {
+    // Its socket would come back as the other account on the next reconnect.
+    try {
+      closeChatSocket?.();
+    } catch {
+      // The request is refused either way.
+    }
+    throw error;
+  }
+  if (!tabAccount) {
+    return fetch(input, init);
   }
   // The other tab can still switch before this request arrives: name the
   // account so the server refuses a session issued to another one.

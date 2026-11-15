@@ -59,8 +59,15 @@ export const createAuthenticationActions = (
     // starts from null and keeps the session it already has.
     if (currentUsername) {
       // A sync throw here must not abort the logout itself.
+      // Another tab already made another account active: the shared session
+      // cookies are that account's now (that tab expired this one's), so drop
+      // only this tab's chat state. Covers a stale tab's logout or switch and
+      // Raidstead following the other tab (#2087 review).
+      const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME);
+      const cookiesAreOurs =
+        !browserAccount || browserAccount.toLowerCase() === currentUsername.toLowerCase();
       try {
-        void resetChatSession();
+        void resetChatSession({ expireServerSession: cookiesAreOurs });
       } catch {
         // The server-side account binding still keeps the old session out.
       }

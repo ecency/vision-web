@@ -67,3 +67,15 @@ export function chatAccountMatchesCookies(
   if (!account) return true;
   return account === decodeCookie(readCookie(ACTIVE_USER_COOKIE));
 }
+
+/**
+ * The cookie session token for a request naming its tab's account: null when
+ * that is not the account active in the browser, else as `mattermostCookieToken`.
+ */
+export function mattermostCookieTokenFor(
+  requested: string | null | undefined,
+  readCookie: (name: string) => string | undefined
+): string | null {
+  if (!chatAccountMatchesCookies(requested, readCookie)) return null;
+  return mattermostCookieToken(readCookie);
+}

@@ -14,6 +14,7 @@ import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-g
 // logout/switch session reset (#2023). Keep bare fetch out of this module.
 import {
   CHAT_BOOTSTRAP_QUERY_PREFIX,
+  chatBootstrapFetch,
   chatSessionFetch,
   chatSessionGeneration,
   chatSessionSettled
@@ -179,7 +180,9 @@ export function useMattermostBootstrap(community?: string) {
         if (browserAccount?.toLowerCase() !== username?.toLowerCase()) {
           throw new ChatAccountInactiveError(browserAccount);
         }
-        return chatSessionFetch("/api/mattermost/bootstrap", init);
+        // A reset aborts it: an answer for this account must not land after
+        // the next account's bootstrap (#2087 review).
+        return chatBootstrapFetch("/api/mattermost/bootstrap", init);
       };
 
       let accessToken = getAccessToken(username || "");

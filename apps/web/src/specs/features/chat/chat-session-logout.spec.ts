@@ -89,6 +89,8 @@ describe("chat session on logout and account switch (#2023)", () => {
   beforeEach(() => {
     resetChatApiGuard();
     window.localStorage.clear();
+    // Setting an account writes the browser's active account cookie.
+    Cookies.remove("active_user");
     ls.set("user_alice", "x");
     ls.set("user_bob", "x");
     fetchMock.mockReset();
@@ -146,6 +148,45 @@ describe("chat session on logout and account switch (#2023)", () => {
     await unread;
 
     expect(order).toEqual(["session-expired", "/api/mattermost/channels/unreads"]);
+  });
+
+  // #2087 review: the session cookies are shared by every tab. Once another tab
+  // made another account active, they are that account's, and this stale tab's
+  // logout or switch (or Raidstead following the other tab) must not expire them.
+  it.each([
+    ["logs out", null],
+    ["switches", "carol"],
+    ["follows the other tab", "bob"]
+  ] as const)(
+    "a stale tab that %s leaves the other account's chat session alone",
+    (_label, next) => {
+      fetchMock.mockResolvedValue(ok());
+      ls.set("user_carol", "x");
+      Cookies.set("active_user", "bob");
+      try {
+        const socket = new MattermostWebSocket();
+        const disconnect = vi.spyOn(socket, "disconnect");
+
+        actionsFor("alice").setActiveUser(next);
+
+        expect(fetchMock.mock.calls.filter((c) => urlOf(c) === SESSION_URL)).toHaveLength(0);
+        // This tab's own chat state still goes.
+        expect(disconnect).toHaveBeenCalled();
+      } finally {
+        Cookies.remove("active_user");
+      }
+    }
+  );
+
+  it("still expires the session when this tab's account is the active one", () => {
+    fetchMock.mockResolvedValue(ok());
+    Cookies.set("active_user", "alice");
+    try {
+      actionsFor("alice").setActiveUser("bob");
+      expect(fetchMock.mock.calls.filter((c) => urlOf(c) === SESSION_URL)).toHaveLength(1);
+    } finally {
+      Cookies.remove("active_user");
+    }
   });
 
   it("still lets chat calls through when the reset request fails", async () => {
@@ -220,7 +261,7 @@ describe("chat session bound to the active account (#2023)", () => {
       resolve(__dirname, "../../../app/api/mattermost/websocket/route.ts"),
       "utf8"
     );
-    expect(ws).toContain("mattermostCookieToken(");
+    expect(ws).toMatch(/mattermostCookieToken(For)?\(/);
     expect(ws).not.toMatch(/cookies\.get\(MATTERMOST_TOKEN_COOKIE\)/);
   });
 
@@ -242,6 +283,8 @@ describe("chat page requests after a switch (#2023 follow-up)", () => {
   beforeEach(() => {
     resetChatApiGuard();
     window.localStorage.clear();
+    // Setting an account writes the browser's active account cookie.
+    Cookies.remove("active_user");
     ls.set("user_alice", "x");
     ls.set("user_bob", "x");
     fetchMock.mockReset();
@@ -307,6 +350,8 @@ describe("chat client state on an account switch (#2023)", () => {
   beforeEach(() => {
     resetChatApiGuard();
     window.localStorage.clear();
+    // Setting an account writes the browser's active account cookie.
+    Cookies.remove("active_user");
     ls.set("user_alice", "x");
     ls.set("user_bob", "x");
     getQueryClient().clear();
@@ -404,6 +449,34 @@ describe("chat client state on an account switch (#2023)", () => {
     expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toEqual([
       "POST /api/mattermost/bootstrap alice"
     ]);
+  });
+
+  // #2087 review: a bootstrap already sent when the account switches could answer
+  // after the next account's one and leave its cookie behind.
+  it("aborts a bootstrap in flight when the session resets", async () => {
+    let bootstrapSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((input: string, init?: RequestInit) => {
+      if (input === SESSION_URL) return Promise.resolve(ok());
+      bootstrapSignal = init?.signal ?? undefined;
+      // Never answers on its own; rejects like fetch when aborted.
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError"))
+        );
+      });
+    });
+    const queryClient = getQueryClient();
+    renderHook(() => useMattermostBootstrap(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children)
+    });
+    await waitFor(() =>
+      expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toHaveLength(1)
+    );
+
+    actionsFor("alice").setActiveUser("bob");
+
+    expect(bootstrapSignal?.aborted).toBe(true);
   });
 
   it("a stale tab sends no bootstrap when it regains focus (#2023 review)", async () => {
@@ -644,6 +717,8 @@ describe("chat session reset robustness (#2023)", () => {
 
   it("logs out even when fetch throws synchronously", () => {
     window.localStorage.clear();
+    // Setting an account writes the browser's active account cookie.
+    Cookies.remove("active_user");
     ls.set("user_alice", "x");
     vi.stubGlobal(
       "fetch",
