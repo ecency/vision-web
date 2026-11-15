@@ -9,7 +9,7 @@ import { useGlobalStore } from "@/core/global-store";
 // notifications request, and a failed request must say so with a retry
 // instead of leaving the panel blank.
 const api = vi.hoisted(() => ({
-  list: vi.fn<() => Promise<unknown[]>>(),
+  list: vi.fn<(pageParam?: string) => Promise<unknown[]>>(),
   unread: vi.fn<() => Promise<number>>()
 }));
 
@@ -27,7 +27,7 @@ vi.mock("@ecency/sdk", async (importOriginal) => {
   }),
   getNotificationsInfiniteQueryOptions: (username?: string, _code?: string, filter?: string) => ({
     queryKey: ["notifications", "list", username, filter],
-    queryFn: () => api.list(),
+    queryFn: ({ pageParam }: { pageParam: string }) => api.list(pageParam),
     initialPageParam: "",
     getNextPageParam: sdkGetNextPageParam,
     enabled: !!username
@@ -52,6 +52,12 @@ vi.mock("@/utils", async (importOriginal) => ({
 // have nothing to do with opening the panel.
 vi.mock("@/features/shared/notifications/notifications-actions", () => ({
   NotificationsActions: () => null
+}));
+// A row per notification is all the paging cases need to see.
+vi.mock("@/features/shared/notifications/notification-list-item", () => ({
+  NotificationListItem: ({ notification }: { notification: { id: string } }) => (
+    <div>row-{notification.id}</div>
+  )
 }));
 vi.mock("@/features/shared/notifications/hooks", () => ({
   useMarkNotificationsList: () => ({ mutateAsync: vi.fn(), isPending: false })
@@ -117,6 +123,57 @@ describe("notifications bell (#2022)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
 
     expect(await screen.findByText("g.empty-list")).toBeInTheDocument();
+  });
+
+  // #2080: a failed "load more" keeps the rows already shown and offers a
+  // retry for the next page, instead of failing silently.
+  it("shows an inline retry when loading the next page fails", async () => {
+    const observers: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          observers.push(cb);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+        takeRecords() {
+          return [];
+        }
+      }
+    );
+    const row = (id: string) => ({ id, type: "vote", read: 0, gk: "2026-11-15", gkf: false });
+    api.list.mockImplementation(async (pageParam?: string) => {
+      if (!pageParam) return [row("n1")];
+      throw new Error("Failed to fetch notifications: 503");
+    });
+    try {
+      renderBellAndPanel();
+      fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
+      expect(await screen.findByText("row-n1")).toBeInTheDocument();
+
+      // Scroll to the sentinel: the next page fails.
+      await act(async () => {
+        for (const cb of observers) {
+          cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        }
+      });
+      const retry = await screen.findByRole("button", { name: "g.retry" });
+      expect(screen.getByText("notifications.load-more-failed")).toBeInTheDocument();
+      expect(screen.getByText("row-n1")).toBeInTheDocument();
+
+      api.list.mockImplementation(async (pageParam?: string) =>
+        pageParam === "n1" ? [row("n2")] : pageParam ? [] : [row("n1")]
+      );
+      await act(async () => {
+        fireEvent.click(retry);
+      });
+      expect(await screen.findByText("row-n2")).toBeInTheDocument();
+      expect(screen.queryByText("notifications.load-more-failed")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("lets a click on the unread badge through to the bell", async () => {

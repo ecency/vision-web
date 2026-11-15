@@ -32,19 +32,34 @@ export function getNotificationsInfiniteQueryOptions(
         }
       );
 
-      // Throw, do not answer []: an empty page reads as "no notifications" and
-      // hides the failure from the consumer's error state and retry (#2080).
+      // Throw, do not answer []: an empty page reads as "no notifications" (or
+      // the end of the list) and hides the failure from the consumer's error
+      // state and retry (#2080). Same for a body that is not a list.
       if (!response.ok) {
-        throw new Error(`Failed to fetch notifications: ${response.status}`);
+        throw Object.assign(new Error(`Failed to fetch notifications: ${response.status}`), {
+          status: response.status,
+        });
       }
 
+      let body: unknown;
       try {
-        return (await response.json()) as ApiNotification[];
+        body = await response.json();
       } catch {
-        return [];
+        throw new Error("Failed to fetch notifications: the response is not JSON");
       }
+      if (!Array.isArray(body)) {
+        throw new Error("Failed to fetch notifications: the response is not a list");
+      }
+      return body as ApiNotification[];
     },
     enabled: !!activeUsername && !!code,
+    // A 4xx (an expired or revoked code: 401, 403) fails the same way on every
+    // try. Anything else (5xx, network) gets React Query's default 3 retries.
+    retry: (failureCount, error) => {
+      const status = (error as { status?: unknown } | null)?.status;
+      if (typeof status === "number" && status >= 400 && status < 500) return false;
+      return failureCount < 3;
+    },
     // No initialData here: an empty seed counts as fresh for the whole staleTime,
     // so consumers that only read `data` would render an empty list with no fetch.
     initialPageParam: "",

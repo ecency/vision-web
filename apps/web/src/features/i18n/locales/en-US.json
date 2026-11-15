@@ -2194,6 +2194,7 @@
     "type-all": "All Notifications",
     "type-all-short": "All",
     "load-failed": "Notifications could not be loaded.",
+    "load-more-failed": "More notifications could not be loaded.",
     "type-rvotes": "Votes",
     "type-replies": "Replies",
     "type-mentions": "Mentions",

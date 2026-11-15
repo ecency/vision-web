@@ -53,6 +53,36 @@ describe("getNotificationsInfiniteQueryOptions (#2080)", () => {
     await expect(run()).resolves.toEqual([{ id: "n1" }]);
   });
 
+  it("rejects when the body is not JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("<html>proxy error</html>", { status: 200 }))
+    );
+    await expect(run()).rejects.toThrow(/not JSON/);
+  });
+
+  it("rejects when the body is not a list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "x" }), { status: 200 }))
+    );
+    await expect(run()).rejects.toThrow(/not a list/);
+  });
+
+  it("does not retry a 4xx, retries a 5xx or a network failure", async () => {
+    const retry = options().retry as (count: number, error: unknown) => boolean;
+    for (const status of [401, 403]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("no", { status })));
+      const error = await run().catch((e) => e);
+      expect(retry(0, error)).toBe(false);
+    }
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 503 })));
+    const serverError = await run().catch((e) => e);
+    expect(retry(0, serverError)).toBe(true);
+    expect(retry(3, serverError)).toBe(false);
+    expect(retry(0, new TypeError("Failed to fetch"))).toBe(true);
+  });
+
   it("has no next page after an empty page", () => {
     expect(nextPage([])).toBeUndefined();
     expect(nextPage(undefined)).toBeUndefined();

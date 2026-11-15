@@ -36,6 +36,7 @@ export function NotificationList({
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
     refetch
   } = useInfiniteQuery(getNotificationsInfiniteQueryOptions(activeUser?.username, accessToken, filter));
 
@@ -131,6 +132,16 @@ export function NotificationList({
             />
           </AnimatedNotificationListItemLayout>
         ))}
+        {isFetchNextPageError && dataFlow.length > 0 && !isFetchingNextPage && (
+          // A failed "load more" keeps the rows already shown: offer to retry
+          // the next page instead of stopping silently.
+          <div className="flex items-center justify-center gap-3 py-3" role="alert">
+            <span className="text-sm">{i18next.t("notifications.load-more-failed")}</span>
+            <Button size="sm" appearance="secondary" onClick={() => fetchNextPage()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
+        )}
         <div ref={sentinelRef} style={{ height: 1 }} />
       </div>
       {isLoading && dataFlow.length > 0 && <LinearProgress />}
