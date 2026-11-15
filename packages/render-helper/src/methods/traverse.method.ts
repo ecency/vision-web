@@ -4,18 +4,28 @@ import { img } from './img.method'
 import { p } from './p.method'
 import { text } from './text.method'
 import { video } from './video.method'
+import { isHiddenElement } from './render-boundary.method'
 import { RenderOptions, SeoContext } from '../types'
 
-// Explicit nesting cap (#1920). Real posts stay far below it; past it the body
-// is hostile or broken, and markdownToHTML() goes straight to its sanitize-only
-// output instead of grinding down to the JS engine's stack limit, which used to
-// cost seconds of CPU per render before the same fallback kicked in.
-export const MAX_TRAVERSE_DEPTH = 500
+// Explicit nesting cap (#1920). Real posts stay far below it. Past it the
+// subtree is reduced to its plain text instead of being walked further: the
+// JS engine's stack limit is never reached, the rest of the body is still
+// transformed, and nothing below the cap ships untransformed (an image, link
+// or iframe there would otherwise skip img()/a()/iframe()).
+// 2000 stays well inside every engine's stack for this one-frame-per-level
+// walk (develop rendered 5000 nested divs) and above what hundreds of unclosed
+// tags in a real body nest to.
+export const MAX_TRAVERSE_DEPTH = 2000
 
-export class TraverseDepthError extends Error {
-  constructor() {
-    super(`render-helper: nesting deeper than ${MAX_TRAVERSE_DEPTH} levels`)
-    this.name = 'TraverseDepthError'
+function flattenToText(node: Node): void {
+  // traverse() also visits text and comment nodes; those are already inert.
+  if (node.nodeType !== 1) return
+  const text = node.textContent || ''
+  while (node.firstChild) {
+    node.removeChild(node.firstChild)
+  }
+  if (text && node.ownerDocument) {
+    node.appendChild(node.ownerDocument.createTextNode(text))
   }
 }
 
@@ -24,7 +34,8 @@ export function traverse(node: Node, forApp: boolean, depth = 0, state = { first
     return
   }
   if (depth > MAX_TRAVERSE_DEPTH) {
-    throw new TraverseDepthError()
+    flattenToText(node)
+    return
   }
 
   // Walk siblings using nextSibling instead of indexing into the live NodeList.
@@ -36,6 +47,13 @@ export function traverse(node: Node, forApp: boolean, depth = 0, state = { first
   while (child) {
     const next = child.nextSibling
     const prev = child.previousSibling
+
+    // script/style and malformed names never reach the output
+    // (render-boundary), so there is nothing to transform inside them.
+    if (child.nodeType === 1 && isHiddenElement(child)) {
+      child = next
+      continue
+    }
 
     if (child.nodeName.toLowerCase() === 'a') {
       a(<HTMLElement>child, forApp, parentDomain, seoContext, renderOptions)

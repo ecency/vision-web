@@ -19,8 +19,8 @@ describe('isAllowedEmbedSrc', () => {
       // the percent-encoded spelling; URL.pathname decodes neither.
       'https://odysee.com/$/embed/@channel:2/video:e',
       'https://odysee.com/%24/embed/%40channel%3A2%2Fvideo%3Ae?r=abc',
-      // host-only providers (no path constraint)
-      'https://player.region.dapplr.in/something',
+      // suffix-matched provider, held to its embed path (#1919)
+      'https://player.region.dapplr.in/file/dapplr-videos/v.mp4',
       'https://archive.org/embed/whatever'
     ]
     it.each(allowed)('accepts %s', (url) => {

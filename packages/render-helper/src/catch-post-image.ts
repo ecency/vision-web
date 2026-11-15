@@ -26,10 +26,10 @@ import { Entry } from './types'
 const BACKTICK_FENCE_RE = /```[\s\S]*?```/g
 const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
-// HTML regions whose text never reaches the page as an image: <style> (dropped
-// by the sanitizer) and <pre> in block context (the renderer leaves its text
-// alone), plus HTML comments. Verified against the renderer: a URL inside
-// <code> or <script> text IS linkified into an image, so those are not listed.
+// HTML regions whose text never reaches the page as an image: <style> and
+// <script> (dropped with their content), <pre> in block context (the renderer
+// leaves its text alone), plus HTML comments. Verified against the renderer: a
+// URL inside <code> text IS linkified into an image, so that is not listed.
 //
 // Plain index scans rather than regex replaces: the text is only ever searched
 // for image URLs, never emitted, so this is candidate extraction and not
@@ -307,6 +307,8 @@ function stripHiddenRegions(text: string): string {
   // their text from being linkified only inside a markdown HTML block; in a
   // paragraph both are inline content and their text renders as prose.
   spellings = blankSpans(spellings, '<style', '</style', true, null)
+  // <script> is dropped with its content by the renderer (#1919).
+  spellings = blankSpans(spellings, '<script', '</script', true, null)
   spellings = blankSpans(spellings, '<pre', '</pre', true, blockMask)
   spellings = blankSpans(spellings, '<code', '</code', true, blockMask)
   return spellings.text

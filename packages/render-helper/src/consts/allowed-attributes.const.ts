@@ -97,10 +97,15 @@ export const RENDER_HELPER_DATA_ATTRIBUTES: ReadonlySet<string> = new Set([
   'data-youtube'
 ])
 
-/** A class value without its `markdown-*` tokens (render-helper's markers). */
+/**
+ * A class value without render-helper's `markdown-*` marker tokens. A token
+ * that merely contains `markdown-` (`\`markdown-x\``, `]]>markdown-x`) goes
+ * too: render-helper never emits one, and a client matching class names by
+ * substring would read it as a marker.
+ */
 export function stripMarkdownClasses(value: string): string {
   const tokens = value.split(/\s+/).filter(Boolean)
-  const kept = tokens.filter((token) => !/^markdown-/i.test(token))
+  const kept = tokens.filter((token) => !/markdown-/i.test(token))
   return kept.length === tokens.length ? value : kept.join(' ')
 }
 

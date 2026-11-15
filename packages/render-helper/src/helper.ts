@@ -1,6 +1,6 @@
 import { DOMParser } from './consts'
 import type { Document } from '@xmldom/xmldom'
-import { decodeHTML } from 'entities'
+import { decodeHTML, decodeHTMLAttribute } from 'entities'
 
 /**
  * Decode HTML character references in user-authored text.
@@ -19,13 +19,32 @@ const LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g
 const LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi
 const OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi
 
-export function decodeEntities(value: string): string {
-  const safe = value
+function guardNumericRefs(value: string): string {
+  return value
     .replace(LEADING_ZEROS_DEC, '&#')
     .replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3))
     .replace(OVERLONG_NUMERIC_REF, '\uFFFD')
+}
+
+export function decodeEntities(value: string): string {
+  const safe = guardNumericRefs(value)
   try {
     return decodeHTML(safe)
+  } catch {
+    return safe
+  }
+}
+
+/**
+ * Decode an attribute value the way a browser does. Unlike text, an attribute
+ * keeps a legacy named reference without its `;` when `=` or an alphanumeric
+ * follows: `?x=1&timestamp=5&region=us` stays as written instead of becoming
+ * `×tamp` / `®ion`. Same overlong-reference guard as decodeEntities.
+ */
+export function decodeAttributeEntities(value: string): string {
+  const safe = guardNumericRefs(value)
+  try {
+    return decodeHTMLAttribute(safe)
   } catch {
     return safe
   }
@@ -185,7 +204,12 @@ export function removeDuplicateAttributes(html: string): string {
       const key = attrName.toLowerCase()
       if (!seen.has(key)) {
         seen.add(key)
-        attrs.push(fullAttr)
+        // Names are lower-cased on the way out (#1919). xmldom keeps them as
+        // written, so `CLASS=` / `DATA-AUTHOR=` / `SRC=` / `HREF=` used to slip
+        // past every transform that reads attributes by their lower-case name
+        // (img proxying, the link policy, marker stripping), and xss then
+        // lower-cases them on output, where they took effect.
+        attrs.push(key + fullAttr.slice(attrName.length))
       }
     }
 

@@ -90,6 +90,17 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - Event handlers stripped
 - URL schemes validated
 
+**Output boundary** (`src/methods/render-boundary.method.ts`): a full render
+serializes its transformed DOM with a per-render nonce on every element, and
+the final `sanitizeHtml()` pass trusts render-helper's link markers and link
+policy only on tags that carry the nonce in the exact shape xmldom writes.
+Images and video posters must be on the image proxy on every tag.
+
+This relies on how two dependencies read the same HTML: `@xmldom/xmldom`
+0.9.12 serialisation and `xss` 1.0.15 tokenisation. Any bump of either
+(including a lockfile-only one) must re-run the differential fuzz and the
+real-post corpus differential against the previous build before release.
+
 ### Caching Strategy
 
 - LRU cache v11 (`src/cache.ts`) stores rendered HTML and extracted images

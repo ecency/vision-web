@@ -1,10 +1,6 @@
-import { isAllowedEmbedSrc, ARCH_REGEX, DAPPLR_REGEX, LBRY_REGEX, TRUVVL_REGEX, ODYSEE_REGEX, SKATEHIVE_IPFS_REGEX, SKATEHYPE_EMBED_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, VIMEO_EMBED_REGEX, SPEAK_EMBED_REGEX, SPEAK_AUDIO_EMBED_REGEX, VIMM_EMBED_REGEX, D_TUBE_EMBED_REGEX, SPOTIFY_EMBED_REGEX, SOUNDCLOUD_EMBED_REGEX, TWITCH_EMBED_REGEX, YOUTUBE_EMBED_REGEX, BRAND_NEW_TUBE_REGEX, LOOM_EMBED_REGEX, AUREAL_EMBED_REGEX } from '../consts'
+import { canonicalEmbedSrc, isAllowedEmbedSrc, ARCH_REGEX, DAPPLR_REGEX, LBRY_REGEX, TRUVVL_REGEX, ODYSEE_REGEX, SKATEHIVE_IPFS_REGEX, SKATEHYPE_EMBED_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, VIMEO_EMBED_REGEX, SPEAK_EMBED_REGEX, SPEAK_AUDIO_EMBED_REGEX, VIMM_EMBED_REGEX, D_TUBE_EMBED_REGEX, SPOTIFY_EMBED_REGEX, SOUNDCLOUD_EMBED_REGEX, TWITCH_EMBED_REGEX, YOUTUBE_EMBED_REGEX, BRAND_NEW_TUBE_REGEX, LOOM_EMBED_REGEX, AUREAL_EMBED_REGEX } from '../consts'
 import { stripQueryString } from '../helper'
 import { RenderOptions } from '../types'
-
-// Upgrade http:// and protocol-relative //host to https://. Every provider
-// below serves its player over https, and the allow list only accepts https.
-const toHttps = (src: string): string => src.replace(/^(?:https?:)?\/\//i, 'https://');
 
 export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.com', forApp: boolean = false, renderOptions?: RenderOptions): void {
   if (!el || !el.parentNode) {
@@ -25,7 +21,8 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     // The final sanitizer drops any iframe src that isAllowedEmbedSrc rejects
     // (#1919), so hold every provider branch to the same list here and show
     // the placeholder instead of an empty frame when they disagree.
-    const finalSrc = toHttps(el.getAttribute('src') || '');
+    // https, and the host spelling the allow list knows.
+    const finalSrc = canonicalEmbedSrc(el.getAttribute('src') || '');
     if (isAllowedEmbedSrc(finalSrc)) {
       el.setAttribute('src', finalSrc);
       return;

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { markdown2Html } from './markdown-2-html'
+import { MAX_TRAVERSE_DEPTH } from './methods/traverse.method'
 
 // #1920: long hashtag / mention chains used to cost O(n^2). Each adjacent tag
 // was linkified in its own pass with the rest of the text pushed into a new
@@ -69,14 +70,62 @@ describe('long tag and mention chains (#1920)', () => {
     )
   })
 
-  it('takes the sanitize-only fallback early once nesting passes the depth cap', () => {
-    // Alternating tag/mention pairs still nest one level per pair. Past the
-    // explicit depth cap the render must give up quickly instead of walking
-    // thousands of levels down to the engine's stack limit.
-    const body = Array.from({ length: 6000 }, (_, i) => `#t${i}x@user${i}`).join('')
+  it('links every item of a 3000-pair alternating tag/mention chain', () => {
+    const body = Array.from({ length: 3000 }, (_, i) => `#t${i}x@user${i}`).join('')
     const { html, ms } = timed(body)
-    expect(html).not.toContain('<a ')
-    expect(html).toContain('#t0x@user0')
+    expect(countLinks(html, 'er-tag er-tag-link')).toBe(3000)
+    expect(countLinks(html, 'er-author er-author-link')).toBe(3000)
     expect(ms).toBeLessThan(BUDGET_MS)
   })
+
+  it('keeps transforming the rest of a body nested past the depth cap', () => {
+    // Past the cap the deep subtree is reduced to its text. Nothing in it may
+    // ship untransformed, and everything above it is still rendered normally.
+    const n = MAX_TRAVERSE_DEPTH + 20
+    const deep = '<div>'.repeat(n) + 'deep text <img src="https://evil.example/t.png">' +
+      '<a href="https://evil.example/x" target="_blank" rel="opener">l</a>' + '</div>'.repeat(n)
+    const { html, ms } = timed(`@alice https://i.imgur.com/a.png\n\n${deep}`)
+    expect(html).not.toContain('evil.example')
+    expect(html).not.toContain('rel="opener"')
+    expect(html).toContain('deep text')
+    expect(countLinks(html, 'er-author er-author-link')).toBe(1)
+    expect(html).toMatch(/<img [^>]*src="https:\/\/i\.ecency\.com\/p\//)
+    expect(ms).toBeLessThan(BUDGET_MS)
+  })
+
+  it('reaches the cap on a text node or an element at any offset without falling back', () => {
+    // traverse() also visits text nodes; the cap must not throw on one.
+    for (let n = MAX_TRAVERSE_DEPTH - 3; n <= MAX_TRAVERSE_DEPTH + 3; n++) {
+      const html = markdown2Html('@alice ' + '<div>'.repeat(n) + 'leaf @bob' + '</div>'.repeat(n), false)
+      expect(html).toMatch(/^<p dir="auto">/) // transformed, not the sanitize-only fallback
+      expect(html).toContain('href="/@alice"')
+      expect(html).toContain('leaf')
+    }
+  })
+
+  for (const open of ['<center>', '<div class="text-justify">', '<span>', '<b>']) {
+    it(`keeps every link in 600 lines of unclosed ${open}`, () => {
+      // Hundreds of unclosed tags nest one or two levels per line. Develop
+      // rendered these fully; they must stay well inside the cap.
+      const body = Array.from({ length: 600 }, (_, i) => `${open}line ${i} @user${i}`).join('\n\n') +
+        '\n\n<img src="https://evil.example/t.png">'
+      const { html, ms } = timed(body)
+      expect(countLinks(html, 'er-author er-author-link')).toBe(600)
+      expect(html).not.toContain('src="https://evil.example')
+      expect(ms).toBeLessThan(BUDGET_MS)
+    })
+  }
+
+  it('restores a mention placed right after a typed placeholder look-alike (review r5)', () => {
+    const out = markdown2Html('x ‌5‌@alice y', false)
+    expect(out).toContain('href="/@alice"')
+  })
+
+  for (const c of ['$', '!', '#', '%', '&', '*', '@']) {
+    it(`does not double a "${c}" before a mention (review r5)`, () => {
+      const esc = c === '&' ? '&amp;' : c
+      const out = markdown2Html(`x ${c}@alice y`, false)
+      expect(out).toContain(`x ${esc}<a class="er-author er-author-link"`)
+    })
+  }
 })

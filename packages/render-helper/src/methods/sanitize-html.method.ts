@@ -1,7 +1,8 @@
 import xss from 'xss'
-import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
-import { getProxyBase } from '../proxify-image-src'
-import { decodeEntities, trimTrailingSlash } from '../helper'
+import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, canonicalEmbedSrc, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
+import { getProxyBase, proxifyImageSrc } from '../proxify-image-src'
+import { isStrictTag } from './render-boundary.method'
+import { decodeAttributeEntities, trimTrailingSlash } from '../helper'
 import { authorPixelSize, parsePixelDimension } from './image-dimensions'
 import type { XSSWhiteList } from '../types'
 
@@ -31,9 +32,30 @@ const isSafeNavValue = (value: string): boolean => {
 // blocks a malicious on-chain <source srcset="..."> from beaconing to an
 // external host or using a non-http scheme (the <img> src/srcset already get
 // the http(s) check below). Our renderer only ever emits proxyBase /p/ srcsets.
+// srcset is parsed the way browsers do: candidates split on commas, URL and
+// descriptors on ASCII whitespace only. String.trim() and \s also eat NBSP,
+// BOM and U+2028, which a browser keeps inside the URL (and then resolves it
+// as a relative path on the page, not on the proxy).
+const ASCII_WS = /[\t\n\f\r ]+/
+const srcsetCandidates = (srcset: string): string[][] =>
+  srcset
+    .split(',')
+    .map(candidate => candidate.split(ASCII_WS).filter(Boolean))
+    .filter(parts => parts.length > 0) // a stray or trailing comma is fine
+
+// A srcset render-helper would write: each candidate a URL with at most one
+// width or density descriptor (`320w`, `1.5x`, `.5x`). Anything else (a
+// descriptor that is not one, a second URL inside a candidate whose comma was
+// hidden in a reference) is dropped whole rather than left to each browser's
+// error handling.
+const isWellFormedSrcset = (srcset: string): boolean =>
+  srcsetCandidates(srcset).every(parts =>
+    parts.length === 1 || (parts.length === 2 && /^(?:\d+(?:\.\d+)?|\.\d+)[wx]$/i.test(parts[1]))
+  )
+
 const isProxyPSrcset = (srcset: string): boolean => {
   const base = trimTrailingSlash(getProxyBase());
-  const candidates = srcset.split(',').map(c => c.trim().split(/\s+/)[0]).filter(Boolean);
+  const candidates = srcsetCandidates(srcset).map(parts => parts[0]);
   return candidates.length > 0 && candidates.every(url => url.startsWith(`${base}/p/`));
 };
 
@@ -43,6 +65,23 @@ const isProxyPSrcset = (srcset: string): boolean => {
 const escapeAttr = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+const hasQuotedAttr = (attrs: string, wanted: string): boolean => {
+  for (const m of attrs.matchAll(/\s([^\s"'>\/=]+)="[^"]*"/g)) {
+    if (m[1].toLowerCase() === wanted) return true
+  }
+  return false
+}
+
+// Attributes whose value is a URL the checks above validate.
+const isUrlAttribute = (tag: string, name: string): boolean =>
+  (name === 'src' && tag !== 'a') ||
+  name === 'srcset' ||
+  name === 'poster' ||
+  name === 'data-href' ||
+  EMBED_SRC_DATA_ATTRS.has(name)
+
+const RENDER_HELPER_RELS = new Set(['nofollow ugc noopener', 'noopener'])
+
 export interface SanitizeHtmlOptions {
   /**
    * Keep a validated pixel width/height pair on `<img>`. Off by default: the
@@ -51,11 +90,28 @@ export interface SanitizeHtmlOptions {
    */
   preserveImageDimensions?: boolean
   /**
-   * Also drop `markdown-*` class tokens and render-helper's `data-*` link
-   * markers. For HTML that never went through the DOM transforms, where every
-   * such marker is author-written (#1919).
+   * The HTML never went through the DOM transforms (the sanitize-only
+   * fallback): nothing in it is trusted. Image sources and posters go through
+   * the proxy or are dropped, a srcset must be all proxy URLs, author
+   * `target`/`rel` are dropped, and `markdown-*` class tokens and
+   * render-helper's `data-*` link markers are removed (#1919).
    */
-  stripAuthorMarkers?: boolean
+  untransformed?: boolean
+  /**
+   * Pre-sanitize ahead of the htmlparser2 repair and a full DOM transform.
+   * Iframes are left to iframe(), which normalises provider page URLs
+   * (BitChute /video/, Brighteon pages, /EMBED/, /shorts/<id>) and shows the
+   * unsupported placeholder for the rest; the final pass enforces the allow
+   * list on what it emits.
+   */
+  beforeTransform?: boolean
+  /**
+   * The final pass of a full render. Tags carrying this per-render nonce were
+   * emitted by the transformed DOM and keep render-helper's markers and link
+   * policy; every other tag gets the untransformed rules. Images and posters
+   * are held to the proxy either way. See render-boundary.method.ts.
+   */
+  renderNonce?: string
 }
 
 /**
@@ -77,7 +133,7 @@ function enforceImageDimensionPair(html: string): string {
     const attrs: { name: string; value: string }[] = []
     let match: RegExpExecArray | null
     while ((match = QUOTED_ATTR.exec(tag))) {
-      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) })
+      attrs.push({ name: match[1].toLowerCase(), value: decodeAttributeEntities(match[2]) })
     }
     const width = attrs.find((attr) => attr.name === 'width')?.value
     const height = attrs.find((attr) => attr.name === 'height')?.value
@@ -94,7 +150,11 @@ function enforceImageDimensionPair(html: string): string {
 
 export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): string {
   const preserveImageDimensions = !!options?.preserveImageDimensions
-  const stripAuthorMarkers = !!options?.stripAuthorMarkers
+  const untransformed = !!options?.untransformed
+  const beforeTransform = !!options?.beforeTransform
+  const renderNonce = options?.renderNonce
+  // Output of a full render (or its untransformed fallback).
+  const enforce = untransformed || !!renderNonce
   const proxyBase = `${trimTrailingSlash(getProxyBase())}/`
   const whiteList: XSSWhiteList = preserveImageDimensions
     ? {
@@ -103,12 +163,22 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       }
     : ALLOWED_ATTRIBUTES
 
+  // Set by onTag for the tag whose attributes onTagAttr sees next: xss calls
+  // onTag with the raw tag source right before walking its attributes.
+  let trusted = false
+
   const cleaned = xss(html, {
     whiteList,
+    onTag: (_tag, rawTag) => {
+      // A stamped tag is trusted only in the exact shape xmldom serializes:
+      // otherwise xss may read attributes the transforms never saw.
+      trusted = !!renderNonce && rawTag.indexOf(renderNonce) !== -1 && isStrictTag(rawTag)
+      return undefined
+    },
     stripIgnoreTag: true,
     stripIgnoreTagBody: ['style'],
     css: false, // block style attrs entirely for safety
-    onTagAttr: (tag, name, value) => {
+    onTagAttr: (tag, name, value, isWhiteAttr) => {
       // Shared with helper.ts rather than decoded here: this pass runs on
       // chain-authored HTML, and the private copy that used to live in this
       // file called String.fromCodePoint on the raw numeric reference. One
@@ -118,7 +188,7 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // taking an SSR feed render down. helper.decodeEntities maps overlong
       // and out-of-range references to U+FFFD (what the HTML spec asks for)
       // and never throws.
-      const decoded = decodeEntities(value.trim());
+      const decoded = decodeAttributeEntities(value.trim());
       const decodedLower = decoded.toLowerCase();
 
       if (name.startsWith('on')) return ''; // 🛡 event handlers
@@ -127,8 +197,9 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // negation. We don't need an explicit blocklist alongside.
       if (tag === 'img' && name === 'src' && !/^https?:\/\//.test(decodedLower)) return '';
       // Validate srcset: reject if any candidate URL uses a non-http(s) protocol
+      if ((tag === 'img' || tag === 'source') && name === 'srcset' && !beforeTransform && !isWellFormedSrcset(decoded)) return '';
       if (tag === 'img' && name === 'srcset') {
-        const candidates = decoded.split(',').map(c => c.trim().split(/\s+/)[0]);
+        const candidates = srcsetCandidates(decoded).map(parts => parts[0]);
         if (candidates.some(url => !/^https?:\/\//i.test(url))) return '';
       }
       // <picture><source>: srcset is restricted to the proxy /p/ route, and type
@@ -156,19 +227,73 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       if (tag === 'span' && name === 'class' && decoded.toLowerCase().trim() === 'wr') return '';
       // The embed allow list holds on every path, including bodies that never
       // reached iframe() (#1919). iframe() only emits sources it accepts.
-      if (tag === 'iframe' && name === 'src' && !isAllowedEmbedSrc(decoded)) return '';
+      // A src that is refused as written gets the spelling iframe() would
+      // have given it (https, canonical host) one more try.
+      // A legit embed URL never holds a raw TAB/LF/CR. The URL parser drops
+      // them, so a check on the parsed URL and the string a browser or xss
+      // ends up with can disagree; refuse them outright.
+      if (!beforeTransform && (tag === 'iframe' && name === 'src' || EMBED_SRC_DATA_ATTRS.has(name)) && /[\t\n\r]/.test(decoded)) return '';
+      if (tag === 'iframe' && name === 'src' && !beforeTransform && !isAllowedEmbedSrc(decoded)) {
+        const canonical = canonicalEmbedSrc(decoded);
+        return isAllowedEmbedSrc(canonical) ? `src="${escapeAttr(canonical)}"` : '';
+      }
       // An author's sandbox keeps only the tokens iframe() itself grants.
       if (tag === 'iframe' && name === 'sandbox') {
         const tokens = decodedLower.split(/\s+/).filter(Boolean);
         const kept = tokens.filter(token => IFRAME_SANDBOX_GRANTS.has(token));
         if (kept.length !== tokens.length) return `sandbox="${kept.join(' ')}"`;
       }
-      // A poster loads like an image: only the image proxy may serve it. The
-      // video() transform proxies it; anything else is author-direct.
-      if (tag === 'video' && name === 'poster' && !decoded.startsWith(proxyBase)) return '';
-      if (stripAuthorMarkers) {
+      // Full-render output: images and posters only ever load through the
+      // image proxy, whichever path produced them.
+      if (enforce) {
+        if (tag === 'img' && name === 'src' && !decoded.startsWith(proxyBase)) {
+          // Non-http(s) sources were already refused above.
+          const proxied = proxifyImageSrc(decoded, 0, 0, 'match', { forceProxy: true });
+          return proxied ? `src="${escapeAttr(proxied)}"` : '';
+        }
+        if (tag === 'img' && name === 'srcset' && srcsetCandidates(decoded).some(parts => !parts[0].startsWith(proxyBase))) return '';
+        // A poster loads like an image; the video() transform proxies it on
+        // the transformed path.
+        if (tag === 'video' && name === 'poster' && !decoded.startsWith(proxyBase)) {
+          const proxied = /^https?:\/\//i.test(decoded)
+            ? proxifyImageSrc(decoded, 0, 0, 'match', { forceProxy: true })
+            : '';
+          return proxied ? `poster="${escapeAttr(proxied)}"` : '';
+        }
+      }
+      if (enforce) {
+        // render-helper never writes a character reference or a control
+        // character into a class value, so one there is the author's, hiding
+        // a marker from stripAuthorMarkers until xss decodes it
+        // (`markdown&#45;post-link`). Holds on trusted tags too. Control
+        // characters separate tokens, as xss's own decoding does (it keeps
+        // U+007F inside a token). App-mode entity placeholders are restored
+        // to their references before this pass, so the `&` test covers them.
+        if (isWhiteAttr && name === 'class' && /[&\u0000-\u001f\u007f]/.test(value)) {
+          const kept = decoded
+            .replace(/[\u0000-\u001f\u007f]/g, ' ')
+            .split(/\s+/)
+            .filter(token => token && !/markdown/i.test(token))
+            .join(' ');
+          return kept ? `class="${escapeAttr(kept)}"` : '';
+        }
+        // The only link policy render-helper writes (a.method.ts
+        // getExternalLinkRel and the untrusted-link rule below).
+        if (tag === 'a' && name === 'rel' && !RENDER_HELPER_RELS.has(decodedLower.replace(/\s+/g, ' '))) return '';
+        if (tag === 'a' && name === 'target' && decodedLower !== '_blank') return '';
+      }
+      // Tags the render did not stamp were hidden from the transforms (or no
+      // transform ran): render-helper's markers and the link policy on them
+      // are the author's, so they go.
+      if (enforce && !trusted) {
+        if (tag === 'a' && (name === 'target' || name === 'rel')) return '';
+        // No a() pass ran on this link, so give an external href the policy
+        // a() would have (the author's own rel/target were dropped above).
+        if (tag === 'a' && name === 'href' && /^(?:https?:)?\/\//i.test(decoded)) {
+          return `href="${escapeAttr(decoded)}" rel="nofollow ugc noopener"`;
+        }
         if (RENDER_HELPER_DATA_ATTRIBUTES.has(name)) return '';
-        if (name === 'class') {
+        if (isWhiteAttr && name === 'class') {
           const kept = stripMarkdownClasses(decoded);
           if (kept !== decoded) return kept ? `class="${escapeAttr(kept)}"` : '';
         }
@@ -180,6 +305,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       if (name === 'data-href' && !isSafeNavValue(decoded)) return '';
       if (name === 'id') {
         if (!ID_WHITELIST.test(decoded)) return '';
+      }
+      // Every URL check above ran on the value decoded once. Left to itself,
+      // xss would emit its own reading of the raw value: decoded again by the
+      // browser (`&#38;#47;` passed as the text `&#47;` and loaded as `/`), or
+      // with control characters turned into spaces (`.\n.` validated as `..`
+      // and loaded as `.%20.`). Always emit exactly the string that was
+      // validated.
+      if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
+        return `${name}="${escapeAttr(decoded)}"`;
       }
       return undefined;
     }
@@ -195,10 +329,14 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   const withoutBareSource = cleaned.replace(/<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (t) =>
     /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ''
   );
-  // An iframe whose src was refused above would render an empty frame; drop it.
-  const withoutBareIframe = withoutBareSource.replace(
-    /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/iframe>/gi,
-    (t, attrs: string) => (/\ssrc\s*=/i.test(attrs) ? t : '')
+  // An iframe whose src was refused above would render an empty frame; drop
+  // its opening tag (and an immediately following close tag). Only the opening
+  // tag: an unclosed one must not swallow the content after it. xss writes
+  // every kept attribute as name="value", so walk those rather than search
+  // the raw text, where `src=` could sit inside another attribute's value.
+  const withoutBareIframe = beforeTransform ? withoutBareSource : withoutBareSource.replace(
+    /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
+    (t, attrs: string) => (hasQuotedAttr(attrs, 'src') ? t : '')
   );
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
 }

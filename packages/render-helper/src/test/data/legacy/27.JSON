@@ -1,5 +1,5 @@
 {
   "id": 27,
   "input": "<BR SIZE=\"&{alert('XSS')}\"> <LINK REL=\"stylesheet\" HREF=\"javascript:alert('XSS');\"> <STYLE>body{}</STYLE> <META HTTP-EQUIV=\"Link\" Content=\"<http://xss.rocks/xss.css>; REL=stylesheet\"> <IFRAME SRC=\"javascript:alert('XSS');\"></IFRAME> foo <IFRAME SRC=# onmouseover=\"alert(document.cookie)\"></IFRAME> bar <FRAMESET><FRAME SRC=\"javascript:alert('XSS');\"></FRAMESET> baz ",
-  "result": "<p dir=\"auto\"><br />     foo  bar  baz</p>"
+  "result": "<p dir=\"auto\"><br />    <div class=\"unsupported-iframe\">(Unsupported src)</div> foo <div class=\"unsupported-iframe\">(Unsupported #)</div> bar  baz</p>"
 }

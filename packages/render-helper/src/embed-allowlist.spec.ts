@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { markdown2Html } from './markdown-2-html'
 import { sanitizeHtml } from './methods/sanitize-html.method'
+import { simpleMarkdownToHTML } from './methods/simple-markdown-to-html.method'
 import { isAllowedEmbedSrc } from './consts'
 import { getProxyBase } from './proxify-image-src'
 
 // #1919: the embed allow list and render-helper's own link markers held only
 // on the DOM transform path. All bodies below are synthetic.
 
-// Nesting past the traverse depth cap sends a body down the sanitize-only
-// fallback, the path that runs no DOM transform at all.
-const viaFallback = (inner: string) => '<div>'.repeat(600) + inner + '</div>'.repeat(600)
+// The sanitize-only fallback (no DOM transform at all) is covered in
+// untransformed-fallback.spec.ts.
 
 const decode = (s: string) => s.replace(/&amp;/g, '&')
 const iframeSrcs = (html: string) =>
@@ -41,15 +41,6 @@ describe('#1919 embed allow list and author markers', () => {
       )
       expect(iframeSrcs(out)).toEqual(['https://www.youtube.com/embed/dQw4w9WgXcQ'])
       expect(out).toContain('sandbox="allow-scripts allow-same-origin"')
-    })
-
-    it('enforces the allow list on the sanitize-only fallback path', () => {
-      const out = markdown2Html(
-        viaFallback('<iframe src="https://evil.example/embed/x" sandbox="allow-scripts allow-top-navigation"></iframe>'),
-        false
-      )
-      expect(out).not.toContain('evil.example')
-      expect(out).not.toContain('allow-top-navigation')
     })
   })
 
@@ -124,16 +115,6 @@ describe('#1919 embed allow list and author markers', () => {
       expect(web).toContain('data-author="alice"')
       expect(web).toContain('data-permlink="a-post"')
     })
-
-    it('strips them on the sanitize-only fallback path too', () => {
-      const out = markdown2Html(
-        viaFallback('<a class="markdown-post-link x" data-author="victim" data-permlink="fake" href="https://ecency.com/">c</a>'),
-        true
-      )
-      expect(out).not.toContain('markdown-post-link')
-      expect(out).not.toContain('data-author')
-      expect(out).toContain('class="x"')
-    })
   })
 
   describe('<video poster> goes through the image proxy', () => {
@@ -147,14 +128,218 @@ describe('#1919 embed allow list and author markers', () => {
       expect(decode(poster![1]).startsWith(`${getProxyBase()}/`)).toBe(true)
       expect(out).not.toContain('tracker.example')
     })
+  })
 
-    it('drops an unproxied poster on the sanitize-only path', () => {
+  describe('upper and mixed case attribute names', () => {
+    it('strips markers written with upper case names', () => {
       const out = markdown2Html(
-        viaFallback('<video src="https://example.com/v.mp4" poster="https://tracker.example/p.jpg" controls></video>'),
+        '<a CLASS="Markdown-Author-Link" DATA-AUTHOR="evil" Data-Embed-Src="https://www.youtube.com/embed/dQw4w9WgXcQ" href="https://evil.example">hi</a>',
+        true
+      )
+      expect(out.toLowerCase()).not.toContain('markdown-author-link')
+      expect(out.toLowerCase()).not.toContain('data-author')
+      expect(out.toLowerCase()).not.toContain('data-embed-src')
+    })
+
+    it('proxies an upper case SRC image and applies the link policy to HREF/TARGET/REL', () => {
+      const out = markdown2Html(
+        '<img SRC="https://evil.example/t.png"> <a HREF="https://evil.example/x" TARGET="_blank" REL="opener">l</a>',
         false
       )
-      expect(out).not.toContain('tracker.example')
-      expect(out).toContain('<video')
+      expect(out).not.toMatch(/src="https:\/\/evil\.example/)
+      expect(out).not.toContain('rel="opener"')
+      expect(out).toContain('rel="nofollow ugc noopener"')
     })
+
+    it('keeps a legit upper case IFRAME SRC embed', () => {
+      const out = markdown2Html('<IFRAME SRC="https://www.youtube.com/embed/dQw4w9WgXcQ"></IFRAME>', false)
+      expect(iframeSrcs(out)).toEqual(['https://www.youtube.com/embed/dQw4w9WgXcQ'])
+    })
+  })
+
+  describe('escaped markup in text never becomes real markers', () => {
+    it('web: entity-escaped anchor next to a tag stays text', () => {
+      for (const body of [
+        '&lt;a class="markdown-author-link" data-author="evil" data-href="web+evil://x"&gt;x&lt;/a&gt; #tag',
+        '&#60;a class="markdown-author-link" data-author="evil" data-href="web+evil://x"&#62;x&#60;/a&#62; #tag',
+      ]) {
+        const out = markdown2Html(body, false)
+        expect(out).not.toMatch(/<a [^>]*data-author=/)
+        expect(out).not.toMatch(/<a [^>]*data-href=/)
+        expect(out).toContain('&lt;a class=')
+        expect(out).toContain('href="/trending/tag"')
+      }
+    })
+
+    it('app: backslash-escaped anchor next to a mention stays text', () => {
+      const out = markdown2Html(
+        '\\<a class="markdown-post-link" data-author="evil" data-permlink="x" data-tag="y"\\>x\\</a\\> @alice',
+        true
+      )
+      expect(out).not.toMatch(/<a [^>]*data-author="evil"/)
+      expect(out).toContain('data-author="alice"')
+    })
+
+    it('a literal > before a tag still links it', () => {
+      expect(markdown2Html('a >#quote', false)).toContain('href="/trending/quote"')
+    })
+  })
+
+  describe('allow list paths for every embed host', () => {
+    const refused = [
+      'https://archive.org/download/x/evil.html',
+      'https://cdn.dapplr.in/anything',
+      'https://.dapplr.in/file/dapplr-videos/x',
+      'https://w.soundcloud.com/evil',
+      'https://audio.3speak.tv/evil',
+      'https://3speak.tv/evil',
+      'https://lbry.tv/@evil/page',
+      'https://www.skatehype.com/evil.php',
+      'https://embed.truvvl.com/evil',
+      'https://aureal-embed.web.app/evil/page',
+      'https://brandnewtube.com/@evil',
+      'https://www.vimm.tv/a/b/c/evil.html',
+    ]
+    for (const src of refused) {
+      it(`refuses ${src}`, () => {
+        expect(isAllowedEmbedSrc(src)).toBe(false)
+      })
+    }
+  })
+
+  describe('bare iframe clean-up', () => {
+    it('treats src= inside another attribute value as no src', () => {
+      expect(sanitizeHtml('<iframe class="a src=x"></iframe>')).not.toContain('<iframe')
+    })
+
+    it('does not swallow content after an unclosed refused iframe', () => {
+      const out = sanitizeHtml('<iframe src="https://evil.example/x"><p>keep me</p><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>')
+      expect(out).toContain('keep me')
+    })
+  })
+
+  describe('sanitize-only callers keep canonical embeds (simpleMarkdownToHTML: editor, chat)', () => {
+    const cases: Array<[string, string]> = [
+      ['//www.youtube.com/embed/dQw4w9WgXcQ', 'https://www.youtube.com/embed/dQw4w9WgXcQ'],
+      ['http://www.youtube.com/embed/dQw4w9WgXcQ', 'https://www.youtube.com/embed/dQw4w9WgXcQ'],
+      ['https://m.youtube.com/embed/dQw4w9WgXcQ', 'https://www.youtube.com/embed/dQw4w9WgXcQ'],
+      ['https://3speak.online/embed?v=a/b', 'https://play.3speak.tv/embed?v=a/b'],
+      ['https://player.twitch.tv/?channel=foo', 'https://player.twitch.tv/?channel=foo'],
+    ]
+    for (const [src, want] of cases) {
+      it(src, () => {
+        expect(iframeSrcs(simpleMarkdownToHTML(`<iframe src="${src}"></iframe>`))).toEqual([want])
+      })
+    }
+
+    it('still drops an off-list iframe', () => {
+      expect(simpleMarkdownToHTML('<iframe src="https://example.com/widget"></iframe>')).not.toContain('<iframe')
+    })
+
+    it('keeps a video poster as before (images are not proxied on this path either)', () => {
+      expect(simpleMarkdownToHTML('<video poster="https://files.peakd.com/a.jpg" src="https://files.peakd.com/a.mp4" controls></video>'))
+        .toContain('poster="https://files.peakd.com/a.jpg"')
+    })
+  })
+
+  describe('markup hidden in CDATA, processing instructions and comments (review r5)', () => {
+    const E = 'https://evil.example'
+    const payload = `<img src="${E}/t.png"><a class="markdown-post-link" data-author="evil" data-permlink="p" data-tag="t" href="${E}" target="_blank" rel="opener">x</a><iframe src="${E}/"></iframe><iframe src="https://ipfs.skatehive.app/ipfs/QmEvil"></iframe><span class="markdown-video-link markdown-video-link-youtube" data-embed-src="https://www.youtube.com/embed/AAAAAAAAAAA">v</span><video poster="${E}/p.png" controls></video>`
+    const shapes: Record<string, string> = {
+      cdataInline: `hello <![CDATA[${payload}]]> world`,
+      cdataBlock: `<div>\n<![CDATA[${payload}]]>\n</div>`,
+      piInline: `hello <?x ${payload} ?> world`,
+      piBlock: `<div>\n<?x ${payload} ?>\n</div>`,
+      commentOpenClose: `<div>\n<!--> ${payload} -->\n</div>`,
+      commentDashes: `<div>\n<!---> ${payload} -->\n</div>`,
+    }
+    const leaks = (out: string) => [
+      /<img[^>]*src="https:\/\/evil/.test(out) && 'raw img',
+      /<a[^>]*data-author="evil"/.test(out) && 'marker',
+      /<a\b[^>]*rel="opener"/.test(out) && 'opener',
+      /<iframe[^>]*(evil|skatehive)/.test(out) && 'iframe',
+      /<span[^>]*data-embed-src/.test(out) && 'embed marker',
+      /<video\b[^>]*poster="https:\/\/evil/.test(out) && 'poster',
+    ].filter(Boolean)
+    for (const [name, body] of Object.entries(shapes)) {
+      for (const forApp of [false, true]) {
+        it(`${name} forApp=${forApp}`, () => {
+          expect(leaks(markdown2Html(body, forApp))).toEqual([])
+        })
+      }
+    }
+
+    it('a plain comment just vanishes', () => {
+      const out = markdown2Html('before\n\n<!-- more -->\n\nafter', false)
+      expect(out).not.toContain('more')
+      expect(out).toContain('before')
+      expect(out).toContain('after')
+    })
+  })
+
+  describe('control characters between tag name and attributes (review r5)', () => {
+    // Inside an HTML block Remarkable passes the markup through raw; xmldom
+    // then reads these separators as attribute boundaries and keeps the names
+    // upper case, which the string pre-pass never sees.
+    const E = 'https://evil.example'
+    for (const sep of ['\u0000', '\u0001', '\u0008', '\u000b', '\u000e', '\u001f', ' ']) {
+      const code = `U+${sep.charCodeAt(0).toString(16).padStart(4, '0')}`
+      const block = (inner: string) => `<div>\n${inner}\n</div>`
+      for (const forApp of [false, true]) {
+        it(`${code} forApp=${forApp}`, () => {
+          const out = [
+            markdown2Html(block(`<img${sep}SRC="${E}/t.png">`), forApp),
+            markdown2Html(block(`<a${sep}HREF="${E}"${sep}TARGET="_blank" REL="opener">k</a>`), forApp),
+            markdown2Html(block(`<a${sep}CLASS="markdown-post-link" DATA-AUTHOR="evil" DATA-PERMLINK="p">k</a>`), forApp),
+            markdown2Html(block(`<video${sep}POSTER="${E}/p.png" controls></video>`), forApp),
+          ].join('\n')
+          expect(out).not.toMatch(/<img[^>]*src="https:\/\/evil/i)
+          // forApp anchors carry no href (the app routes taps via data-href),
+          // and keep an author rel exactly as develop does; web applies the
+          // link policy.
+          if (!forApp) expect(out).not.toMatch(/rel="opener"/i)
+          expect(out).not.toMatch(/<a\b[^>]*(data-author="evil"|markdown-post-link)/i)
+          expect(out).not.toMatch(/poster="https:\/\/evil/i)
+        })
+      }
+    }
+  })
+
+  describe('malformed HTML repair path keeps provider iframes for iframe() (review r5)', () => {
+    const cases: Array<[string, RegExp]> = [
+      ['https://www.bitchute.com/video/AbCdEf123/', /^https:\/\/www\.bitchute\.com\/embed\/AbCdEf123\/$/],
+      ['https://www.brighteon.com/1a2b3c4d-5e6f', /^https:\/\/www\.brighteon\.com\/embed\/1a2b3c4d-5e6f$/],
+      ['https://www.youtube.com/EMBED/dQw4w9WgXcQ', /^https:\/\/www\.youtube\.com\/embed\/dQw4w9WgXcQ$/],
+      ['https://www.youtube.com/shorts/dQw4w9WgXcQ', /^https:\/\/www\.youtube\.com\/embed\/dQw4w9WgXcQ$/],
+    ]
+    for (const [src, want] of cases) {
+      it(src, () => {
+        const out = markdown2Html(`<center>\n\n<iframe src="${src}"></iframe>`, false)
+        const srcs = iframeSrcs(out)
+        expect(srcs).toHaveLength(1)
+        expect(srcs[0]).toMatch(want)
+      })
+    }
+  })
+
+  it('strips markers from thousands of elements in linear time (review r5)', () => {
+    const body = '<div>' + '<i class="markdown-a" data-tag="x">x</i>'.repeat(8000) + '</div>'
+    const t0 = performance.now()
+    const out = markdown2Html(body, false)
+    expect(performance.now() - t0).toBeLessThan(2500)
+    expect(out).not.toContain('markdown-a')
+  })
+
+  it('refuses a skatehive IPFS iframe src, which iframe() never emits (review r5)', () => {
+    const src = 'https://ipfs.skatehive.app/ipfs/QmEvil'
+    expect(sanitizeHtml(`<iframe src="${src}"></iframe>`)).not.toContain('<iframe')
+    expect(simpleMarkdownToHTML(`<iframe src="${src}"></iframe>`)).not.toContain('<iframe')
+    // The transform path still turns it into a <video>.
+    expect(markdown2Html(`<iframe src="${src}"></iframe>`, false)).toContain('<video')
+  })
+
+  it('stays safe when thousands of unclosed tags exhaust the repair path (review r5)', () => {
+    const out = markdown2Html('<b>'.repeat(5000) + '<img src="https://evil.example/t.png"> @alice', false)
+    expect(out).not.toMatch(/<img[^>]*src="https:\/\/evil/)
   })
 })

@@ -69,8 +69,15 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
   }
 
   const nodeValue = node.nodeValue || ''
-  const linkified = linkify(nodeValue, forApp, renderOptions)
-  if (linkified !== nodeValue) {
+  // The node value is decoded text: `&lt;a data-author=..&gt;` in the body (or
+  // `\<a ..\>` in markdown) arrives here as a literal `<a ...>`. It is parsed
+  // as HTML below, so escape the angle brackets first or the author's text
+  // becomes real markup with forged link markers (#1919). `&` stays as is: a
+  // bare ampersand can only ever produce text, and image URLs carry it in
+  // their query strings, which the proxy hashes byte for byte.
+  const escaped = nodeValue.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const linkified = linkify(escaped, forApp, renderOptions)
+  if (linkified !== escaped) {
     const doc = DOMParser.parseFromString(
       `<span class="wr">${linkified}</span>`,
       'text/html'
@@ -127,9 +134,21 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
       play.setAttribute('class', 'markdown-video-play')
       anchor.appendChild(play)
 
-      // Assemble and replace
+      // Assemble and replace. Text around the URL stays where it was (the
+      // card used to replace the whole text node).
       container.appendChild(anchor)
-      node.parentNode.replaceChild(container, node)
+      // The match starts at `youtube.com/`; widen it to the whole
+      // whitespace-delimited URL (scheme, www., trailing parameters).
+      let start = e.index
+      while (start > 0 && !/\s/.test(nodeValue[start - 1])) start--
+      let end = e.index + e[0].length
+      while (end < nodeValue.length && !/\s/.test(nodeValue[end])) end++
+      const before = nodeValue.slice(0, start)
+      const after = nodeValue.slice(end)
+      const parent = node.parentNode
+      if (before) parent.insertBefore(node.ownerDocument.createTextNode(before), node)
+      if (after) parent.insertBefore(node.ownerDocument.createTextNode(after), node.nextSibling)
+      parent.replaceChild(container, node)
       return; // Early return after replacing node
     }
   }

@@ -1166,14 +1166,16 @@ describe('Markdown2Html', () => {
       expect(markdown2Html(input)).toBe(expected)
     })
 
-    it('2- Should convert script tag to span', () => {
+    it('2- Should drop a script tag with its content (#1919)', () => {
       const input = {
         author: 'foo65',
         permlink: 'bar65',
         last_update: '2019-05-10T09:15:21',
         body: `<script>document.getElementById('body').remove();</script>`
       }
-      const expected = 'document.getElementById(\'body\').remove();'
+      // Script text used to be shown as prose; the element is now dropped with
+      // its content, since its raw text could hide markup from the transforms.
+      const expected = ''
 
       expect(markdown2Html(input)).toBe(expected)
     })
