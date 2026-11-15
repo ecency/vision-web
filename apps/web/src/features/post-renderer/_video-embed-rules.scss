@@ -118,16 +118,47 @@
   }
 
   // The video's own URL under a YouTube placeholder or player (#235): small and
-  // muted so it reads as a caption, centred like a Short above it.
+  // muted so it reads as a caption, centred like a Short above it. It is added
+  // after hydration, so the placeholder reserves its room up front: the
+  // placeholder's bottom margin holds the caption line plus its gaps, and the
+  // caption pulls itself back into that room with a negative top margin
+  // (adjacent margins collapse, so the content below does not move).
+  // Pure views never get the caption, so they reserve nothing.
+  $source-gap: 0.5rem; // placeholder to caption
+  $source-line: 1.25rem; // one caption line
+  // Caption to the content below. At least the 1em bottom margin of the
+  // paragraph around the placeholder at the post body's largest text size
+  // (18px), or that margin wins the collapse and the content moves.
+  $source-after: 1.25rem;
+
+  // Included inside .markdown-view, so `&` is the markdown view itself.
+  &:not(.markdown-view-pure) .markdown-video-link-youtube[data-youtube] {
+    margin-bottom: $source-gap + $source-line + $source-after;
+  }
+
   a.er-youtube-source {
     display: block;
-    margin: 0 auto 1rem;
+    // Only the URL is clickable, not the whole row beside it.
+    width: fit-content;
+    max-width: 100%;
+    height: $source-line;
+    margin: -($source-line + $source-after) auto $source-after;
     text-align: center;
     font-size: 0.8125rem;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
+    line-height: $source-line;
+    // One line, so the reserved room always fits it.
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-decoration: none;
-    @apply text-gray-600 dark:text-gray-400;
+    // UI caption, not article text: the sans stack in the post body too.
+    @apply font-sans text-gray-600 dark:text-gray-400;
+
+    // No external-link icon (base styles add one to every _blank link).
+    &::after {
+      content: none !important;
+      display: none !important;
+    }
 
     &:hover,
     &:focus-visible {

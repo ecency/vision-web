@@ -93,7 +93,8 @@ describe("classic editor preview video styles", () => {
     const selectors = compiledSelectors("features/post-renderer/video-embeds.scss");
     expect(selectors.length).toBeGreaterThan(0);
     for (const sel of selectors) {
-      expect(sel.startsWith(".markdown-view ")).toBe(true);
+      // A non-pure view (the only one that gets the YouTube URL caption) may be named.
+      expect(sel).toMatch(/^\.markdown-view(:not\(\.markdown-view-pure\))? /);
       // er-youtube-source: the video URL under a YouTube embed (#235).
       expect(sel).toMatch(
         /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe|er-youtube-source/
@@ -106,5 +107,24 @@ describe("classic editor preview video styles", () => {
     for (const sel of compiledSelectors("features/post-renderer/video-embeds.scss")) {
       expect(renderer).toContain(sel);
     }
+  });
+
+  // #235: the caption is inserted after hydration, so the placeholder reserves
+  // its room and the caption moves into it; nothing below shifts.
+  it("reserves the YouTube URL caption's room so inserting it shifts nothing", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    const reserve = declarationsFor(
+      file,
+      ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube[data-youtube]"
+    );
+    expect(reserve).toMatch(/margin-bottom:\s*3rem/);
+    const caption = declarationsFor(file, ".markdown-view a.er-youtube-source");
+    expect(caption).toMatch(/margin:\s*-2\.5rem auto 1\.25rem/);
+    expect(caption).toMatch(/height:\s*1\.25rem/);
+    expect(caption).toMatch(/white-space:\s*nowrap/);
+    expect(caption).toMatch(/width:\s*fit-content/);
+    expect(declarationsFor(file, ".markdown-view a.er-youtube-source::after")).toMatch(
+      /content:\s*none/
+    );
   });
 });

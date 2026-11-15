@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { StrictMode, useRef } from "react";
 import { act, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 // By file path: setup-any-spec stubs the "@/features/post-renderer" barrel.
@@ -94,6 +94,16 @@ describe("YouTube placeholder shows the video URL (#235)", () => {
     expect(sourceLinks(host)).toHaveLength(0);
   });
 
+  it("leaves one link under StrictMode's double effect run", async () => {
+    const { container } = render(
+      <StrictMode>
+        <Body html={youtubeLink()} />
+      </StrictMode>
+    );
+    await flush();
+    expect(sourceLinks(container)).toHaveLength(1);
+  });
+
   it("adds nothing for an id that is not a YouTube video id, or in a pure view", async () => {
     const bad = youtubeLink().replace(`data-youtube="${ID}"`, 'data-youtube="x&quot;onmouseover=1"');
     const { container, rerender } = render(<Body html={bad} />);
@@ -127,6 +137,23 @@ describe("entry page YouTube enhancer shows the video URL (#235)", () => {
     roots.forEach((r) => act(() => r.unmount()));
     roots = applyYoutubeVideos(host);
     expect(sourceLinks(host)).toHaveLength(1);
+    roots.forEach((r) => act(() => r.unmount()));
+    host.remove();
+  });
+
+  it("adds no link for an id that is not a YouTube video id", async () => {
+    const { applyYoutubeVideos } = await import(
+      "@/features/post-renderer/components/utils/youtubeVideosEnhancer"
+    );
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="markdown-view">${youtubeLink().replace(
+      `data-youtube="${ID}"`,
+      'data-youtube="bad id!"'
+    )}</div>`;
+    document.body.appendChild(host);
+
+    const roots = applyYoutubeVideos(host);
+    expect(sourceLinks(host)).toHaveLength(0);
     roots.forEach((r) => act(() => r.unmount()));
     host.remove();
   });
