@@ -186,6 +186,36 @@ describe("notifications bell (#2022)", () => {
     }
   });
 
+  // #2087 review: a refetch of the list (a window refocus, the panel's own
+  // refetch) that fails keeps the cached rows, so the panel must still say
+  // the refresh failed.
+  it("says so with a Retry when a refresh fails while earlier rows are shown", async () => {
+    const row = (id: string) => ({ id, type: "vote", read: 0, gk: "2026-11-15", gkf: false });
+    api.list.mockImplementation(async (pageParam?: string) => (pageParam ? [] : [row("n1")]));
+    const { queryClient } = renderBellAndPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "user-nav.notifications-unread" }));
+    expect(await screen.findByText("row-n1")).toBeInTheDocument();
+
+    api.list.mockRejectedValue(new Error("Failed to fetch notifications: 503"));
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ["notifications", "list"] });
+    });
+
+    expect(await screen.findByText("notifications.refresh-failed")).toBeInTheDocument();
+    expect(screen.getByText("row-n1")).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "g.retry" });
+    expectOutlineRetry(retry);
+
+    api.list.mockImplementation(async (pageParam?: string) =>
+      pageParam ? [] : [row("n0"), row("n1")]
+    );
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+    expect(await screen.findByText("row-n0")).toBeInTheDocument();
+    expect(screen.queryByText("notifications.refresh-failed")).not.toBeInTheDocument();
+  });
+
   // #2080 screenshot pass: scrolling to the retry row brought the sentinel
   // into view, which started the failed page again and hid the row.
   it("does not refetch a failed next page when the sentinel comes into view; Retry does, then scrolling loads on", async () => {

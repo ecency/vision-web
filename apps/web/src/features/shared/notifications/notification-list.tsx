@@ -37,6 +37,7 @@ export function NotificationList({
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
+    isRefetchError,
     refetch
   } = useInfiniteQuery(getNotificationsInfiniteQueryOptions(activeUser?.username, accessToken, filter));
 
@@ -126,6 +127,16 @@ export function NotificationList({
                 : i18next.t("g.empty-list")}
             </span>
           )
+        )}
+        {isRefetchError && dataFlow.length > 0 && !isFetching && (
+          // A failed refresh (the panel reopened, a refetch) keeps the rows
+          // loaded before: they may be out of date, so say so (#2087 review).
+          <div className="flex items-center justify-center gap-3 py-3" role="alert">
+            <span className="text-sm">{i18next.t("notifications.refresh-failed")}</span>
+            <Button size="sm" outline onClick={() => refetch()}>
+              {i18next.t("g.retry")}
+            </Button>
+          </div>
         )}
         {filteredData.map((n, i) => (
           <AnimatedNotificationListItemLayout key={n.id} index={i}>

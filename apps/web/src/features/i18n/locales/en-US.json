@@ -2195,6 +2195,7 @@
     "type-all-short": "All",
     "load-failed": "Notifications could not be loaded.",
     "load-more-failed": "More notifications could not be loaded.",
+    "refresh-failed": "Notifications could not be refreshed. These may be out of date.",
     "type-rvotes": "Votes",
     "type-replies": "Replies",
     "type-mentions": "Mentions",
