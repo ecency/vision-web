@@ -3,8 +3,8 @@ import { WebSocket } from "ws";
 import type { WebSocketServer } from "ws";
 import { scrubChatSocketFrame } from "@/server/chat-public-user";
 import { closeSocketSafely } from "@/server/chat-socket-close";
+import { mattermostCookieToken } from "@/server/mattermost-session-cookie";
 
-const MATTERMOST_TOKEN_COOKIE = "mm_pat" as const;
 const TOKEN_QUERY_PARAM = "token" as const;
 
 // Allowed origins for CORS - configurable via env
@@ -65,8 +65,8 @@ function getToken(request: NextRequest): string | undefined {
     return queryToken;
   }
 
-  // Check cookie
-  return request.cookies.get(MATTERMOST_TOKEN_COOKIE)?.value;
+  // Check cookie: only a session that belongs to the active account (#2023)
+  return mattermostCookieToken((name) => request.cookies.get(name)?.value) ?? undefined;
 }
 
 function checkOrigin(request: NextRequest): boolean {

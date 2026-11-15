@@ -130,6 +130,69 @@ describe("DELETE /api/mattermost/session", () => {
     expect(setCookie.toLowerCase()).toContain("httponly");
     expect(setCookie).toContain("Path=/");
   });
+
+  it("expires the session owner cookie too", async () => {
+    const { DELETE } = await import("@/app/api/mattermost/session/route");
+    const res = await DELETE();
+    const setCookie = res.headers.get("set-cookie") ?? "";
+
+    expect(setCookie).toMatch(/mm_owner=;/);
+  });
+});
+
+// #2023 review: when the expiry request fails or times out, or another tab or
+// a late Set-Cookie puts the previous account's cookie back, the server must
+// still not answer chat calls for the new account as the previous one.
+describe("chat session bound to the active account (#2023)", () => {
+  const jar = (cookies: Record<string, string>) => (name: string) => cookies[name];
+
+  it("is the session when its owner is the active account", async () => {
+    const { mattermostCookieToken } = await import("@/server/mattermost-session-cookie");
+    expect(
+      mattermostCookieToken(jar({ mm_pat: "tok-a", mm_owner: "alice", active_user: "alice" }))
+    ).toBe("tok-a");
+    // Case and URI encoding of the client-set cookie do not matter.
+    expect(
+      mattermostCookieToken(jar({ mm_pat: "tok-a", mm_owner: "alice", active_user: "Alice" }))
+    ).toBe("tok-a");
+  });
+
+  it("is no session when another account is active", async () => {
+    const { mattermostCookieToken } = await import("@/server/mattermost-session-cookie");
+    expect(
+      mattermostCookieToken(jar({ mm_pat: "tok-a", mm_owner: "alice", active_user: "bob" }))
+    ).toBeNull();
+  });
+
+  it("is no session after a logout, or without an owner", async () => {
+    const { mattermostCookieToken } = await import("@/server/mattermost-session-cookie");
+    expect(mattermostCookieToken(jar({ mm_pat: "tok-a", mm_owner: "alice" }))).toBeNull();
+    expect(mattermostCookieToken(jar({ mm_pat: "tok-a", active_user: "alice" }))).toBeNull();
+    expect(mattermostCookieToken(jar({ mm_owner: "alice", active_user: "alice" }))).toBeNull();
+  });
+
+  it("the API routes' token reader honours the binding", async () => {
+    const source = readFileSync(resolve(__dirname, "../../../server/mattermost.ts"), "utf8");
+    const reader = source.slice(source.indexOf("export async function getMattermostTokenFromCookies"));
+    expect(reader.slice(0, reader.indexOf("\n}\n"))).toContain("mattermostCookieToken(");
+    const ws = readFileSync(
+      resolve(__dirname, "../../../app/api/mattermost/websocket/route.ts"),
+      "utf8"
+    );
+    expect(ws).toContain("mattermostCookieToken(");
+    expect(ws).not.toMatch(/cookies\.get\(MATTERMOST_TOKEN_COOKIE\)/);
+  });
+
+  it("the bootstrap names the owner next to the session cookie", async () => {
+    const { NextResponse } = await import("next/server");
+    const { withMattermostTokenCookie } = await import("@/server/mattermost");
+    const res = withMattermostTokenCookie(NextResponse.json({ ok: true }), "tok-a", "Alice");
+    const setCookie = res.headers.get("set-cookie") ?? "";
+
+    expect(setCookie).toMatch(/mm_pat=tok-a/);
+    expect(setCookie).toMatch(/mm_owner=alice/);
+    expect(setCookie.toLowerCase().match(/httponly/g)).toHaveLength(2);
+  });
 });
 
 describe("chat page requests after a switch (#2023 follow-up)", () => {

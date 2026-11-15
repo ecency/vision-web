@@ -305,7 +305,7 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
         channelId,
         token: personalToken
     });
-    return withMattermostTokenCookie(response, personalToken);
+    return withMattermostTokenCookie(response, personalToken, verification.username);
     } finally {
         // Mark teardown BEFORE clearing the QueryClient so the in-flight
         // subscriptions .catch can tell our own cancellation apart from a

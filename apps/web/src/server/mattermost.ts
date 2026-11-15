@@ -7,6 +7,13 @@ import { ESIE_USERNAME } from "@/features/chat/official-accounts";
 import { toPublicChatUser } from "@/server/chat-public-user";
 import { findHiveCommunity } from "@/server/hive-community";
 import { ChatUserBusyError, withChatUserLock } from "@/server/chat-user-lock";
+import {
+  MATTERMOST_OWNER_COOKIE,
+  MATTERMOST_TOKEN_COOKIE,
+  mattermostCookieToken
+} from "./mattermost-session-cookie";
+
+export { mattermostCookieToken };
 
 export { ChatUserBusyError };
 
@@ -15,7 +22,6 @@ export { toPublicChatUser };
 const MATTERMOST_BASE_URL = process.env.MATTERMOST_BASE_URL;
 const MATTERMOST_ADMIN_TOKEN = process.env.MATTERMOST_ADMIN_TOKEN;
 const MATTERMOST_TEAM_ID = process.env.MATTERMOST_TEAM_ID;
-const MATTERMOST_TOKEN_COOKIE = "mm_pat";
 export const CHAT_BAN_PROP = "ecency_chat_banned_until";
 // Why the ban was applied, written alongside the expiry by the moderation service.
 // Lets the clients explain what happened instead of quoting a timestamp. Absent on
@@ -951,16 +957,26 @@ export async function ensurePersonalToken(
   }, { signal });
 }
 
-export function withMattermostTokenCookie(response: NextResponse, token: string) {
-  response.cookies.set({
-    name: MATTERMOST_TOKEN_COOKIE,
-    value: token,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30
-  });
+/**
+ * Sets the chat session cookie, and next to it the account it belongs to
+ * (`owner`, the verified Ecency username). The token reader honours the
+ * session only while that account is the one active in the browser.
+ */
+export function withMattermostTokenCookie(response: NextResponse, token: string, owner: string) {
+  for (const [name, value] of [
+    [MATTERMOST_TOKEN_COOKIE, token],
+    [MATTERMOST_OWNER_COOKIE, owner.toLowerCase()]
+  ]) {
+    response.cookies.set({
+      name,
+      value,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30
+    });
+  }
   return response;
 }
 
@@ -970,17 +986,20 @@ export function withMattermostTokenCookie(response: NextResponse, token: string)
  * Same attributes as when it was set, or the browser keeps the original.
  */
 export function clearMattermostTokenCookie(response: NextResponse) {
-  response.cookies.set({
-    name: MATTERMOST_TOKEN_COOKIE,
-    value: "",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0
-  });
+  for (const name of [MATTERMOST_TOKEN_COOKIE, MATTERMOST_OWNER_COOKIE]) {
+    response.cookies.set({
+      name,
+      value: "",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0
+    });
+  }
   return response;
 }
+
 
 export async function getMattermostTokenFromCookies(): Promise<string | null> {
   // 1) Check X-MM-Token header first (mobile clients send token explicitly
@@ -991,9 +1010,9 @@ export async function getMattermostTokenFromCookies(): Promise<string | null> {
     return headerToken;
   }
 
-  // 2) Fall back to httpOnly cookie (web clients)
+  // 2) Fall back to httpOnly cookie (web clients), only for the active account
   const cookieStore = await cookies();
-  return cookieStore.get(MATTERMOST_TOKEN_COOKIE)?.value || null;
+  return mattermostCookieToken((name) => cookieStore.get(name)?.value);
 }
 
 export async function mmUserFetch<T>(path: string, token: string, init?: RequestInit) {
