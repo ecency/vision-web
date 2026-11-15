@@ -14,18 +14,17 @@ import {
 } from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "react-use";
+import { getDelegatableRc } from "./delegatable-rc";
 
 export const ResourceCreditsDelegation = (props: any) => {
   const { activeUser, hideDelegation, toFromList, amountFromList, delegateeData } = props;
   const queryClient = useQueryClient();
   // The RC being delegated is the signer's own, so the balance and the limit
   // come from the logged in account, whichever profile the dialog opened on.
-  const { data: resourceCredit } = useQuery({
+  // Only own RC can be delegated, never RC received from others (#2075).
+  const { data: delegatableRc } = useQuery({
     ...getAccountRcQueryOptions(activeUser.username),
-    select: (accounts) =>
-      accounts.length
-        ? Number(accounts[0].rc_manabar.current_mana) + Number(accounts[0].received_delegated_rc)
-        : undefined
+    select: (accounts) => (accounts.length ? getDelegatableRc(accounts[0]) : undefined)
   });
   const { data: badActors } = useQuery(getBadActorsQueryOptions());
   const { mutateAsync: delegateRc } = useDelegateRcMutation();
@@ -39,6 +38,13 @@ export const ResourceCreditsDelegation = (props: any) => {
   const [toWarning, setToWarning] = useState<string>("");
   const [toData, setToData] = useState<any>(delegateeData || "");
 
+  // Changing an existing delegation only needs the difference: hived counts
+  // the RC already delegated to that recipient towards the new amount.
+  const rcLimit =
+    delegatableRc === undefined
+      ? undefined
+      : delegatableRc + (toFromList && to === toFromList ? Number(amountFromList) || 0 : 0);
+
   const toChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
     setInProgress(true);
@@ -50,13 +56,13 @@ export const ResourceCreditsDelegation = (props: any) => {
     setAmount(amount);
     if (
       amount === "" ||
-      (Number(amount) >= 5000000000 && Number(amount) < Number(resourceCredit)) ||
+      (Number(amount) >= 5000000000 && Number(amount) <= Number(rcLimit)) ||
       amount === "0"
     ) {
       setAmountError("");
     } else if (Number(amount) < 5000000000) {
       setAmountError(i18next.t("rc-info.minimum-rc-error"));
-    } else if (Number(amount) > Number(resourceCredit)) {
+    } else if (Number(amount) > Number(rcLimit)) {
       setAmountError(i18next.t("rc-info.insufficient-rc-error"));
       return;
     }
@@ -92,7 +98,7 @@ export const ResourceCreditsDelegation = (props: any) => {
     !amountError &&
     !!amount &&
     (Number(amount) === 0 || Number(amount) >= 5000000000) &&
-    Number(amount) < Number(resourceCredit);
+    Number(amount) <= Number(rcLimit);
 
   const handleTo = useCallback(async (value: string) => {
     if (!value) {
@@ -215,7 +221,7 @@ export const ResourceCreditsDelegation = (props: any) => {
                     value={amount}
                     onChange={amountChanged}
                     className={
-                      Number(amount) > Number(resourceCredit) && amountError ? "is-invalid" : ""
+                      Number(amount) > Number(rcLimit) && amountError ? "is-invalid" : ""
                     }
                   />
                 </InputGroup>
@@ -223,15 +229,15 @@ export const ResourceCreditsDelegation = (props: any) => {
             </div>
 
             {amount < 5000000000 && <small className="text-red tr-form-text">{amountError}</small>}
-            {amount > Number(resourceCredit) && (
+            {amount > Number(rcLimit) && (
               <small className="text-red tr-form-text">{amountError}</small>
             )}
 
             <div className="grid grid-cols-12">
               <div className="col-span-12 lg:col-span-10 lg:col-start-3">
                 <div className="balance space-3">
-                  <span className="balance-label">{i18next.t("transfer.balance")}</span>
-                  <span>{resourceCredit === undefined ? "" : `: ${resourceCredit}`}</span>
+                  <span className="balance-label">{i18next.t("rc-info.delegatable-balance")}</span>
+                  <span>{delegatableRc === undefined ? "" : `: ${delegatableRc}`}</span>
                 </div>
               </div>
             </div>

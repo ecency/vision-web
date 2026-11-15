@@ -1,11 +1,12 @@
 import React from "react";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { getAccountRcQueryOptions, getRcStatsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { ResourceCreditsInfo } from "@/app/(dynamicPages)/profile/[username]/_components/rc-info";
+import { getDelegatableRc } from "@/app/(dynamicPages)/profile/[username]/_components/rc-delegation/delegatable-rc";
 import { mockFullAccount, renderWithQueryClient, setupModalContainers } from "@/specs/test-utils";
 
 // Visiting someone else's profile, RC info -> "Delegate": the form signs as the
@@ -187,6 +188,119 @@ describe("RC delegate from another user's profile", () => {
     fireEvent.click(screen.getAllByRole("button")[0]);
     fireEvent.click(await screen.findByText("rc-info.delegation-button"));
     expect(await screen.findByPlaceholderText("transfer.amount-placeholder")).toHaveValue("");
+  });
+
+  // #2075: hived's delegate_rc evaluator caps a delegation at
+  //   min(get_maximum_rc(only_delegable=true), rc_manabar.current_mana)
+  // where only_delegable leaves out rc_adjustment and received_rc. RC that others
+  // delegated to the sender can not be delegated on.
+  describe("delegatable balance (#2075)", () => {
+    const B = 1_000_000_000;
+    const NOW_S = 1_800_000_000;
+
+    // Mana was last updated "now": no regeneration on top of current_mana.
+    beforeEach(() => {
+      vi.spyOn(Date, "now").mockReturnValue(NOW_S * 1000);
+    });
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    function senderRc(rc: { mana: number; maxRc: number; received: number; adjustment?: number }) {
+      vi.mocked(getAccountRcQueryOptions).mockImplementation(
+        (username: string) =>
+          ({
+            queryKey: ["resource-credits", "account", username],
+            queryFn: async () =>
+              username === "alice"
+                ? [
+                    {
+                      account: "alice",
+                      rc_manabar: { current_mana: String(rc.mana), last_update_time: NOW_S },
+                      max_rc: String(rc.maxRc),
+                      max_rc_creation_adjustment: {
+                        amount: String(rc.adjustment ?? 0),
+                        precision: 6,
+                        nai: "@@000000037"
+                      },
+                      delegated_rc: 0,
+                      received_delegated_rc: rc.received
+                    }
+                  ]
+                : rcAccount(username, BOB_RC)
+          }) as unknown as ReturnType<typeof getAccountRcQueryOptions>
+      );
+    }
+
+    it("leaves received RC and the creation adjustment out of the balance", async () => {
+      // Own 20B, plus 5B received and 2B creation adjustment; mana is full.
+      senderRc({ mana: 27 * B, maxRc: 27 * B, received: 5 * B, adjustment: 2 * B });
+      await openDelegateOnBobsProfile();
+
+      expect(await screen.findByText(`: ${20 * B}`)).toBeInTheDocument();
+      expect(screen.queryByText(`: ${32 * B}`)).not.toBeInTheDocument();
+    });
+
+    it("is capped by current mana when that is lower than own RC", async () => {
+      senderRc({ mana: 12 * B, maxRc: 25 * B, received: 5 * B });
+      await openDelegateOnBobsProfile();
+
+      expect(await screen.findByText(`: ${12 * B}`)).toBeInTheDocument();
+    });
+
+    it("rejects an amount between the delegatable RC and the old inflated balance", async () => {
+      senderRc({ mana: 25 * B, maxRc: 25 * B, received: 5 * B });
+      await openDelegateOnBobsProfile();
+      await screen.findByText(`: ${20 * B}`);
+
+      fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+        target: { value: String(25 * B) }
+      });
+
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+    });
+  });
+
+  describe("getDelegatableRc (#2075)", () => {
+    const rc = (mana: number, maxRc: number, received: number, lastUpdate: number) => ({
+      rc_manabar: { current_mana: String(mana), last_update_time: lastUpdate },
+      max_rc: String(maxRc),
+      max_rc_creation_adjustment: { amount: "0", precision: 6, nai: "@@000000037" },
+      received_delegated_rc: received
+    });
+
+    it("regenerates mana to now, never past max_rc, then caps at own RC", () => {
+      // Half a regeneration window (2.5 days) after 0 mana: half of max_rc.
+      expect(getDelegatableRc(rc(0, 100, 0, 0), 216_000 * 1000)).toBe(50);
+      // Long after: full, capped at max_rc, then at own RC (100 - 30 received).
+      expect(getDelegatableRc(rc(0, 100, 30, 0), 10_000_000 * 1000)).toBe(70);
+    });
+
+    it("is never negative", () => {
+      expect(getDelegatableRc(rc(0, 10, 50, 1000), 1000 * 1000)).toBe(0);
+    });
+  });
+
+  // Changing an existing delegation needs only the difference (hived subtracts
+  // the RC already delegated to that recipient from the new amount).
+  it("lets an edit raise a delegation by up to the delegatable RC", async () => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "alice" },
+      username: "alice"
+    } as unknown as ActiveAccount);
+    renderProfile("alice");
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(await screen.findByText(/rc-info.delegated/));
+    fireEvent.click(await screen.findByText("edit-carol"));
+    await screen.findByText(`: ${ALICE_RC}`);
+    const amountInput = screen.getByPlaceholderText("transfer.amount-placeholder");
+
+    // carol has 30B, alice can delegate 20B more: 50B is the most.
+    fireEvent.change(amountInput, { target: { value: "50000000000" } });
+    expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+
+    fireEvent.change(amountInput, { target: { value: "50000000001" } });
+    expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
   });
 
   // #2074
