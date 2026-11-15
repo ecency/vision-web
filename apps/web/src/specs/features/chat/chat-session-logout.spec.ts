@@ -6,7 +6,7 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import {
   useMattermostBootstrap,
   useMattermostChannels,
@@ -42,6 +42,19 @@ function actionsFor(currentUsername: string | null) {
 
 function ok() {
   return { status: 200, ok: true, headers: new Headers() } as Response;
+}
+
+/** A mounted bootstrap query, as on the chat pages, without a network call. */
+function mountBootstrap(username = "alice") {
+  const queryClient = getQueryClient();
+  const queryKey = ["mattermost-bootstrap", username, undefined];
+  queryClient.setQueryData(queryKey, { ok: true, userId: "u1", channelId: "c1" });
+  const observer = new QueryObserver(queryClient, {
+    queryKey,
+    queryFn: async () => ({ ok: true, userId: "u1", channelId: "c1" }),
+    staleTime: Infinity
+  });
+  return observer.subscribe(() => undefined);
 }
 
 function urlOf(call: unknown[]) {
@@ -407,8 +420,10 @@ describe("chat client state on an account switch (#2023)", () => {
     const queryClient = getQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     fetchMock.mockResolvedValue(new Response("", { status: 401 }));
+    const unmount = mountBootstrap();
 
     await chatApiFetch("/api/mattermost/channels/unreads");
+    unmount();
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-bootstrap"] });
   });
@@ -441,6 +456,65 @@ describe("chat client state on an account switch (#2023)", () => {
       }
       return ok();
     });
+
+    try {
+      const { result } = renderHook(
+        () => ({ bootstrap: useMattermostBootstrap(), channels: useMattermostChannels(true) }),
+        {
+          wrapper: ({ children }) =>
+            React.createElement(QueryClientProvider, { client: queryClient }, children)
+        }
+      );
+
+      await waitFor(() => expect(cookieSet).toBe(true));
+      await waitFor(() => expect(result.current.channels.isSuccess).toBe(true), { timeout: 2000 });
+      expect(result.current.channels.data).toEqual({ channels: [] });
+    } finally {
+      queryClient.setDefaultOptions(defaults);
+    }
+  });
+
+  it("a 401 off /chats spends nothing: /chats later still recovers (#2023 review)", async () => {
+    const queryClient = getQueryClient();
+    const defaults = queryClient.getDefaultOptions();
+    queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retryDelay: 5 } });
+    // The bootstrap is cached and fresh, but the chat cookie is gone.
+    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], {
+      ok: true,
+      userId: "u1",
+      channelId: "c1"
+    });
+    let cookieSet = false;
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "/api/mattermost/bootstrap") {
+        // The new cookie lands with the bootstrap response, after the
+        // channel list's single retry has already failed.
+        await new Promise((r) => setTimeout(r, 50));
+        cookieSet = true;
+        return new Response(JSON.stringify({ ok: true, userId: "u1", channelId: "c1" }), {
+          status: 200
+        });
+      }
+      if (input === "/api/mattermost/channels") {
+        return cookieSet
+          ? new Response(JSON.stringify({ channels: [] }), { status: 200 })
+          : new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+      }
+      return ok();
+    });
+
+    // Badge polls answer 401 on a page with no bootstrap mounted.
+    cookieSet = false;
+    const offChats = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: string) =>
+      input === "/api/mattermost/channels/unreads"
+        ? new Response("", { status: 401 })
+        : offChats(input)
+    );
+    for (let i = 0; i < 4; i++) {
+      await chatApiFetch("/api/mattermost/channels/unreads");
+    }
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain("/api/mattermost/bootstrap");
 
     try {
       const { result } = renderHook(
@@ -538,8 +612,10 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
     const invalidate = vi.spyOn(getQueryClient(), "invalidateQueries");
     invalidate.mockClear();
     fetchMock.mockResolvedValue(new Response("", { status: 401 }));
+    const unmount = mountBootstrap();
 
     await chatApiFetch("/api/mattermost/channels/unreads");
+    unmount();
 
     expect(bootstrapAsks(invalidate)).toBe(0);
   });
@@ -550,6 +626,7 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
     invalidate.mockClear();
 
     fetchMock.mockImplementation(async () => new Response("", { status: 401 }));
+    const unmount = mountBootstrap();
     for (let i = 0; i < 6; i++) {
       now += 61_000;
       await chatApiFetch("/api/mattermost/channels/unreads");
@@ -562,6 +639,7 @@ describe("bootstrap after a 401 in a stale tab (#2023)", () => {
     now += 61_000;
     await chatApiFetch("/api/mattermost/channels/unreads");
 
+    unmount();
     expect(bootstrapAsks(invalidate)).toBe(4);
   });
 });

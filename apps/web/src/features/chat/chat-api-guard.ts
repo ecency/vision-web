@@ -74,12 +74,21 @@ function parseRetryAfterMs(header: string | null): number {
  * Whether a 401 may ask the bootstrap again. Not when another tab made another
  * account active (the `active_user` cookie): this tab would put its account's
  * chat cookie back over that one's, and the other tab would do the same, every
- * minute. Not more than once a minute, and not past the cap.
+ * minute. Not without a mounted bootstrap, not more than once a minute, and
+ * not past the cap.
  */
 function shouldRebootstrap(): boolean {
   const tabAccount = useGlobalStore.getState().activeUser?.username?.toLowerCase();
   const browserAccount = Cookies.get(ACTIVE_USER_COOKIE_NAME)?.toLowerCase();
   if (!tabAccount || tabAccount !== browserAccount) return false;
+
+  // Only a mounted bootstrap (the chat pages) runs again on an invalidation.
+  // Elsewhere the 401 renews nothing, so it must not spend the throttle or
+  // the cap that /chats needs later.
+  const bootstrapMounted =
+    getQueryClient().getQueryCache().findAll({ queryKey: ["mattermost-bootstrap"], type: "active" })
+      .length > 0;
+  if (!bootstrapMounted) return false;
 
   if (tabAccount !== rebootstrapAccount) {
     rebootstrapAccount = tabAccount;
