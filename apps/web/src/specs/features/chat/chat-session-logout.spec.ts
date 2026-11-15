@@ -6,7 +6,12 @@ import React from "react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver
+} from "@tanstack/react-query";
 import {
   useMattermostBootstrap,
   useMattermostChannels,
@@ -386,6 +391,31 @@ describe("chat client state on an account switch (#2023)", () => {
     expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toEqual([
       "POST /api/mattermost/bootstrap alice"
     ]);
+  });
+
+  it("a stale tab sends no bootstrap when it regains focus (#2023 review)", async () => {
+    const queryClient = getQueryClient();
+    // This tab is still on alice; another tab made bob active.
+    Cookies.set("active_user", "bob");
+    queryClient.setQueryData(
+      ["mattermost-bootstrap", "alice", undefined],
+      { ok: true, userId: "u1", channelId: "c1" },
+      { updatedAt: 1 }
+    );
+    const { result } = renderHook(() => useMattermostBootstrap(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children)
+    });
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    focusManager.setFocused(undefined);
+
+    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+
+    expect(calls().filter((c) => c.startsWith("POST /api/mattermost/bootstrap"))).toEqual([]);
+    // Refused without retries: another account is active in this browser.
+    expect(result.current.isError).toBe(true);
   });
 
   it("drops every cached chat query and keeps the rest", () => {

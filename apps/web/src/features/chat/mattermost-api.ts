@@ -7,6 +7,8 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getAccessToken, getRefreshToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";
 import { hsTokenRenew } from "@ecency/sdk";
+import Cookies from "js-cookie";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
 import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-guard";
 // Every request here goes through chatSessionFetch, which waits for a pending
 // logout/switch session reset (#2023). Keep bare fetch out of this module.
@@ -115,8 +117,20 @@ export function shouldRefetchBootstrapOnFocus(
 // `error: Error` is load-bearing: React Query infers the query's TError from
 // this predicate, and widening it to `unknown` propagates out to every consumer
 // reading `error.message`.
+/**
+ * Thrown, without a request, when this tab's account is not the one active in
+ * the browser (another tab switched): bootstrapping would put this account's
+ * chat cookie over the active one's (#2023).
+ */
+export class ChatAccountInactiveError extends Error {
+  constructor() {
+    super("Another account is active in this browser");
+    this.name = "ChatAccountInactiveError";
+  }
+}
+
 export function shouldRetryBootstrap(failureCount: number, error: Error) {
-  if (isBootstrapBanError(error)) {
+  if (isBootstrapBanError(error) || error instanceof ChatAccountInactiveError) {
     return false;
   }
 
@@ -160,6 +174,9 @@ export function useMattermostBootstrap(community?: string) {
         await chatSessionSettled();
         if (chatSessionGeneration() !== generation) {
           throw new Error("Chat session changed");
+        }
+        if (Cookies.get(ACTIVE_USER_COOKIE_NAME)?.toLowerCase() !== username?.toLowerCase()) {
+          throw new ChatAccountInactiveError();
         }
         return chatSessionFetch("/api/mattermost/bootstrap", init);
       };
