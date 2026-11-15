@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import React from "react";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import i18next, { type TFunction } from "i18next";
@@ -89,6 +91,34 @@ describe("count notifications use i18next plurals (#2021)", () => {
       });
     }
   );
+
+  // Until Crowdin supplies real plural forms, every locale keeps its own
+  // sentence, seeded into every plural category it uses (uk: one/few/many/other).
+  it.each([1, 2, 5, 7, 21])("uk-UA renders Ukrainian for a count of %i", async (count) => {
+    await inLanguage("uk-UA", () => {
+      const checkins = getBody({ type: "checkins", source: "alice", extra: { count } });
+      expect(checkins).toBe(`Ви відмітилися ${count} дн. цього тижня. Так тримати!`);
+      const posts = getBody({ type: "monthly-posts", source: "alice", extra: { count } });
+      expect(posts).toBe(`Ви створили ${count} пост цього місяця. Так тримати!`);
+    });
+  });
+
+  it("every locale has every plural category it uses, with the count and no suffix", () => {
+    const dir = path.resolve(__dirname, "../../features/i18n/locales");
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+      const locale = file.replace(/\.json$/, "");
+      const strings = JSON.parse(readFileSync(path.join(dir, file), "utf8")).notification;
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+      for (const key of ["checkins", "monthly-posts"]) {
+        expect(strings[key], `${locale} ${key}`).toBeUndefined();
+        for (const category of categories) {
+          const text = strings[`${key}_${category}`];
+          expect(text, `${locale} ${key}_${category}`).toContain("{{count}}");
+          expect(text, `${locale} ${key}_${category}`).not.toContain("{{suffix}}");
+        }
+      }
+    }
+  });
 
   it("the check-ins list item renders the plural form", () => {
     render(

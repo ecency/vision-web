@@ -1853,10 +1853,12 @@
     "reblogged": "{{source}} があなたの投稿をリブログしました",
     "transfer": "{{source}} が {{amount}}を送信しました",
     "delegations": "{{source}} があなたに {{amount}}を委任しました",
+    "checkins_other": "あなたは今週 {{count}} 日 にチェックインしました。続けてください！",
     "payouts": "コンテンツの支払いの準備ができました。",
     "payouts-amount": "{{amount}} の支払いを受け取りました。",
     "payouts-amount-usd": "${{amount_usd}} ({{amount}}) を獲得しました。",
     "payouts-title": "{{body}} \"{{title}}\"",
+    "monthly-posts_other": "今月は {{count}} 件の投稿を作成しました。この調子で続けましょう!",
     "weekly-earnings": "あなたは今週投稿から${{total}} - ${{author}} を獲得しました。キュレーションから${{curation}}",
     "weekly-earnings-short": "今週は投稿とキュレーションで${{total}} を獲得しました。"
   },
