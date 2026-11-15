@@ -3,9 +3,10 @@
 import { Entry } from "@/entities";
 import { SelectionPopover } from "./selection-popover";
 import { EntryPageViewerManager } from "./entry-page-viewer-manager";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { SafeTweet } from "@/features/shared/safe-tweet";
 import { EntryPageContext } from "./context";
+import { getPostBodyVersion, subscribePostBody } from "./entry-page-body-html";
 import dynamic from "next/dynamic";
 import { DialogChunkSpinner } from "@/features/shared/dialog-chunk-spinner";
 import { makeEntryPath } from "@/utils";
@@ -45,6 +46,8 @@ export function EntryPageBodyViewer({ entry }: Props) {
   // Keyed on content: a refetched entry hands a new image array with the same
   // urls, and re-running the enhancements would stop a playing video (#2082).
   const imagesKey = JSON.stringify(entry.json_metadata?.image ?? null);
+  // Moves when #post-body is mounted or its html replaced (#2083).
+  const bodyVersion = useSyncExternalStore(subscribePostBody, getPostBodyVersion, () => 0);
 
   useEffect(() => {
     if (isRawContent || isEdit || editHistory) {
@@ -157,7 +160,7 @@ export function EntryPageBodyViewer({ entry }: Props) {
       clearTimeout(timer);
       cleanup?.();
     };
-  }, [isRawContent, isEdit, editHistory, imagesKey]);
+  }, [isRawContent, isEdit, editHistory, imagesKey, bodyVersion]);
 
   return (
     <EntryPageViewerManager>

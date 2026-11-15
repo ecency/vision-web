@@ -1,6 +1,28 @@
 "use client";
 
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, useEffect, useMemo } from "react";
+
+/*
+  The body viewer enhances #post-body from an effect, but the node and its
+  html can change without any of the viewer's own deps changing: turning raw
+  off flips isRawContent while the <pre> fallback is still mounted, and the
+  refresh then mounts this body; a refresh with different html rewrites
+  innerHTML. This counter moves after every such commit so the viewer
+  (useSyncExternalStore) runs its enhancements again (#2083).
+*/
+let bodyVersion = 0;
+const listeners = new Set<() => void>();
+
+export function subscribePostBody(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getPostBodyVersion(): number {
+  return bodyVersion;
+}
 
 interface Props {
   html: string;
@@ -17,6 +39,11 @@ interface Props {
  */
 export function EntryPageBodyHtml({ html, style }: Props) {
   const innerHtml = useMemo(() => ({ __html: html }), [html]);
+  // Runs after the commit that mounted the node or rewrote its innerHTML.
+  useEffect(() => {
+    bodyVersion += 1;
+    listeners.forEach((listener) => listener());
+  }, [innerHtml]);
   return (
     <div
       id="post-body"
