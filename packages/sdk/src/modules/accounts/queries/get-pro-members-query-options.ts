@@ -40,7 +40,15 @@ export function getProMembersQueryOptions() {
   });
 }
 
-/** Lowercased set of member usernames for O(1), case-insensitive membership checks. */
+/**
+ * Lowercased set of member usernames for O(1), case-insensitive membership checks.
+ * The roster is an unvalidated JSON response, so a body that is not an array, or
+ * entries that are not strings, are skipped instead of throwing in every caller.
+ */
 export function proMembersSet(members?: string[]): Set<string> {
-  return new Set((members ?? []).map((m) => m.toLowerCase()));
+  if (!Array.isArray(members)) return new Set();
+  const names: unknown[] = members;
+  return new Set(
+    names.filter((m): m is string => typeof m === "string").map((m) => m.toLowerCase())
+  );
 }
