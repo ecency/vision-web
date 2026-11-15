@@ -12,7 +12,7 @@
  */
 
 import { getQueryClient } from "@/core/react-query";
-import { chatSessionFetch } from "./chat-session";
+import { chatSessionFetch, isChatQueryKey } from "./chat-session";
 
 const DEFAULT_PAUSE_MS = 10 * 60_000; // matches the edge rate-limit block window
 const MAX_PAUSE_MS = 15 * 60_000;
@@ -59,6 +59,27 @@ function parseRetryAfterMs(header: string | null): number {
   return DEFAULT_PAUSE_MS;
 }
 
+/**
+ * Runs the bootstrap again (it sets the chat cookie). The chat queries that
+ * failed on the 401 gave up before the new cookie landed, so once a bootstrap
+ * succeeds they run again too. Without a mounted bootstrap (pages other than
+ * /chats) nothing is renewed and nothing else is refetched.
+ */
+async function rebootstrapChat(): Promise<void> {
+  const queryClient = getQueryClient();
+  const since = Date.now();
+  await queryClient.invalidateQueries({ queryKey: ["mattermost-bootstrap"] });
+  const renewed = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ["mattermost-bootstrap"] })
+    .some((query) => query.state.status === "success" && query.state.dataUpdatedAt >= since);
+  if (!renewed) return;
+  await queryClient.invalidateQueries({
+    predicate: (query) =>
+      isChatQueryKey(query.queryKey) && query.queryKey[0] !== "mattermost-bootstrap"
+  });
+}
+
 export async function chatApiFetch(input: string, init?: RequestInit): Promise<Response> {
   const remaining = chatApiPauseRemaining();
   if (remaining > 0) {
@@ -71,9 +92,7 @@ export async function chatApiFetch(input: string, init?: RequestInit): Promise<R
 
   if (res.status === 401 && Date.now() - lastRebootstrapAt >= REBOOTSTRAP_AFTER_401_MS) {
     lastRebootstrapAt = Date.now();
-    void getQueryClient()
-      .invalidateQueries({ queryKey: ["mattermost-bootstrap"] })
-      .catch(() => undefined);
+    void rebootstrapChat().catch(() => undefined);
   }
 
   if (res.status === 429) {

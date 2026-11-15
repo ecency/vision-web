@@ -7,7 +7,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useMattermostBootstrap, useMattermostMarkChannelViewed } from "@/features/chat/mattermost-api";
+import {
+  useMattermostBootstrap,
+  useMattermostChannels,
+  useMattermostMarkChannelViewed
+} from "@/features/chat/mattermost-api";
 import { MattermostWebSocket } from "@/features/chat/mattermost-websocket";
 import { getQueryClient } from "@/core/react-query";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -400,6 +404,52 @@ describe("chat client state on an account switch (#2023)", () => {
     await chatApiFetch("/api/mattermost/channels/unreads");
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["mattermost-bootstrap"] });
+  });
+
+  it("recovers the channel list once the bootstrap after a 401 succeeds (#2023 review)", async () => {
+    const queryClient = getQueryClient();
+    const defaults = queryClient.getDefaultOptions();
+    queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retryDelay: 5 } });
+    // The bootstrap is cached and fresh, but the chat cookie is gone.
+    queryClient.setQueryData(["mattermost-bootstrap", "alice", undefined], {
+      ok: true,
+      userId: "u1",
+      channelId: "c1"
+    });
+    let cookieSet = false;
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "/api/mattermost/bootstrap") {
+        // The new cookie lands with the bootstrap response, after the
+        // channel list's single retry has already failed.
+        await new Promise((r) => setTimeout(r, 50));
+        cookieSet = true;
+        return new Response(JSON.stringify({ ok: true, userId: "u1", channelId: "c1" }), {
+          status: 200
+        });
+      }
+      if (input === "/api/mattermost/channels") {
+        return cookieSet
+          ? new Response(JSON.stringify({ channels: [] }), { status: 200 })
+          : new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+      }
+      return ok();
+    });
+
+    try {
+      const { result } = renderHook(
+        () => ({ bootstrap: useMattermostBootstrap(), channels: useMattermostChannels(true) }),
+        {
+          wrapper: ({ children }) =>
+            React.createElement(QueryClientProvider, { client: queryClient }, children)
+        }
+      );
+
+      await waitFor(() => expect(cookieSet).toBe(true));
+      await waitFor(() => expect(result.current.channels.isSuccess).toBe(true), { timeout: 2000 });
+      expect(result.current.channels.data).toEqual({ channels: [] });
+    } finally {
+      queryClient.setDefaultOptions(defaults);
+    }
   });
 });
 

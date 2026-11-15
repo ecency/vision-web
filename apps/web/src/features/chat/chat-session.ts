@@ -36,7 +36,7 @@ export function registerChatSocketCloser(closer: () => void): void {
 }
 
 /** Every chat query: "mattermost-<what>" keys and ["mattermost", ...] ones. */
-function isChatQueryKey(queryKey: readonly unknown[]): boolean {
+export function isChatQueryKey(queryKey: readonly unknown[]): boolean {
   const head = queryKey[0];
   return typeof head === "string" && (head === "mattermost" || head.startsWith("mattermost-"));
 }
