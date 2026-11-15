@@ -366,6 +366,19 @@ describe("a pasted YouTube iframe shows the video URL (#235)", () => {
     expect(container.querySelector("iframe")!.matches(IFRAME_RESERVE)).toBe(false);
   });
 
+  it("gives one caption to an iframe that carries both placeholder classes", async () => {
+    const { container } = render(
+      <Body
+        html={youtubeIframe(
+          `https://www.youtube.com/embed/${ID}`,
+          "markdown-video-link markdown-video-link-youtube"
+        )}
+      />
+    );
+    await flush();
+    expect(sourceLinks(container)).toHaveLength(1);
+  });
+
   it("gets one caption from the entry page enhancer, removed by a reset, one again on re-run", async () => {
     const { applyYoutubeVideos, resetYoutubeVideos } = await import(
       "@/features/post-renderer/components/utils/youtubeVideosEnhancer"

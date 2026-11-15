@@ -357,6 +357,8 @@ describe('Helper Functions', () => {
 
       it('should give no start time for an unbounded number', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=99999999999999999999999')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=9999999h')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=2777h46m39s')).toBe('9999999')
         expect(extractYtStartTime(`https://youtube.com/watch?v=ID&t=${'9'.repeat(400)}`)).toBe('')
         expect(extractYtStartTime(`https://youtube.com/watch?v=ID&start=${'9'.repeat(400)}`)).toBe('')
       })

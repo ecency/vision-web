@@ -174,7 +174,7 @@ export function YoutubeVideoExtension({
 
     const elements = Array.from(
       containerRef.current?.querySelectorAll<HTMLElement>(
-        ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube)",
+        ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube):not(iframe)",
       ) ?? [],
     );
     elements.forEach((element) => {

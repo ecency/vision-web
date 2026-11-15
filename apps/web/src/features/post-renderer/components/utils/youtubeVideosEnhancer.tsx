@@ -15,7 +15,7 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
     const roots: Root[] = [];
     const elements = Array.from(
         container.querySelectorAll<HTMLElement>(
-            ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube)"
+            ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube):not(iframe)"
         )
     );
 

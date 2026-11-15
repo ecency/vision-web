@@ -448,11 +448,12 @@ export function extractYtStartTime(url:string):string {
     const urlObj = new URL(url);
     const params = new URLSearchParams(urlObj.search);
     // Seconds ("90", "90s") or YouTube's XhYmZs form ("1m30s", "1h2m3s"), each
-    // part bounded so the result stays a plain integer. An invalid t falls back
+    // part and the total bounded to 7 digits. An invalid t falls back
     // to a valid start.
     const m = /^(?:(\d{1,7})h)?(?:(\d{1,7})m)?(?:(\d{1,7})s?)?$/i.exec(params.get('t') || '');
     if (m && (m[1] || m[2] || m[3])) {
-      return '' + ((+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0)));
+      const seconds = (+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0));
+      if (seconds <= 9999999) return '' + seconds;
     }
     const start = params.get('start') || '';
     return /^\d{1,7}$/.test(start) ? start : '';
