@@ -8,7 +8,9 @@ import { getAccessToken, getRefreshToken } from "@/utils";
 import { useGlobalStore } from "@/core/global-store";
 import { hsTokenRenew } from "@ecency/sdk";
 import { chatApiFetch, chatPollInterval, type ChatPollQuery } from "./chat-api-guard";
-import { chatSessionSettled } from "./chat-session";
+// Every request here goes through chatSessionFetch, which waits for a pending
+// logout/switch session reset (#2023). Keep bare fetch out of this module.
+import { chatSessionFetch } from "./chat-session";
 
 /** Safely parse JSON from a fetch response, falling back to a readable error */
 async function safeJson<T>(res: Response): Promise<T> {
@@ -157,12 +159,8 @@ export function useMattermostBootstrap(community?: string) {
         throw new Error("Authentication required");
       }
 
-      // A logout or switch may still be expiring the previous account's chat
-      // cookie. Let it land first, or it would wipe the cookie set below.
-      await chatSessionSettled();
-
       // First attempt with existing tokens
-      let res = await fetch("/api/mattermost/bootstrap", {
+      let res = await chatSessionFetch("/api/mattermost/bootstrap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,7 +195,7 @@ export function useMattermostBootstrap(community?: string) {
           console.log("✓ Chat tokens refreshed successfully");
 
           // Retry bootstrap with refreshed tokens
-          res = await fetch("/api/mattermost/bootstrap", {
+          res = await chatSessionFetch("/api/mattermost/bootstrap", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -269,7 +267,7 @@ export function useMattermostFavoriteChannel() {
 
   return useMutation({
     mutationFn: async ({ channelId, favorite }: { channelId: string; favorite: boolean }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/favorite`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/favorite`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ favorite })
@@ -296,7 +294,7 @@ export function useMattermostMuteChannel() {
 
   return useMutation({
     mutationFn: async ({ channelId, mute }: { channelId: string; mute: boolean }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/mute`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/mute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mute })
@@ -329,7 +327,7 @@ export function useMattermostLeaveChannel() {
 
   return useMutation({
     mutationFn: async (channelId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/leave`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/leave`, {
         method: "POST"
       });
 
@@ -356,7 +354,7 @@ export function useMattermostRenameGroup() {
 
   return useMutation({
     mutationFn: async ({ channelId, name }: { channelId: string; name: string }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/name`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/name`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name })
@@ -383,7 +381,7 @@ export function useMattermostJoinChannel() {
 
   return useMutation({
     mutationFn: async (channelId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/join`, { method: "POST" });
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/join`, { method: "POST" });
 
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
@@ -396,7 +394,7 @@ export function useMattermostJoinChannel() {
       // Mark channel as viewed immediately after joining to prevent historical
       // messages from inflating unread counts (mobile parity)
       try {
-        const viewRes = await fetch(`/api/mattermost/channels/${channelId}/view`, { method: "POST" });
+        const viewRes = await chatSessionFetch(`/api/mattermost/channels/${channelId}/view`, { method: "POST" });
         if (!viewRes.ok) {
           console.warn(`Failed to mark joined channel ${channelId} as viewed (${viewRes.status})`);
         }
@@ -440,7 +438,7 @@ export function useMattermostUserSearch(term: string, enabled: boolean) {
     queryKey: ["mattermost-user-search", query],
     enabled: enabled && query.length >= 2,
     queryFn: async () => {
-      const res = await fetch(`/api/mattermost/users/search?q=${encodeURIComponent(query)}`);
+      const res = await chatSessionFetch(`/api/mattermost/users/search?q=${encodeURIComponent(query)}`);
 
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
@@ -467,7 +465,7 @@ export function useMattermostChannelSearch(term: string, enabled: boolean) {
     queryKey: ["mattermost-channel-search", query],
     enabled: enabled && query.length >= 2,
     queryFn: async () => {
-      const res = await fetch(`/api/mattermost/channels/search`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ term: query })
@@ -496,7 +494,7 @@ export function useMattermostMessageSearch(term: string, enabled: boolean) {
     queryKey: ["mattermost-message-search", query],
     enabled: enabled && query.length >= 2,
     queryFn: async () => {
-      const res = await fetch(`/api/mattermost/search/posts`, {
+      const res = await chatSessionFetch(`/api/mattermost/search/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ term: query })
@@ -555,7 +553,7 @@ export function useMattermostMarkChannelViewed() {
 
   return useMutation({
     mutationFn: async (channelId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/view`, { method: "POST" });
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/view`, { method: "POST" });
 
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
@@ -648,7 +646,7 @@ export function useMattermostPosts(
       const url = includeOnline
         ? `/api/mattermost/channels/${channelId}/posts?${includeOnline}`
         : `/api/mattermost/channels/${channelId}/posts`;
-      const res = await fetch(url);
+      const res = await chatSessionFetch(url);
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
         throw new Error(data?.error || "Unable to load messages");
@@ -707,7 +705,7 @@ export function useMattermostPostsAround(
     staleTime: 60000, // Cache for 1 minute
     retry: 1,
     queryFn: async () => {
-      const res = await fetch(
+      const res = await chatSessionFetch(
         `/api/mattermost/channels/${channelId}/posts?around=${postId}`
       );
 
@@ -732,7 +730,7 @@ export function useMattermostThread(
     staleTime: 30000,
     retry: 1,
     queryFn: async () => {
-      const res = await fetch(
+      const res = await chatSessionFetch(
         `/api/mattermost/channels/${channelId}/posts?thread=${rootId}`
       );
 
@@ -751,7 +749,7 @@ export function useMattermostDeletePost(channelId: string | undefined) {
 
   return useMutation({
     mutationFn: async (postId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts/${postId}`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts/${postId}`, {
         method: "DELETE"
       });
 
@@ -788,7 +786,7 @@ export function useMattermostSendMessage(channelId: string | undefined, options?
         pendingPostId?: string;
         signal?: AbortSignal;
       }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, rootId, props, pendingPostId }),
@@ -817,7 +815,7 @@ export function useMattermostDirectChannel() {
 
   return useMutation({
     mutationFn: async (username: string) => {
-      const res = await fetch(`/api/mattermost/direct`, {
+      const res = await chatSessionFetch(`/api/mattermost/direct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username })
@@ -878,7 +876,7 @@ export function useMattermostGroupChannel() {
 
   return useMutation({
     mutationFn: async (usernames: string[]) => {
-      const res = await fetch(`/api/mattermost/group`, {
+      const res = await chatSessionFetch(`/api/mattermost/group`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ usernames })
@@ -903,7 +901,7 @@ export function useMattermostGroupChannel() {
 }
 
 async function privateChannelRequest<T>(path: string, init: RequestInit, fallbackError: string) {
-  const res = await fetch(`/api/mattermost/admin/private-channels${path}`, {
+  const res = await chatSessionFetch(`/api/mattermost/admin/private-channels${path}`, {
     ...init,
     headers: { "Content-Type": "application/json" }
   });
@@ -1007,7 +1005,7 @@ export function useMattermostUsersByIds(ids: string[]) {
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const res = await fetch(`/api/mattermost/users/ids`, {
+      const res = await chatSessionFetch(`/api/mattermost/users/ids`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: ids.slice(0, 200) })
@@ -1037,7 +1035,7 @@ export function useMattermostReactToPost(channelId: string | undefined) {
       emoji: string;
       add: boolean;
     }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts/${postId}/reactions`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts/${postId}/reactions`, {
         method: add ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji })
@@ -1064,7 +1062,7 @@ export function useMattermostUpdatePost(channelId: string | undefined) {
 
   return useMutation({
     mutationFn: async ({ postId, message }: { postId: string; message: string }) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts/${postId}`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts/${postId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message })
@@ -1092,7 +1090,7 @@ export function useMattermostPinnedPosts(channelId: string | undefined) {
     enabled: Boolean(channelId),
     staleTime: 30000, // 30 seconds
     queryFn: async () => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/pinned`);
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/pinned`);
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
         throw new Error(data?.error || "Unable to load pinned messages");
@@ -1107,7 +1105,7 @@ export function useMattermostPinPost(channelId: string | undefined) {
 
   return useMutation({
     mutationFn: async (postId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts/${postId}/pin`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts/${postId}/pin`, {
         method: "POST"
       });
       if (!res.ok) {
@@ -1131,7 +1129,7 @@ export function useMattermostUnpinPost(channelId: string | undefined) {
 
   return useMutation({
     mutationFn: async (postId: string) => {
-      const res = await fetch(`/api/mattermost/channels/${channelId}/posts/${postId}/pin`, {
+      const res = await chatSessionFetch(`/api/mattermost/channels/${channelId}/posts/${postId}/pin`, {
         method: "DELETE"
       });
       if (!res.ok) {
@@ -1159,7 +1157,7 @@ export function useDmPrivacyQuery() {
     queryKey: ["mattermost", "dm-privacy"],
     enabled: Boolean(activeUser),
     queryFn: async () => {
-      const res = await fetch("/api/mattermost/me/dm-privacy");
+      const res = await chatSessionFetch("/api/mattermost/me/dm-privacy");
       if (!res.ok) {
         const data = await safeJson<{ error?: string }>(res);
         throw new Error(data?.error || "Failed to fetch DM privacy");
@@ -1176,7 +1174,7 @@ export function useUpdateDmPrivacy() {
 
   return useMutation({
     mutationFn: async (privacy: DmPrivacyLevel) => {
-      const res = await fetch("/api/mattermost/me/dm-privacy", {
+      const res = await chatSessionFetch("/api/mattermost/me/dm-privacy", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ privacy })

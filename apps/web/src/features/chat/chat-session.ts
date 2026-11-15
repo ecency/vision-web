@@ -50,3 +50,14 @@ export async function chatSessionSettled(): Promise<void> {
     await pendingReset;
   }
 }
+
+/**
+ * `fetch` for chat API requests: waits for a pending session reset first, so a
+ * request made right after a logout or switch cannot run as the previous
+ * account, and a new account's bootstrap cannot have its fresh cookie wiped by
+ * a late expiry.
+ */
+export async function chatSessionFetch(input: string, init?: RequestInit): Promise<Response> {
+  await chatSessionSettled();
+  return fetch(input, init);
+}

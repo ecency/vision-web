@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuthenticationActions } from "@/core/global-store/modules/authentication-module";
 import { chatApiFetch, resetChatApiGuard } from "@/features/chat/chat-api-guard";
 import * as ls from "@/utils/local-storage";
+import React from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useMattermostMarkChannelViewed } from "@/features/chat/mattermost-api";
 
 vi.mock("@/core/sentry/lazy-sentry", () => ({
   sentry: { setUser: vi.fn() }
@@ -112,5 +118,66 @@ describe("DELETE /api/mattermost/session", () => {
     expect(setCookie).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/i);
     expect(setCookie.toLowerCase()).toContain("httponly");
     expect(setCookie).toContain("Path=/");
+  });
+});
+
+describe("chat page requests after a switch (#2023 follow-up)", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    resetChatApiGuard();
+    window.localStorage.clear();
+    ls.set("user_alice", "x");
+    ls.set("user_bob", "x");
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("marks a channel viewed only after the previous account's session is expired", async () => {
+    const order: string[] = [];
+    let finishReset: () => void = () => {};
+    fetchMock.mockImplementation((input: string) => {
+      if (input === SESSION_URL) {
+        return new Promise<Response>((resolve) => {
+          finishReset = () => {
+            order.push("session-expired");
+            resolve(ok());
+          };
+        });
+      }
+      order.push(input);
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useMattermostMarkChannelViewed(), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children)
+    });
+
+    actionsFor("alice").setActiveUser("bob");
+    const viewed = result.current.mutateAsync("ch1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(order).not.toContain("/api/mattermost/channels/ch1/view");
+
+    finishReset();
+    await viewed;
+
+    expect(order).toEqual(["session-expired", "/api/mattermost/channels/ch1/view"]);
+  });
+
+  it("sends no chat API request from mattermost-api.ts around the reset wait", () => {
+    // Every request in the chat page's API module must wait for a pending
+    // session reset. A bare fetch( there would skip it.
+    const source = readFileSync(
+      resolve(__dirname, "../../../features/chat/mattermost-api.ts"),
+      "utf8"
+    );
+    expect(source.match(/[^A-Za-z.]fetch\(/g) ?? []).toEqual([]);
   });
 });
