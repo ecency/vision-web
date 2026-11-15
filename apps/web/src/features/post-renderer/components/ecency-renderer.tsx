@@ -1,6 +1,6 @@
 "use client";
 
-import React, { HTMLProps, useEffect, useRef } from "react";
+import React, { HTMLProps, useEffect, useMemo, useRef } from "react";
 import { renderPostBody } from "@ecency/render-helper";
 import * as Sentry from "@sentry/nextjs";
 import type { RenderOptions, SeoContext } from "@ecency/render-helper";
@@ -122,6 +122,11 @@ export function EcencyRenderer({
     reportRenderFailure(e, value);
   }
 
+  // React rewrites innerHTML whenever it gets a new __html object, even for
+  // the same string, which throws away every link the extensions enhanced.
+  // Keep the object while the html is unchanged (#2082).
+  const innerHtml = useMemo(() => (html === null ? null : { __html: html }), [html]);
+
   const className = clsx(
     "entry-body markdown-view user-selectable",
     pure ? "markdown-view-pure" : "",
@@ -130,7 +135,7 @@ export function EcencyRenderer({
 
   return (
     <>
-      {html === null ? (
+      {innerHtml === null ? (
         <div {...other} ref={ref} itemProp="articleBody" className={className}>
           <pre className="font-mono text-sm whitespace-pre-wrap break-words">{value}</pre>
         </div>
@@ -140,7 +145,7 @@ export function EcencyRenderer({
           ref={ref}
           itemProp="articleBody"
           className={className}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={innerHtml}
         />
       )}
       {!pure && (
@@ -149,8 +154,8 @@ export function EcencyRenderer({
           <HivePostLinkExtension containerRef={ref} />
           {!renderOptions?.embedVideosDirectly && (
             <>
-              <YoutubeVideoExtension containerRef={ref} />
-              <ThreeSpeakVideoExtension containerRef={ref} images={images} />
+              <YoutubeVideoExtension containerRef={ref} html={html} />
+              <ThreeSpeakVideoExtension containerRef={ref} images={images} html={html} />
               <EmbedVideoExtension containerRef={ref} body={value} />
             </>
           )}

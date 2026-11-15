@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
 import { getYoutubeEmbedUrl } from "../utils/getYoutubeEmbedUrl";
 import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 export function YoutubeVideoRenderer({
    embedSrc,
@@ -23,12 +24,7 @@ export function YoutubeVideoRenderer({
   }, [container]);
 
   useEffect(() => {
-    if (show) {
-      const thumb = container.querySelector(".video-thumbnail");
-      const playBtn = container.querySelector(".markdown-video-play");
-      if (thumb) (thumb as HTMLElement).style.display = "none";
-      if (playBtn) (playBtn as HTMLElement).style.display = "none";
-    }
+    if (show) setVideoPlaceholderVisible(container, false);
   }, [show, container]);
 
   // Belt-and-suspenders: never assign an off-allowlist / non-https value to the
@@ -49,8 +45,11 @@ export function YoutubeVideoRenderer({
 
 export function YoutubeVideoExtension({
   containerRef,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  /** The rendered body. A change replaces the links, so they are enhanced again. */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
   // The `er-youtube` marker and the appended frame are DOM mutations on nodes
@@ -65,6 +64,7 @@ export function YoutubeVideoExtension({
     for (const { element, frame } of enhancedRef.current) {
       element.classList.remove("er-youtube");
       frame.remove();
+      setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
   }, []);
@@ -110,7 +110,7 @@ export function YoutubeVideoExtension({
     });
 
     return reset;
-  }, [containerRef, reset]);
+  }, [containerRef, reset, html]);
 
   return null;
 }

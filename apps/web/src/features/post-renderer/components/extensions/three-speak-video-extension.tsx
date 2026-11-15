@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { isAllowedEmbedSrc } from "@ecency/render-helper";
 import { injectThreeSpeakThumbnail } from "../utils/threeSpeakThumbnail";
 import { unmountRootsLater } from "../utils/unmount-roots-later";
+import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
 type VideoOrientation = "landscape" | "portrait" | "square";
 
@@ -28,13 +29,7 @@ export function ThreeSpeakVideoRenderer({
   }, [container]);
 
   useEffect(() => {
-    if (show) {
-      const thumb = container.querySelector(".video-thumbnail");
-      const playBtn = container.querySelector(".markdown-video-play");
-
-      if (thumb) (thumb as HTMLElement).style.display = "none";
-      if (playBtn) (playBtn as HTMLElement).style.display = "none";
-    }
+    if (show) setVideoPlaceholderVisible(container, false);
   }, [show, container]);
 
   // Listen for 3speak-player-ready to auto-detect video orientation
@@ -156,9 +151,12 @@ function embedThreeSpeakDirect(element: HTMLElement, embedSrc: string): () => vo
 export function ThreeSpeakVideoExtension({
   containerRef,
   images,
+  html,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   images?: string[];
+  /** The rendered body. A change replaces the links, so they are enhanced again. */
+  html?: string | null;
 }) {
   const rootsRef = useRef<ReturnType<typeof createRoot>[]>([]);
   const cleanupFnsRef = useRef<(() => void)[]>([]);
@@ -176,6 +174,7 @@ export function ThreeSpeakVideoExtension({
     for (const { element, frame } of enhancedRef.current) {
       element.classList.remove("er-speak");
       frame.remove();
+      setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
   }, []);
@@ -227,7 +226,7 @@ export function ThreeSpeakVideoExtension({
     });
 
     return reset;
-  }, [images, reset]);
+  }, [images, reset, html]);
 
   return <></>;
 }

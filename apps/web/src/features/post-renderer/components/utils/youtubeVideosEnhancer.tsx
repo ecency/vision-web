@@ -1,6 +1,7 @@
 import { createRoot, Root } from "react-dom/client";
 import { YoutubeVideoRenderer } from "../extensions";
 import { getYoutubeEmbedUrl } from "./getYoutubeEmbedUrl";
+import { setVideoPlaceholderVisible } from "./video-placeholder";
 
 /**
  * DOM utility enhancer
@@ -32,4 +33,20 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
     });
 
     return roots;
+}
+
+/**
+ * Undoes applyYoutubeVideos on the same DOM so a later run enhances the links
+ * again: without it the `data-enhanced` flag made the re-run skip every link
+ * whose renderer had just been unmounted, and the play button did nothing
+ * (#2082). The caller unmounts the roots.
+ */
+export function resetYoutubeVideos(container: HTMLElement): void {
+    container
+        .querySelectorAll<HTMLElement>('.markdown-video-link-youtube[data-enhanced="true"]')
+        .forEach((el) => {
+            el.querySelectorAll(":scope > .er-youtube-frame").forEach((frame) => frame.remove());
+            delete el.dataset.enhanced;
+            setVideoPlaceholderVisible(el, true);
+        });
 }

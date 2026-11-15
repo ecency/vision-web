@@ -4,10 +4,13 @@ import {
     applyHiveOperations,
     applyYoutubeVideos,
     applyThreeSpeakVideos,
+    resetYoutubeVideos,
+    resetThreeSpeakVideos,
     applyWaveLikePosts,
     applyTwitterEmbeds
 } from "../utils";
 import { findPostLinkElements } from "../functions";
+import { unmountRootsLater } from "./unmount-roots-later";
 import { Root } from "react-dom/client";
 import React from "react";
 
@@ -50,7 +53,13 @@ export function setupPostEnhancements(container: HTMLElement, options?: {
 
     // Return cleanup function
     return () => {
-        allRoots.forEach((root) => root.unmount());
+        // Called from an effect cleanup, where a synchronous root.unmount()
+        // logs "Attempted to synchronously unmount a root while React was
+        // already rendering". The video links are restored right away so a
+        // re-run on the same DOM enhances them again (#2082).
+        unmountRootsLater(allRoots);
+        resetYoutubeVideos(container);
+        resetThreeSpeakVideos(container);
         zoomPromise.then((zoom) => {
             zoom?.detach();
         }).catch(() => {
