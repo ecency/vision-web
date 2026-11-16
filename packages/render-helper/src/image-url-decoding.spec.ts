@@ -68,6 +68,15 @@ describe('image URL decoding (#2092)', () => {
     expect(render(body, false)).toContain(`href="${href}"`)
   })
 
+  it.each([
+    ['[x](https://e.com/?a=1&semi;b)', 'https://e.com/?a=1;b'],
+    ['[x](https://e.com/?a=1&#59;b)', 'https://e.com/?a=1;b'],
+    // An out-of-range code point reads as U+FFFD, as CommonMark specifies.
+    ['[x](https://e.com/?a=&#9999999;)', 'https://e.com/?a=�']
+  ])('markdown destination %s decodes a reference that is itself a semicolon', (body, href) => {
+    expect(render(body, false)).toContain(`href="${href}"`)
+  })
+
   // The preload reads a markdown destination the same way the render does.
   it.each([
     '![](https://e.com/i.png?a=1&copy)',

@@ -1,6 +1,6 @@
 import { DOMParser } from './consts'
 import type { Document } from '@xmldom/xmldom'
-import { decodeHTML, decodeHTMLAttribute } from 'entities'
+import { decodeHTML, decodeHTMLAttribute, decodeHTMLStrict } from 'entities'
 
 /**
  * Decode HTML character references in user-authored text.
@@ -88,8 +88,13 @@ const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
  */
 export function decodeCompleteReferences(value: string): string {
   return value.replace(COMPLETE_REFERENCE, (reference) => {
-    const decoded = decodeEntities(reference)
-    return decoded.endsWith(';') ? reference : decoded
+    // Strict: only an exact, complete name or number decodes, so `&semi;` is
+    // `;` while `&region;` is not `®ion;`.
+    try {
+      return decodeHTMLStrict(guardNumericRefs(reference))
+    } catch {
+      return reference
+    }
   })
 }
 
