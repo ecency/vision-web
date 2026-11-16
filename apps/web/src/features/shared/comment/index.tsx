@@ -7,6 +7,7 @@ import { CommentPreview } from "@/features/shared/comment/comment-preview";
 import { EditorToolbar, toolbarEventListener } from "@/features/shared/editor-toolbar";
 import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts";
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
+import * as ls from "@/utils/local-storage";
 import { PREFIX } from "@/utils/local-storage";
 import { createReplyPermlink, isBlankBody, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../package.json";
@@ -93,9 +94,18 @@ export function Comment({
     PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
     failedReply?.text ?? ""
   );
-  // Not stored: it belongs to this form and this account. A reply whose broadcast
-  // fails comes back through `failedReply` with the choice it was sent with.
+  // Not stored while composing: it belongs to this form and this account. A reply
+  // whose broadcast fails comes back through `failedReply` with the choice it was
+  // sent with. A failed DECLINED reply is the one thing stored, until it is posted:
+  // its exact text, under this account and parent, so closing the form or reloading
+  // brings the draft back declined. It applies only while the draft is that text.
   const [declinePayout, setDeclinePayout] = useState(false);
+  const pendingDeclineKey = activeUser?.username
+    ? `reply_failed_decline_${activeUser.username}_${entry.author}_${entry.permlink}`
+    : null;
+  const forgetPendingDecline = useCallback(() => {
+    if (pendingDeclineKey) ls.remove(pendingDeclineKey);
+  }, [pendingDeclineKey]);
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
   const [inputHeight, setInputHeight] = useState(0);
@@ -211,7 +221,25 @@ export function Comment({
       setText(failedReply.text);
     }
     setDeclinePayout(failedReply.declinePayout);
+    if (failedReply.declinePayout && pendingDeclineKey) {
+      ls.set(pendingDeclineKey, failedReply.text);
+    } else {
+      forgetPendingDecline();
+    }
   }, [failedReply]);
+
+  // A form opened without a failure in hand: re-apply a pending decline when the
+  // restored draft is still the failed reply's text, and drop it otherwise.
+  useEffect(() => {
+    if (failedReply || isEdit || !pendingDeclineKey) return;
+    const pending = ls.get(pendingDeclineKey);
+    if (pending === null) return;
+    if (pending === text) {
+      setDeclinePayout(true);
+    } else {
+      forgetPendingDecline();
+    }
+  }, [pendingDeclineKey]);
 
   useMount(() => {
     if (isEdit) {
@@ -238,7 +266,10 @@ export function Comment({
       }
       setText(text);
       setInputHeight(scHeight);
-    }, [setText]);
+      if (pendingDeclineKey && ls.get(pendingDeclineKey) !== null && ls.get(pendingDeclineKey) !== text) {
+        forgetPendingDecline();
+      }
+    }, [setText, pendingDeclineKey, forgetPendingDecline]);
 
     // Nothing to broadcast without a body: the chain op requires one, and the
     // SDK builder throws `[SDK][buildCommentOp] Missing required parameters`
@@ -254,6 +285,7 @@ export function Comment({
 
       try {
         await onSubmit(text!, { declinePayout: !isEdit && declinePayout });
+        forgetPendingDecline();
         if (clearOnSubmit) {
           setText("");
           setDeclinePayout(false);
@@ -270,7 +302,8 @@ export function Comment({
       clearOnSubmit,
       setText,
       isEdit,
-      declinePayout
+      declinePayout,
+      forgetPendingDecline
     ]);
 
   const cancel = useCallback(() => {
@@ -404,7 +437,10 @@ export function Comment({
                   type="checkbox"
                   label={i18next.t("comment.decline-payout")}
                   checked={declinePayout}
-                  onChange={(checked: boolean) => setDeclinePayout(checked)}
+                  onChange={(checked: boolean) => {
+                    setDeclinePayout(checked);
+                    if (!checked) forgetPendingDecline();
+                  }}
                 />
               </div>
             )}
