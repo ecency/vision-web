@@ -3,6 +3,7 @@ import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, renderNodeFilter } from './render-boundary.method'
 import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
@@ -11,6 +12,11 @@ import * as domSerializerModule from 'dom-serializer'
 import { RenderOptions, SeoContext } from '../types'
 
 const domSerializer = (domSerializerModule as any).default || domSerializerModule
+
+// A URL in the markdown source, in an attribute, a link destination or text:
+// one class run, linear on any input. It ends at whitespace, a quote, an angle
+// bracket or `)`, the delimiters a URL sits between in markdown and HTML.
+const URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi
 
 // Conditionally load lolight for syntax highlighting (Node.js only)
 // Browser builds will gracefully handle missing lolight by using fallback
@@ -188,13 +194,28 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     const uniqueEntities = [...new Set(entities)];
     uniqueEntities.forEach((entity, index) => {
       // Use markdown-inert Unicode placeholder (zero-width spaces)
-      const placeholder = `\u200B${index}\u200B`;
       entityPlaceholders.push(entity);
-      // Replace all occurrences of this entity
-      input = input.split(entity).join(placeholder);
     })
+    // Replace every occurrence OUTSIDE a URL. The placeholders stand in for
+    // entities in text; inside a URL one reached the transforms instead, and an
+    // image was proxied with the placeholder in its URL, inside the proxy hash
+    // where the final restore cannot reach, so the app loaded a different image
+    // URL than the post names (#2092). A URL keeps its entities and renders
+    // exactly as on the web.
+    const protect = (text: string) =>
+      entityPlaceholders.reduce(
+        (acc, entity, index) => acc.split(entity).join(`\u200B${index}\u200B`),
+        text
+      );
+    let protectedInput = '';
+    let last = 0;
+    for (const m of regexMatches(input, URL_RUN)) {
+      const at = m.index ?? 0;
+      protectedInput += protect(input.slice(last, at)) + m[0];
+      last = at + m[0].length;
+    }
+    input = protectedInput + protect(input.slice(last));
   }
-
 
   // The sanitize-only fallback below skips the DOM transforms, so the
   // sanitizer applies their safety rules itself (#1919).
