@@ -327,27 +327,73 @@ describe("Comment composer", () => {
       );
     });
 
-    test("comes back checked when a declined reply fails and its text is restored", async () => {
-      const first = renderComment();
-
-      fireEvent.click(first.getByRole("checkbox", { name: "comment.decline-payout" }));
-      type(first.getByRole, "hello world");
-      await act(async () => {
-        fireEvent.click(first.getByRole("button", { name: "Reply" }));
-      });
-      first.unmount();
-
-      // The caller remounts the form with the failed text, as discussion-item does.
+    // A failed broadcast hands the reply back as { text, declinePayout }: the choice
+    // the reply was SENT with, carried by the failure itself (#333 review).
+    function renderFailed(failedReply: { text: string; declinePayout: boolean }) {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      const { getByRole } = render(
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      const ui = (reply: { text: string; declinePayout: boolean }) => (
         <QueryClientProvider client={queryClient}>
-          <Comment entry={entry} onSubmit={vi.fn()} submitText="Reply" initialText="hello world" />
+          <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" failedReply={reply} />
         </QueryClientProvider>
       );
-      expect(getByRole("checkbox", { name: "comment.decline-payout" })).toHaveAttribute(
-        "aria-checked",
-        "true"
-      );
+      const utils = render(ui(failedReply));
+      return { ...utils, onSubmit, rerenderFailed: (r: typeof failedReply) => utils.rerender(ui(r)) };
+    }
+    const checkbox = (getByRole: (role: string, o: { name: string }) => HTMLElement) =>
+      getByRole("checkbox", { name: "comment.decline-payout" });
+
+    test("comes back checked when a declined reply fails", () => {
+      const { getByRole } = renderFailed({ text: "hello world", declinePayout: true });
+
+      expect(getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("comes back checked even when the failed text is already in the draft", () => {
+      // The curation desk writes the failed text to the draft before reopening the box.
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("hello world"));
+      const { getByRole } = renderFailed({ text: "hello world", declinePayout: true });
+
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("restores the choice the failed reply was sent with, not the box's current state", () => {
+      const { getByRole, rerenderFailed } = renderFailed({ text: "first", declinePayout: true });
+      fireEvent.click(checkbox(getByRole));
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+
+      rerenderFailed({ text: "second", declinePayout: true });
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+
+      rerenderFailed({ text: "third", declinePayout: false });
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("restores a reply that fails a second time unchanged", async () => {
+      const { getByRole, rerenderFailed } = renderFailed({ text: "hello world", declinePayout: true });
+      await act(async () => {
+        fireEvent.click(getByRole("button", { name: "Reply" }));
+      });
+      expect(getByRole("textbox")).toHaveValue("");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+
+      rerenderFailed({ text: "hello world", declinePayout: true });
+      expect(getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("keeps the payout choice out of storage, so it never outlives the form or crosses accounts", async () => {
+      const { getByRole } = renderComment();
+      fireEvent.click(checkbox(getByRole));
+      type(getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(getByRole("button", { name: "Reply" }));
+      });
+
+      const keys = Object.keys(window.localStorage);
+      expect(keys.filter((k) => k.includes("decline"))).toEqual([]);
+      expect(Object.values(window.localStorage).filter((v) => v.includes("hello world"))).toEqual([]);
     });
 
     test("is not offered when editing, since comment_options cannot be set again", () => {

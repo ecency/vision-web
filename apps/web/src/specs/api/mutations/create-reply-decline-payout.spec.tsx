@@ -49,12 +49,12 @@ const parent = {
   json_metadata: { tags: ["ecency"] }
 } as unknown as Entry;
 
-function setup() {
+function setup(onBlockchainError?: (...args: unknown[]) => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return renderHook(() => useCreateReply(parent, parent), { wrapper });
+  return renderHook(() => useCreateReply(parent, parent, undefined, onBlockchainError), { wrapper });
 }
 
 const base = {
@@ -109,5 +109,27 @@ describe("useCreateReply: decline payout", () => {
 
     expect(sdkComment).toHaveBeenCalledTimes(1);
     expect(sdkComment.mock.calls[0][0].options).toBeUndefined();
+  });
+
+  it("hands a failed reply back with the payout choice it was sent with", async () => {
+    // Reply A declines and fails after reply B, which keeps its payout, was sent:
+    // the failure itself carries A's choice, so B cannot overwrite it.
+    let failA: (err: unknown) => void = () => {};
+    sdkComment.mockImplementationOnce(() => new Promise((_, reject) => (failA = reject)));
+    sdkComment.mockResolvedValueOnce({ id: "tx-b" });
+    const onBlockchainError = vi.fn();
+    const { result } = setup(onBlockchainError);
+
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, text: "reply A", declinePayout: true });
+      await result.current.mutateAsync({ ...base, permlink: "re-alice-2", text: "reply B", declinePayout: false });
+    });
+    const err = new Error("rc");
+    await act(async () => {
+      failA(err);
+    });
+
+    expect(onBlockchainError).toHaveBeenCalledTimes(1);
+    expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true });
   });
 });

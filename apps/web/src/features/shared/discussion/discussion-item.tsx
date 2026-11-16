@@ -45,7 +45,7 @@ import { DiscussionBots } from "./discussion-bots";
 import { DiscussionItemBody } from "./discussion-item-body";
 import { DiscussionList } from "./discussion-list";
 
-import type { CommentSubmitOptions } from "../comment";
+import type { CommentSubmitOptions, FailedReply } from "../comment";
 
 // The reply/edit composer (markdown editor toolbar, emoji/GIF pickers, textarea
 // autocomplete, polls/video upload) only renders behind the reply/edit toggles
@@ -81,7 +81,7 @@ export const DiscussionItem = memo(function DiscussionItem({
   const { activeUser } = useActiveAccount();
   const [reply, setReply] = useState(false);
   const [edit, setEdit] = useState(false);
-  const [failedReplyText, setFailedReplyText] = useState<string | null>(null);
+  const [failedReply, setFailedReply] = useState<FailedReply | null>(null);
   const { updateEntryQueryData } = EcencyEntriesCacheManagement.useUpdateEntry();
 
   const isCommunityPost = !!community?.name;
@@ -218,12 +218,12 @@ export const DiscussionItem = memo(function DiscussionItem({
     async () => {
       // Only close and clear on successful blockchain confirmation
       setReply(false);
-      setFailedReplyText(null);
+      setFailedReply(null);
       return;
     },
-    (text, error) => {
-      // Blockchain failed - restore text and keep form open
-      setFailedReplyText(text);
+    (text, error, submitted) => {
+      // Blockchain failed - restore text and payout choice, keep form open
+      setFailedReply({ text, ...submitted });
       setReply(true); // Ensure form stays open
     }
   );
@@ -242,7 +242,7 @@ export const DiscussionItem = memo(function DiscussionItem({
     if (edit) return;
     if (!reply) {
       // Opening reply form - clear failed text
-      setFailedReplyText(null);
+      setFailedReply(null);
     }
     setReply((r) => !r);
   };
@@ -419,7 +419,7 @@ export const DiscussionItem = memo(function DiscussionItem({
             onCancel={toggleReply}
             inProgress={isCreateLoading || isUpdateReplyLoading}
             autoFocus
-            initialText={failedReplyText}
+            failedReply={failedReply}
           />
         </div>
       )}

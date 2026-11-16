@@ -47,6 +47,15 @@ export interface CommentSubmitOptions {
   declinePayout: boolean;
 }
 
+/**
+ * A reply whose broadcast failed, handed back to the form: its text and the payout
+ * choice it was sent with. A new object per failure, so the same reply failing
+ * twice is restored twice.
+ */
+export interface FailedReply extends CommentSubmitOptions {
+  text: string;
+}
+
 interface Props {
   submitText: string;
   entry: Entry;
@@ -60,7 +69,7 @@ interface Props {
   inputRef?: Ref<HTMLTextAreaElement>;
   clearOnSubmit?: boolean;
   isEdit?: boolean;
-  initialText?: string | null;
+  failedReply?: FailedReply | null;
 }
 
 export function Comment({
@@ -74,7 +83,7 @@ export function Comment({
   autoFocus,
   isEdit,
   clearOnSubmit = true,
-  initialText = null
+  failedReply = null
 }: Props) {
   const commentBodyRef = useRef<HTMLDivElement>(null);
   const { activeUser } = useActiveAccount();
@@ -82,21 +91,11 @@ export function Comment({
 
   const [text, setText] = useLocalStorage(
     PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
-    initialText ?? ""
+    failedReply?.text ?? ""
   );
-  // Stored next to the draft and reset with it once the reply is posted, so the next
-  // reply to this parent keeps its payout unless the user declines it again.
-  const [declinePayout, setDeclinePayout] = useLocalStorage(
-    PREFIX + `_reply_decline_payout_${entry.author}_${entry.permlink}`,
-    false
-  );
-  // The text of the last reply posted with its payout declined. A broadcast that fails
-  // later hands that text back through `initialText`, possibly to a remounted form, and
-  // the box is checked again so the retry does not silently accept the payout.
-  const [declinedText, setDeclinedText] = useLocalStorage<string | null>(
-    PREFIX + `_reply_declined_text_${entry.author}_${entry.permlink}`,
-    null
-  );
+  // Not stored: it belongs to this form and this account. A reply whose broadcast
+  // fails comes back through `failedReply` with the choice it was sent with.
+  const [declinePayout, setDeclinePayout] = useState(false);
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
   const [inputHeight, setInputHeight] = useState(0);
@@ -205,15 +204,14 @@ export function Comment({
     };
   }, [isMobile]);
 
-  // Restore failed text when blockchain submission fails
+  // Restore a reply whose blockchain submission failed, with its payout choice
   useEffect(() => {
-    if (initialText !== null && initialText !== text) {
-      setText(initialText);
-      if (declinedText !== null && declinedText === initialText) {
-        setDeclinePayout(true);
-      }
+    if (!failedReply) return;
+    if (failedReply.text !== text) {
+      setText(failedReply.text);
     }
-  }, [initialText]);
+    setDeclinePayout(failedReply.declinePayout);
+  }, [failedReply]);
 
   useMount(() => {
     if (isEdit) {
@@ -255,14 +253,10 @@ export function Comment({
       }
 
       try {
-        const declined = !isEdit && !!declinePayout;
-        await onSubmit(text!, { declinePayout: declined });
+        await onSubmit(text!, { declinePayout: !isEdit && declinePayout });
         if (clearOnSubmit) {
           setText("");
-          if (!isEdit) {
-            setDeclinePayout(false);
-            setDeclinedText(declined ? text! : null);
-          }
+          setDeclinePayout(false);
         }
       } catch (err: any) {
         const handled = handleAndReportError(err, "comment");
@@ -276,9 +270,7 @@ export function Comment({
       clearOnSubmit,
       setText,
       isEdit,
-      declinePayout,
-      setDeclinePayout,
-      setDeclinedText
+      declinePayout
     ]);
 
   const cancel = useCallback(() => {
@@ -411,7 +403,7 @@ export function Comment({
                 <FormControl
                   type="checkbox"
                   label={i18next.t("comment.decline-payout")}
-                  checked={!!declinePayout}
+                  checked={declinePayout}
                   onChange={(checked: boolean) => setDeclinePayout(checked)}
                 />
               </div>

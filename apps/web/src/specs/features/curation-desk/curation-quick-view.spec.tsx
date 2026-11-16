@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   toggleUiProp: vi.fn(),
   replies: [] as Array<Record<string, unknown>>,
   // The reply mutation's callbacks, so a test can settle or fail the broadcast.
-  replyCallbacks: { onSuccess: undefined as (() => void) | undefined, onError: undefined as ((text: string, err: unknown) => void) | undefined },
+  replyCallbacks: { onSuccess: undefined as (() => void) | undefined, onError: undefined as ((text: string, err: unknown, submitted: { declinePayout: boolean }) => void) | undefined },
 }));
 
 vi.mock("@ecency/sdk", async () => {
@@ -74,16 +74,16 @@ vi.mock("@/features/shared/entry-tip-btn", () => ({
 }));
 // The editor is the post page's; here a textarea and the two buttons stand in.
 vi.mock("@/features/shared/comment", () => ({
-  Comment: ({ onSubmit, onCancel, initialText, inProgress }: { onSubmit: (t: string, o: { declinePayout: boolean }) => Promise<unknown>; onCancel?: () => void; initialText?: string | null; inProgress?: boolean }) => (
-    <div data-testid="comment-box" data-initial={initialText ?? ""} data-busy={inProgress ? "1" : "0"}>
-      <textarea aria-label="reply" defaultValue={initialText ?? ""} />
+  Comment: ({ onSubmit, onCancel, failedReply, inProgress }: { onSubmit: (t: string, o: { declinePayout: boolean }) => Promise<unknown>; onCancel?: () => void; failedReply?: { text: string; declinePayout: boolean } | null; inProgress?: boolean }) => (
+    <div data-testid="comment-box" data-initial={failedReply?.text ?? ""} data-decline={failedReply?.declinePayout ? "1" : "0"} data-busy={inProgress ? "1" : "0"}>
+      <textarea aria-label="reply" defaultValue={failedReply?.text ?? ""} />
       <button type="button" onClick={() => void onSubmit((document.querySelector('[aria-label="reply"]') as HTMLTextAreaElement).value, { declinePayout: false })}>g.reply</button>
       <button type="button" onClick={onCancel}>g.cancel</button>
     </div>
   ),
 }));
 vi.mock("@/api/mutations", () => ({
-  useCreateReply: (_entry: unknown, _root: unknown, onSuccess?: () => void, onError?: (text: string, err: unknown) => void) => {
+  useCreateReply: (_entry: unknown, _root: unknown, onSuccess?: () => void, onError?: (text: string, err: unknown, submitted: { declinePayout: boolean }) => void) => {
     state.replyCallbacks.onSuccess = onSuccess;
     state.replyCallbacks.onError = onError;
     return {
@@ -450,8 +450,10 @@ describe("CurationQuickView", () => {
     fireEvent.click(screen.getByRole("button", { name: "g.reply" }));
     await waitFor(() => expect(screen.queryByTestId("comment-box")).toBeNull());
 
-    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc")));
+    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: true }));
     expect(screen.getByTestId("comment-box")).toHaveAttribute("data-initial", "kept text");
+    // The payout choice the reply was sent with comes back with it.
+    expect(screen.getByTestId("comment-box")).toHaveAttribute("data-decline", "1");
     // The text is also back in the editor's own draft, so a failure that lands
     // after the curator moved to another post is waiting when they return.
     expect(window.localStorage.getItem("ecency_reply_text_alice_morning-light")).toBe(JSON.stringify("kept text"));

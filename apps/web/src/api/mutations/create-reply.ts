@@ -40,7 +40,8 @@ export function useCreateReply(
   entry: Entry,
   root: Entry,
   onSuccess?: () => void,
-  onBlockchainError?: (text: string, error: any) => void
+  /** `submitted` is the payout choice the failed reply was sent with. */
+  onBlockchainError?: (text: string, error: any, submitted: { declinePayout: boolean }) => void
 ) {
   const { activeUser, account } = useActiveAccount();
   const queryClient = useQueryClient();
@@ -185,7 +186,7 @@ export function useCreateReply(
 
         // Notify parent component to restore text to input
         if (onBlockchainError) {
-          onBlockchainError(text, err);
+          onBlockchainError(text, err, { declinePayout: !!declinePayout });
         }
 
         // Keep draft in storage so user can retry by clicking Reply again

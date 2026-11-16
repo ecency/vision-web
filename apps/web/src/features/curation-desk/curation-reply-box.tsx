@@ -5,7 +5,7 @@ import i18next from "i18next";
 import { useCreateReply } from "@/api/mutations";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
 import * as ls from "@/utils/local-storage";
-import { Comment, type CommentSubmitOptions } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions, type FailedReply } from "@/features/shared/comment";
 import type { Entry } from "@/entities";
 import appPackage from "../../../package.json";
 
@@ -24,15 +24,15 @@ interface Props {
  * the curator moved to another post is waiting when they come back.
  */
 export function CurationReplyBox({ entry, open, onClose }: Props) {
-  const [failedText, setFailedText] = useState<string | null>(null);
+  const [failedReply, setFailedReply] = useState<FailedReply | null>(null);
 
   const { mutateAsync: createReply, isPending } = useCreateReply(
     entry,
     entry,
     onClose,
-    (text) => {
+    (text, _err, submitted) => {
       ls.set(`reply_text_${entry.author}_${entry.permlink}`, text);
-      setFailedText(text);
+      setFailedReply({ text, ...submitted });
     }
   );
 
@@ -40,11 +40,11 @@ export function CurationReplyBox({ entry, open, onClose }: Props) {
     const permlink = createReplyPermlink(entry.author);
     const tags = entry.json_metadata?.tags || ["ecency"];
     const jsonMeta = makeJsonMetaDataReply(tags, appPackage.version);
-    setFailedText(null);
+    setFailedReply(null);
     return createReply({ jsonMeta, text, permlink, point: true, declinePayout });
   };
 
-  if (!open && failedText == null) return null;
+  if (!open && failedReply == null) return null;
 
   return (
     <div className="mt-3" data-curation-reply>
@@ -53,13 +53,13 @@ export function CurationReplyBox({ entry, open, onClose }: Props) {
         entry={entry}
         onSubmit={submit}
         onCancel={() => {
-          setFailedText(null);
+          setFailedReply(null);
           onClose();
         }}
         cancellable
         autoFocus
         inProgress={isPending}
-        initialText={failedText}
+        failedReply={failedReply}
       />
     </div>
   );
