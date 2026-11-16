@@ -24,7 +24,8 @@
  * WITH an `error.tsx` still answers HTTP 500 with the `__next_error__`
  * document; the segment boundary only renders on a client-side (RSC)
  * navigation. (A segment that streams first, under a `loading.tsx`, has already
- * sent status 200 by the time it throws; these routes have none, see below.)
+ * sent status 200 by the time it throws. The entry, feed and wave-detail
+ * routes have none; the profile sub-pages and the waves feed do, see below.)
  * Those routes deliberately have
  * no Suspense boundary above their content - that is what removed the hidden
  * segment and the late $RC swap, what moved /trending's LCP from 11.08s to

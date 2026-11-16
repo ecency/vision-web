@@ -290,12 +290,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (tag === 'a' && (name === 'target' || name === 'rel')) return '';
         // No a() pass ran on this link, so give an external href the policy
         // a() would have (the author's own rel/target were dropped above).
-        // Read the way a browser reads it: leading spaces and controls dropped,
-        // tab/LF/CR removed anywhere, `\` as `/` (`/\evil.example` is off-site).
-        if (tag === 'a' && name === 'href' && /^(?:https?:)?\/\//i.test(
-          decoded.replace(/^[\u0000- ]+/, '').replace(/[\t\n\r]/g, '').replace(/\\/g, '/')
-        )) {
-          return `href="${escapeAttr(decoded)}" rel="nofollow ugc noopener"`;
+        // Read the way a browser reads it: leading spaces and controls dropped
+        // (and U+FFFD, which `&#0;` decodes to and xss strips), tab/LF/CR
+        // removed anywhere, `\` as `/` (`/\evil.example` is off-site). The link
+        // is emitted in that reading, so no raw control or backslash form ships.
+        const navigable = tag === 'a' && name === 'href'
+          ? decoded.replace(/^[\u0000- �]+/, '').replace(/[\t\n\r]/g, '').replace(/\\/g, '/')
+          : '';
+        if (navigable && /^(?:https?:)?\/\//i.test(navigable)) {
+          return `href="${escapeAttr(navigable)}" rel="nofollow ugc noopener"`;
         }
         if (RENDER_HELPER_DATA_ATTRIBUTES.has(name)) return '';
         if (isWhiteAttr && name === 'class') {

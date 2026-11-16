@@ -19,6 +19,20 @@ const OFF_SITE = [
   '/\\\tevil.example/x'
 ]
 
+// The sanitize-only path emits an off-site href the way a browser reads it,
+// with the policy: no raw control characters, no backslash forms.
+describe('sanitize-only path emits the browser reading of an off-site href', () => {
+  it.each([
+    ['/\\evil.example/x', '//evil.example/x'],
+    ['https:\\\\evil.example/x', 'https://evil.example/x'],
+    ['\u0000//evil.example/x', '//evil.example/x'],
+    ['&#0;//evil.example/x', '//evil.example/x']
+  ])('%j', (href, emitted) => {
+    const out = sanitizeHtml(`<a href="${href}">x</a>`, { untransformed: true })
+    expect(out).toContain(`href="${emitted}" rel="nofollow ugc noopener"`)
+  })
+})
+
 // Every emitted link either stays on the site, read the way a browser reads
 // it, or carries the external-link policy.
 const offSiteLinksWithoutPolicy = (html: string): string[] =>
