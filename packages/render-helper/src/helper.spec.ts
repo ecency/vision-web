@@ -343,6 +343,12 @@ describe('Helper Functions', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=1.5')).toBe('')
       })
 
+      it('should drop leading zeros from ?start= (?t= was already numeric)', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=00030')).toBe('30')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=0090s')).toBe('90')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=0000000')).toBe('0')
+      })
+
       it('should give no start time for a non-numeric ?start=', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=abc')).toBe('')
       })

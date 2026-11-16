@@ -74,6 +74,16 @@ describe("YouTube placeholder shows the video URL (#235)", () => {
     await flush();
     expect(sourceLinks(container)[0].href).toBe(`https://www.youtube.com/watch?v=${ID}&t=90s`);
 
+    // A zero-padded start time from an older render-helper still lands as seconds.
+    rerender(<Body html={youtubeLink({ "data-start-time": "00030" })} />);
+    await flush();
+    expect(sourceLinks(container)[0].href).toBe(`https://www.youtube.com/watch?v=${ID}&t=30s`);
+
+    // Zero is the beginning of the video: no t= at all.
+    rerender(<Body html={youtubeLink({ "data-start-time": "0000000" })} />);
+    await flush();
+    expect(sourceLinks(container)[0].href).toBe(`https://www.youtube.com/watch?v=${ID}`);
+
     rerender(<Body html={youtubeLink({}, " markdown-video-link-youtube-portrait")} />);
     await flush();
     expect(sourceLinks(container).map((a) => a.href)).toEqual([

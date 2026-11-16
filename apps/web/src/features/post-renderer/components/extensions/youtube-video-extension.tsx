@@ -79,7 +79,9 @@ export function youtubeSourceUrl(element: HTMLElement): { href: string; label: s
   }
   if (!YOUTUBE_ID.test(id)) return null;
   const path = portrait ? `shorts/${id}` : `watch?v=${id}`;
-  const time = /^[1-9][0-9]{0,6}$/.test(start) ? `${path.includes("?") ? "&" : "?"}t=${start}s` : "";
+  // Seconds as a number, so a zero-padded "00030" still links to t=30s.
+  const seconds = /^\d{1,7}$/.test(start) ? Number(start) : 0;
+  const time = seconds > 0 ? `${path.includes("?") ? "&" : "?"}t=${seconds}s` : "";
   const label = `youtube.com/${path}${time}`;
   return { href: `https://www.${label}`, label };
 }

@@ -456,7 +456,7 @@ export function extractYtStartTime(url:string):string {
       if (seconds <= 9999999) return '' + seconds;
     }
     const start = params.get('start') || '';
-    return /^\d{1,7}$/.test(start) ? start : '';
+    return /^\d{1,7}$/.test(start) ? '' + (+start) : '';
   } catch (error) {
     return '';
   }
