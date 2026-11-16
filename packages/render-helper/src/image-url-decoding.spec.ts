@@ -77,6 +77,17 @@ describe('image URL decoding (#2092)', () => {
     expect(render(body, false)).toContain(`href="${href}"`)
   })
 
+  // ...and a raw HTML src the way the render reads an attribute.
+  it.each([
+    '<img src="https://e.com/i.png?a=1&copy">',
+    '<img src="https://e.com/i.png?a=1&copy/x">',
+    '<img src="https://e.com/i.png?a=1&not-b=2">',
+    "<img src='https://e.com/i.png?a=1&amp'>",
+    '<img src="https://e.com/i.png?a=1&semi;b">'
+  ])('the LCP preload matches the render for %s', (body) => {
+    expect(proxyOf(getEntryImageRawUrl(body)!)).toBe(firstImg(render(body, false)))
+  })
+
   // The preload reads a markdown destination the same way the render does.
   it.each([
     '![](https://e.com/i.png?a=1&copy)',

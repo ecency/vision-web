@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -552,6 +552,14 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null
 }
 
+// The first body image as the render will proxy it: decoded by where it came
+// from, an HTML attribute or a markdown destination (#2092).
+function firstBodyImageRawUrl(body: string): string | null {
+  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate
+  if (!candidate) return null
+  return candidate.html ? decodeDomImageSrc(decodeAttributeEntities(candidate.url)) : decodeRawBodyImageSrc(candidate.url)
+}
+
 function stripCodeRegions(body: string): string {
   let text = blankMatches(body, BACKTICK_FENCE_RE)
   text = blankMatches(text, TILDE_FENCE_RE)
@@ -654,6 +662,11 @@ interface ImageCandidate {
   url: string
   /** Offset in the code-stripped body, for source-order comparisons. */
   pos: number
+  /**
+   * Taken from a raw HTML attribute (`<img src>`): its references decode the
+   * way the render reads an attribute, not as a markdown destination (#2092).
+   */
+  html?: boolean
 }
 
 /**
@@ -735,10 +748,10 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
 
   // Collect valid candidates with their source position; the rendered document
   // surfaces whichever image appears first in source order.
-  const candidates: { url: string; pos: number }[] = []
+  const candidates: ImageCandidate[] = []
   if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 })
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
-    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
+    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true })
   }
   if (includeBareUrls) {
     const bareMatch = firstStandalone(prepared.image, imageToken)
@@ -967,8 +980,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   // %-encoded / non-ASCII cover URLs (otherwise the preload is wasted and the
   // LCP image double-downloads).
   if (typeof obj === 'string') {
-    const src = findFirstImageUrl(obj, true)
-    return src ? decodeRawBodyImageSrc(src) : null
+    return firstBodyImageRawUrl(obj)
   }
   let meta: Entry['json_metadata'] | null
   if (typeof obj.json_metadata === 'object') {
@@ -986,8 +998,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   if (meta && meta.image && !!meta.image.length && typeof meta.image[0] === 'string' && meta.image[0].length > 0) {
     return decodeImageSrc(meta.image[0])
   }
-  const bodySrc = findFirstImageUrl(obj.body, true)
-  return bodySrc ? decodeRawBodyImageSrc(bodySrc) : null
+  return firstBodyImageRawUrl(obj.body)
 }
 
 export interface CatchPostImageOptions {
