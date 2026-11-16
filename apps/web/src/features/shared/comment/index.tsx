@@ -234,13 +234,19 @@ export function Comment({
   // restored draft is still the failed reply's text, and drop it otherwise.
   // A switch of account with the form open resets the choice first: it was the
   // previous account's. A held failed reply of the now-active account wins over the
-  // reset, whether the switch comes back to it or its failure lands with the switch.
+  // reset, whether the switch comes back to it or its failure lands with the switch,
+  // but only while its stored decline still exists: unchecking or editing forgets
+  // it, and a declined payout cannot be undone on chain.
   const lastPendingDeclineKey = useRef(pendingDeclineKey);
   useEffect(() => {
     if (lastPendingDeclineKey.current !== pendingDeclineKey) {
       lastPendingDeclineKey.current = pendingDeclineKey;
       setDeclinePayout(
-        !!failedReply && failedReply.username === activeUser?.username && failedReply.declinePayout
+        !!failedReply &&
+          failedReply.username === activeUser?.username &&
+          failedReply.declinePayout &&
+          !!pendingDeclineKey &&
+          ls.get(pendingDeclineKey) !== null
       );
     }
     if (failedReply || isEdit || !pendingDeclineKey) return;

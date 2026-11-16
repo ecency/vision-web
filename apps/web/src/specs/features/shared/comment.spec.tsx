@@ -335,14 +335,16 @@ describe("Comment composer", () => {
     function renderFailed(failedReply: Failed | null) {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const onSubmit = vi.fn().mockResolvedValue(undefined);
+      // Parents hold the failed reply in state, so a rerender passes the same
+      // object: keep one prop object per input, or every rerender re-fires restore.
+      const props = new Map<Failed, Failed & { username: string }>();
+      const prop = (reply: Failed) => {
+        if (!props.has(reply)) props.set(reply, { username: "tester", ...reply });
+        return props.get(reply)!;
+      };
       const ui = (reply: Failed | null) => (
         <QueryClientProvider client={queryClient}>
-          <Comment
-            entry={entry}
-            onSubmit={onSubmit}
-            submitText="Reply"
-            failedReply={reply && { username: "tester", ...reply }}
-          />
+          <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" failedReply={reply && prop(reply)} />
         </QueryClientProvider>
       );
       const utils = render(ui(failedReply));
@@ -513,6 +515,25 @@ describe("Comment composer", () => {
         view.rerenderFailed(failed);
         expect(view.getByRole("textbox")).toHaveValue("hello world");
         expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // A declined payout cannot be undone on chain: once the writer has unchecked
+    // the box, switching away and back must not check it again.
+    test("switching away and back keeps an unchecked box unchecked", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      fireEvent.click(checkbox(view.getByRole));
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
       } finally {
         activeAccount.username = "tester";
       }
