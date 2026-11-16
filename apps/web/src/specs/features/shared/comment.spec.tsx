@@ -818,6 +818,26 @@ describe("Comment composer", () => {
       }
     });
 
+    // Greptile (#2106): another account's held failure must not stop this account's
+    // kept declined reply from coming back checked.
+    test("a kept declined reply comes back checked while another account's failure is held", () => {
+      const othersFailure = { text: "other's failed", declinePayout: false, username: "other" };
+      activeAccount.username = "other";
+      try {
+        const view = renderFailed(othersFailure);
+        type(view.getByRole, "");
+        window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+        window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("K"));
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(othersFailure);
+        expect(view.getByRole("textbox")).toHaveValue("K");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
     // The form's first text is a held failure only when it is this account's.
     test("a held failure of another account does not seed this account's form", () => {
       const view = renderFailed({ text: "B text", declinePayout: false, username: "other" });

@@ -316,7 +316,9 @@ function CommentForm({
         if (pending !== null && pending !== current) forgetPendingDecline();
       }
     }
-    if (failedReply || isEdit || !pendingDeclineKey) return;
+    // Only this account's own held failure decides the box (its restore did); a
+    // held failure of another account is not in this form and changes nothing.
+    if ((failedReply && failedReply.username === activeUser?.username) || isEdit || !pendingDeclineKey) return;
     const pending = readPendingDecline(pendingDeclineKey);
     if (pending === null) return;
     if (pending === current) {
