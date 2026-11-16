@@ -1,4 +1,4 @@
-import xss from 'xss'
+import xss, { type SafeAttrValueHandler } from 'xss'
 import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, canonicalEmbedSrc, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
 import { getProxyBase, proxifyImageSrc } from '../proxify-image-src'
 import { isStrictTag } from './render-boundary.method'
@@ -82,6 +82,13 @@ const isUrlAttribute = (tag: string, name: string): boolean =>
   EMBED_SRC_DATA_ATTRS.has(name)
 
 const RENDER_HELPER_RELS = new Set(['nofollow ugc noopener', 'noopener'])
+
+// xss is CommonJS: its helpers hang off the default export at runtime, and a named
+// import breaks the ESM build under Node (`Named export 'safeAttrValue' not found`).
+const xssSafeAttrValue = (xss as unknown as { safeAttrValue: SafeAttrValueHandler }).safeAttrValue
+
+// The schemes a() writes on a link (a.method.ts); it prefixes any other with https://.
+const HREF_SCHEMES = new Set(['http', 'https', 'mailto', 'hive', 'steem', 'esteem', 'ecency'])
 
 export interface SanitizeHtmlOptions {
   /**
@@ -193,6 +200,21 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       const decodedLower = decoded.toLowerCase();
 
       if (name.startsWith('on')) return ''; // 🛡 event handlers
+      // An href keeps only the schemes a() itself writes. xss's own check lets
+      // `data:image/` through, and on the sanitize-only fallback no a() pass ran,
+      // so an entity-written scheme (`data&colon;image/svg+xml,...`) would ship
+      // live (#2099). Read the way a browser reads it: leading whitespace
+      // (Unicode included, as xss trims it), controls and U+FFFD dropped,
+      // tab/LF/CR removed anywhere. The value is then written out below exactly
+      // as checked, never re-read by xss (it decodes `&colon` without a
+      // semicolon, and decodes a second time).
+      if (name === 'href') {
+        const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(
+          decoded.replace(/^[\s\u0000-\u0020\ufffd]+/, '').replace(/[\t\n\r]/g, '')
+        );
+        // A bare `href`, as xss writes a refused one: the link keeps its look, goes nowhere.
+        if (scheme && !HREF_SCHEMES.has(scheme[1].toLowerCase())) return isWhiteAttr ? 'href' : '';
+      }
       // Positive-whitelist: only http(s) is accepted. Any other scheme
       // (javascript:, data:, vbscript:, file:, etc.) is rejected by the
       // negation. We don't need an explicit blocklist alongside.
@@ -320,6 +342,11 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // with control characters turned into spaces (`.\n.` validated as `..`
       // and loaded as `.%20.`). Always emit exactly the string that was
       // validated.
+      // An href passes xss's own link rule too (it refuses `java script:`,
+      // `%6a...:` and other non-links), applied to the value as checked above.
+      if (isWhiteAttr && name === 'href') {
+        return xssSafeAttrValue(tag, name, decoded, undefined as never) ? `href="${escapeAttr(decoded)}"` : 'href';
+      }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
         return `${name}="${escapeAttr(decoded)}"`;
       }
