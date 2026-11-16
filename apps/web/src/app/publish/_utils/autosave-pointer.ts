@@ -22,11 +22,15 @@ export function readAutosavePointer(username: string): AutosavePointer | undefin
     if (!raw) {
       return undefined;
     }
-    const value = JSON.parse(raw);
-    if (typeof value?.id !== "string" || !value.id || typeof value.savedAt !== "number") {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) {
       return undefined;
     }
-    return { id: value.id, savedAt: value.savedAt };
+    const { id, savedAt } = value as Record<string, unknown>;
+    if (typeof id !== "string" || !id || typeof savedAt !== "number") {
+      return undefined;
+    }
+    return { id, savedAt };
   } catch {
     return undefined;
   }

@@ -66,9 +66,16 @@ export function useResumeAutosavedDraft({ composerEmpty, draftId }: Options) {
     [draftsQuery.data, pointer]
   );
 
-  // Only a list the server actually returned proves the draft is gone. A
-  // pending, refetching or failed request proves nothing.
-  const isGone = !!pointer && draftsQuery.isSuccess && !draftsQuery.isFetching && !exists;
+  // Only a list the server returned to this visit proves the draft is gone. A
+  // pending, refetching or failed request proves nothing, and neither does a
+  // list cached earlier: a disabled query (no token) still reports success with
+  // it, and it can predate the pointed draft.
+  const isGone =
+    !!pointer &&
+    draftsQuery.isSuccess &&
+    draftsQuery.isFetchedAfterMount &&
+    !draftsQuery.isFetching &&
+    !exists;
   useEffect(() => {
     if (isGone && username && pointer) {
       clearAutosavePointer(username, pointer.id);

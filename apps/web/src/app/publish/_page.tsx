@@ -17,8 +17,6 @@ import {
   useResumeAutosavedDraft
 } from "@/app/publish/_hooks";
 import { hasDraftableContent } from "@/app/publish/_utils/content";
-import { clearAutosavePointer } from "@/app/publish/_utils/autosave-pointer";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
 import type { ImportResult } from "@/app/publish/_components/publish-import-dialog";
 import { isCommunity } from "@/utils";
 import { useSearchParams } from "next/navigation";
@@ -55,7 +53,6 @@ export default function Publish() {
   const searchParams = useSearchParams();
   const { title, content, tags, setTags, setTitle, setContent, setSelectedThumbnail } =
     usePublishState();
-  const { username } = useActiveAccount();
 
   const handleImport = useCallback(
     (result: ImportResult) => {
@@ -90,7 +87,7 @@ export default function Publish() {
     )
   );
 
-  const { isActiveTab, lastSaved, draftId, flush } = usePublishAutosave();
+  const { isActiveTab, lastSaved, draftId, flush, forgetPointer } = usePublishAutosave();
   const { backToClassic, conflict, confirmHandOver, cancelHandOver } = useBackToClassic();
   const { openDraft, isOpening } = useOpenAutosavedDraft({ draftId, flush });
   // A previous visit's autosaved draft, offered only while this composer is
@@ -165,7 +162,7 @@ export default function Publish() {
           onClose={() => setStep("edit")}
           onSuccess={(step, entryInfo, wasFirst) => {
             // The post is out, so its draft is no longer one to come back to.
-            if (username && draftId) clearAutosavePointer(username, draftId);
+            forgetPointer();
             setPublishedEntry(entryInfo);
             setFirstPublish(Boolean(wasFirst));
             setStep(step);

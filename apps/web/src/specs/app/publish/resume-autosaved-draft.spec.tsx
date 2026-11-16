@@ -32,14 +32,13 @@ const { useResumeAutosavedDraft } = await import(
   "@/app/publish/_hooks/use-resume-autosaved-draft"
 );
 
-function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-}
-
 type Props = { composerEmpty: boolean; draftId?: string };
 
-function render(initialProps: Props = { composerEmpty: true }) {
+function render(initialProps: Props = { composerEmpty: true }, client?: QueryClient) {
+  const queryClient = client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
   return renderHook((props: Props) => useResumeAutosavedDraft(props), {
     wrapper,
     initialProps
@@ -92,6 +91,22 @@ describe("useResumeAutosavedDraft", () => {
     // long enough for a query that wrongly ran to settle and clear it
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
     expect(result.current.prompt).toBeUndefined();
+    expect(readAutosavePointer("alice")).toEqual({ id: "d1", savedAt: 1234 });
+  });
+
+  // A drafts list cached earlier in the session (before the pointed draft was
+  // created) is not a check against the server. With no token to refetch it,
+  // the disabled query still reports success with that old list, which used to
+  // read as "the draft is gone" and drop a valid pointer.
+  it("keeps the pointer when only an older cached list is available", async () => {
+    hasToken.current = false;
+    writeAutosavePointer("alice", "d1", 1234);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["drafts", "alice"], [{ _id: "older" }]);
+
+    render({ composerEmpty: true }, client);
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
     expect(readAutosavePointer("alice")).toEqual({ id: "d1", savedAt: 1234 });
   });
 
