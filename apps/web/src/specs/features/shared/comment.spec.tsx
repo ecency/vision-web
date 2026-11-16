@@ -539,6 +539,62 @@ describe("Comment composer", () => {
       }
     });
 
+    // The draft text is shared between accounts: B replacing it must not let A's
+    // stored decline check the box for B's different text when A comes back.
+    test("switching back after another account replaced the draft does not decline the new text", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        type(view.getByRole, "different text");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("different text");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        expect(declineKeys()).toEqual([]);
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a failure that landed while another account was active is restored on switching back", () => {
+      const view = renderFailed(null);
+      const failed = { text: "sent by tester", declinePayout: true, username: "tester" };
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(null);
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("sent by tester");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a restored failure is not replayed over the writer's edits on switching back", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      type(view.getByRole, "edited");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("edited");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
     test("a failure for the new account landing with the switch is restored checked", () => {
       const view = renderFailed(null);
       try {

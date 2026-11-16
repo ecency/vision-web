@@ -216,9 +216,17 @@ export function Comment({
     };
   }, [isMobile]);
 
-  // Restore a reply whose blockchain submission failed, with its payout choice
+  // Restore a reply whose blockchain submission failed, with its payout choice,
+  // once, into the account that sent it: a failure that lands while another account
+  // is active waits for its sender to come back, and one already restored is never
+  // replayed over what the writer did with it since.
+  const restoredFailedReply = useRef<FailedReply | null>(null);
+  const restoredThisCommit = useRef(false);
   useEffect(() => {
     if (!failedReply || failedReply.username !== activeUser?.username) return;
+    if (restoredFailedReply.current === failedReply) return;
+    restoredFailedReply.current = failedReply;
+    restoredThisCommit.current = true;
     if (failedReply.text !== text) {
       setText(failedReply.text);
     }
@@ -228,26 +236,27 @@ export function Comment({
     } else {
       forgetPendingDecline();
     }
-  }, [failedReply]);
+  }, [failedReply, activeUser?.username]);
 
   // A form opened without a failure in hand: re-apply a pending decline when the
   // restored draft is still the failed reply's text, and drop it otherwise.
   // A switch of account with the form open resets the choice first: it was the
-  // previous account's. A held failed reply of the now-active account wins over the
-  // reset, whether the switch comes back to it or its failure lands with the switch,
-  // but only while its stored decline still exists: unchecking or editing forgets
-  // it, and a declined payout cannot be undone on chain.
+  // previous account's. A failure restored by the switch itself (above) keeps its
+  // own choice. Otherwise a held failed reply of the now-active account wins over
+  // the reset only while its stored decline still exists AND is still the draft's
+  // text: unchecking or editing forgets it, another account may have replaced the
+  // shared draft meanwhile, and a declined payout cannot be undone on chain.
   const lastPendingDeclineKey = useRef(pendingDeclineKey);
   useEffect(() => {
     if (lastPendingDeclineKey.current !== pendingDeclineKey) {
       lastPendingDeclineKey.current = pendingDeclineKey;
-      setDeclinePayout(
-        !!failedReply &&
-          failedReply.username === activeUser?.username &&
-          failedReply.declinePayout &&
-          !!pendingDeclineKey &&
-          ls.get(pendingDeclineKey) !== null
-      );
+      if (!restoredThisCommit.current) {
+        const ownFailure =
+          !!failedReply && failedReply.username === activeUser?.username && !!pendingDeclineKey;
+        const pending = ownFailure ? ls.get(pendingDeclineKey!) : null;
+        setDeclinePayout(ownFailure && failedReply!.declinePayout && pending !== null && pending === text);
+        if (pending !== null && pending !== text) forgetPendingDecline();
+      }
     }
     if (failedReply || isEdit || !pendingDeclineKey) return;
     const pending = ls.get(pendingDeclineKey);
@@ -258,6 +267,10 @@ export function Comment({
       forgetPendingDecline();
     }
   }, [pendingDeclineKey]);
+  // Runs last in every commit: the restore flag above only spans the commit it ran in.
+  useEffect(() => {
+    restoredThisCommit.current = false;
+  });
 
   useMount(() => {
     if (isEdit) {
