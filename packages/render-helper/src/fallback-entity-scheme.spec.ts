@@ -16,8 +16,9 @@ import { sanitizeHtml } from './methods/sanitize-html.method'
 import { simpleMarkdownToHTML } from './methods/simple-markdown-to-html.method'
 
 const DANGEROUS = /^[\s\u0000-\u0020\ufffd]*(data|javascript|vbscript):/i
+// Read the way a browser reads an href: tab/LF/CR inside the scheme are dropped.
 const hrefs = (html: string) =>
-  [...html.matchAll(/\shref="([^"]*)"/g)].map((m) => decodeHTMLAttribute(m[1]))
+  [...html.matchAll(/\shref="([^"]*)"/g)].map((m) => decodeHTMLAttribute(m[1]).replace(/[\t\n\r]/g, ''))
 
 const bodies = [
   '<a href="data&colon;image/svg+xml,<svg/onload=alert(1)>">x</a>',
