@@ -1,6 +1,6 @@
 "use client";
 
-import { Comment } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions } from "@/features/shared/comment";
 import i18next from "i18next";
 import { Entry } from "@/entities";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
@@ -31,7 +31,7 @@ export function EntryReplySection({ entry }: Props) {
         }
     );
 
-    const replySubmitted = async (text: string) => {
+    const replySubmitted = async (text: string, { declinePayout }: CommentSubmitOptions) => {
         const permlink = createReplyPermlink(entry.author);
         const tags = entry.json_metadata?.tags || ["ecency"];
 
@@ -39,7 +39,8 @@ export function EntryReplySection({ entry }: Props) {
             jsonMeta: makeJsonMetaDataReply(tags, appPackage.version),
             text,
             permlink,
-            point: true
+            point: true,
+            declinePayout
         });
 
         // Don't clear selection here - let onSuccess callback handle it

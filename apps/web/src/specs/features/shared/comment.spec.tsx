@@ -101,11 +101,14 @@ const entry = {
   json_metadata: {}
 } as unknown as Entry;
 
-function renderComment(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+function renderComment(
+  onSubmit = vi.fn().mockResolvedValue(undefined),
+  props: { isEdit?: boolean } = {}
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" />
+      <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" {...props} />
     </QueryClientProvider>
   );
   return { onSubmit, ...utils };
@@ -136,7 +139,7 @@ describe("Comment composer", () => {
     const body = container.querySelector(".comment-body")!;
     fireEvent.keyDown(body, { key: "Enter", ctrlKey: true });
 
-    expect(onSubmit).toHaveBeenCalledWith("hello world");
+    expect(onSubmit).toHaveBeenCalledWith("hello world", { declinePayout: false });
   });
 
   test("plain Enter does NOT submit (newline behavior preserved)", () => {
@@ -278,5 +281,39 @@ describe("Comment composer", () => {
     fireEvent.keyDown(body, { key: "Enter", metaKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  describe("decline payout", () => {
+    test("offers an unchecked Decline payout option on a new reply", () => {
+      const { getByRole } = renderComment();
+
+      const toggle = getByRole("checkbox", { name: "comment.decline-payout" });
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("submits the reply with declinePayout once it is checked", () => {
+      const { onSubmit, getByRole } = renderComment();
+
+      fireEvent.click(getByRole("checkbox", { name: "comment.decline-payout" }));
+      type(getByRole, "hello world");
+      fireEvent.click(getByRole("button", { name: "Reply" }));
+
+      expect(onSubmit).toHaveBeenCalledWith("hello world", { declinePayout: true });
+    });
+
+    test("toggles from the keyboard", () => {
+      const { getByRole } = renderComment();
+      const toggle = getByRole("checkbox", { name: "comment.decline-payout" });
+
+      fireEvent.keyDown(toggle, { key: " " });
+
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("is not offered when editing, since comment_options cannot be set again", () => {
+      const { queryByRole } = renderComment(undefined, { isEdit: true });
+
+      expect(queryByRole("checkbox", { name: "comment.decline-payout" })).toBeNull();
+    });
   });
 });

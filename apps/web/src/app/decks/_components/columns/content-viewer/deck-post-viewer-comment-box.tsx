@@ -5,7 +5,7 @@ import { useCreateReply } from "@/api/mutations";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../../../package.json";
 import i18next from "i18next";
-import { Comment } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions } from "@/features/shared/comment";
 import { useActiveAccount } from "@/core/hooks";
 
 interface Props {
@@ -36,7 +36,7 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
     }
   );
 
-  const submitReply = async (text: string) => {
+  const submitReply = async (text: string, { declinePayout }: CommentSubmitOptions) => {
     if (!username || !account) {
       return;
     }
@@ -48,7 +48,7 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
 
     setIsReplying(true);
 
-    return createReply({ jsonMeta, text, permlink, point: true });
+    return createReply({ jsonMeta, text, permlink, point: true, declinePayout });
   };
   return (
     <Comment

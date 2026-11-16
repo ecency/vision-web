@@ -45,6 +45,8 @@ import { DiscussionBots } from "./discussion-bots";
 import { DiscussionItemBody } from "./discussion-item-body";
 import { DiscussionList } from "./discussion-list";
 
+import type { CommentSubmitOptions } from "../comment";
+
 // The reply/edit composer (markdown editor toolbar, emoji/GIF pickers, textarea
 // autocomplete, polls/video upload) only renders behind the reply/edit toggles
 // below. Load it lazily so the SSR'd comment list doesn't pull the whole
@@ -246,13 +248,14 @@ export const DiscussionItem = memo(function DiscussionItem({
   };
   const toggleEdit = () => reply || setEdit((e) => !e);
 
-  const submitReply = async (text: string) => {
+  const submitReply = async (text: string, { declinePayout }: CommentSubmitOptions) => {
     const permlink = createReplyPermlink(entry.author);
     await createReply({
       text,
       jsonMeta: makeJsonMetaDataReply(entry.json_metadata?.tags || ["ecency"], appPackage.version),
       permlink,
-      point: true
+      point: true,
+      declinePayout
     });
     // Don't close form here - let the mutation's onSuccess/onError handle it
   };

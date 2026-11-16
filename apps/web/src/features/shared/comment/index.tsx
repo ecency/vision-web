@@ -12,6 +12,7 @@ import { createReplyPermlink, isBlankBody, makeJsonMetaDataReply } from "@/utils
 import appPackage from "../../../../package.json";
 import { setProxyBase } from "@ecency/render-helper";
 import { Button } from "@ui/button";
+import { FormControl } from "@ui/input/form-controls";
 import i18next from "i18next";
 import React, {
   Ref,
@@ -42,6 +43,10 @@ import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
 
 setProxyBase(defaults.imageServer);
 
+export interface CommentSubmitOptions {
+  declinePayout: boolean;
+}
+
 interface Props {
   submitText: string;
   entry: Entry;
@@ -49,7 +54,8 @@ interface Props {
   isCommented?: boolean;
   cancellable?: boolean;
   autoFocus?: boolean;
-  onSubmit: (text: string) => Promise<any>;
+  /** `declinePayout` is always false for an edit: comment_options is create-only. */
+  onSubmit: (text: string, options: CommentSubmitOptions) => Promise<any>;
   onCancel?: () => void;
   inputRef?: Ref<HTMLTextAreaElement>;
   clearOnSubmit?: boolean;
@@ -77,6 +83,12 @@ export function Comment({
   const [text, setText] = useLocalStorage(
     PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
     initialText ?? ""
+  );
+  // Stored next to the draft, so a reply whose broadcast fails comes back with the
+  // same choice instead of silently retrying with the payout on.
+  const [declinePayout, setDeclinePayout] = useLocalStorage(
+    PREFIX + `_reply_decline_payout_${entry.author}_${entry.permlink}`,
+    false
   );
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -233,7 +245,7 @@ export function Comment({
       }
 
       try {
-        await onSubmit(text!);
+        await onSubmit(text!, { declinePayout: !isEdit && !!declinePayout });
         if (clearOnSubmit) {
           setText("");
         }
@@ -243,7 +255,7 @@ export function Comment({
           throw err; // ❌ only throw unexpected errors
         }
       }
-    }, [onSubmit, text, clearOnSubmit, setText]);
+    }, [onSubmit, text, clearOnSubmit, setText, isEdit, declinePayout]);
 
   const cancel = useCallback(() => {
     if (onCancel) onCancel();
@@ -363,11 +375,24 @@ export function Comment({
           </div>
         )}
         <div className="comment-buttons flex items-center mt-3">
-          {!isMobile && (
-            <span className="comment-submit-hint mr-auto text-xs opacity-60">
-              {i18next.t("comment.submit-shortcut")}
-            </span>
-          )}
+          <div className="mr-auto flex items-center gap-3">
+            {!isMobile && (
+              <span className="comment-submit-hint text-xs opacity-60">
+                {i18next.t("comment.submit-shortcut")}
+              </span>
+            )}
+            {/* comment_options is create-only, so an edit cannot change the payout. */}
+            {!isEdit && (
+              <div className="comment-decline-payout text-sm">
+                <FormControl
+                  type="checkbox"
+                  label={i18next.t("comment.decline-payout")}
+                  checked={!!declinePayout}
+                  onChange={(checked: boolean) => setDeclinePayout(checked)}
+                />
+              </div>
+            )}
+          </div>
           {cancellable && (
             <Button
               className="mr-2"

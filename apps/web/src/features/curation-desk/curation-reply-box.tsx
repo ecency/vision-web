@@ -5,7 +5,7 @@ import i18next from "i18next";
 import { useCreateReply } from "@/api/mutations";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
 import * as ls from "@/utils/local-storage";
-import { Comment } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions } from "@/features/shared/comment";
 import type { Entry } from "@/entities";
 import appPackage from "../../../package.json";
 
@@ -36,12 +36,12 @@ export function CurationReplyBox({ entry, open, onClose }: Props) {
     }
   );
 
-  const submit = async (text: string) => {
+  const submit = async (text: string, { declinePayout }: CommentSubmitOptions) => {
     const permlink = createReplyPermlink(entry.author);
     const tags = entry.json_metadata?.tags || ["ecency"];
     const jsonMeta = makeJsonMetaDataReply(tags, appPackage.version);
     setFailedText(null);
-    return createReply({ jsonMeta, text, permlink, point: true });
+    return createReply({ jsonMeta, text, permlink, point: true, declinePayout });
   };
 
   if (!open && failedText == null) return null;

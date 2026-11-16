@@ -74,10 +74,10 @@ vi.mock("@/features/shared/entry-tip-btn", () => ({
 }));
 // The editor is the post page's; here a textarea and the two buttons stand in.
 vi.mock("@/features/shared/comment", () => ({
-  Comment: ({ onSubmit, onCancel, initialText, inProgress }: { onSubmit: (t: string) => Promise<unknown>; onCancel?: () => void; initialText?: string | null; inProgress?: boolean }) => (
+  Comment: ({ onSubmit, onCancel, initialText, inProgress }: { onSubmit: (t: string, o: { declinePayout: boolean }) => Promise<unknown>; onCancel?: () => void; initialText?: string | null; inProgress?: boolean }) => (
     <div data-testid="comment-box" data-initial={initialText ?? ""} data-busy={inProgress ? "1" : "0"}>
       <textarea aria-label="reply" defaultValue={initialText ?? ""} />
-      <button type="button" onClick={() => void onSubmit((document.querySelector('[aria-label="reply"]') as HTMLTextAreaElement).value)}>g.reply</button>
+      <button type="button" onClick={() => void onSubmit((document.querySelector('[aria-label="reply"]') as HTMLTextAreaElement).value, { declinePayout: false })}>g.reply</button>
       <button type="button" onClick={onCancel}>g.cancel</button>
     </div>
   ),
