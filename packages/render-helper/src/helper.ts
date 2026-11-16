@@ -126,6 +126,12 @@ export function removeDuplicateAttributes(html: string): string {
   // is. Without this, a body of `<a b ` repeated with no `>` rescanned the rest
   // of the input from every `<`, quadratic: 100 KB took 15 s to render.
   const lastGt = html.lastIndexOf('>')
+  // Characters scanned by tags that never closed. A `>` that only ever sits
+  // inside a quoted value (`'<a b '.repeat(n) + 'c=">"'`) defeats the guard
+  // above and every `<` rescans to the end; past this budget the rest of the
+  // input is copied as written, so the work stays linear.
+  const scanBudget = 4 * n + 4096
+  let wasted = 0
   let out = ''
   let i = 0
 
@@ -243,7 +249,12 @@ export function removeDuplicateAttributes(html: string): string {
         // which a browser never does in an attribute, so `?video=1&times=1`
         // came out as `?video=1×=1`.
         // A value that is already in that form keeps its bytes as written.
-        const value = rawValue === null ? null : escapeAttrValue(decodeAttributeEntities(rawValue))
+        // A literal tab, line feed or carriage return is attribute whitespace:
+        // a space, as xmldom reads it. One written as a reference stays one.
+        const value =
+          rawValue === null
+            ? null
+            : escapeAttrValue(decodeAttributeEntities(rawValue.replace(/\r\n?|[\n\t]/g, ' ')))
         attrs.push(
           value === null || value === rawValue
             ? key + fullAttr.slice(attrName.length)
@@ -261,6 +272,11 @@ export function removeDuplicateAttributes(html: string): string {
       // Unterminated tag — leave the original input alone past the `<` and
       // continue scanning. This mirrors the prior regex's behaviour of not
       // matching such fragments.
+      wasted += q - lt
+      if (wasted > scanBudget) {
+        out += html.slice(lt)
+        break
+      }
       out += '<'
       i = lt + 1
       continue

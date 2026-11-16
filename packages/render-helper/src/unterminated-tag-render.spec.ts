@@ -7,7 +7,11 @@ import { removeDuplicateAttributes } from './helper'
 describe('unterminated tags render in linear time', () => {
   it.each([
     ['<a b ', '<div>\n' + '<a b '.repeat(40000)],
-    ['<a href="', '<a href="'.repeat(20000)]
+    ['<a href="', '<a href="'.repeat(20000)],
+    // One `>` inside a quoted value at the end: no tag ever closes.
+    ['<a b  then a quoted >', '<div>\n' + '<a b '.repeat(20000) + 'c=">"'],
+    ["<a b  then a single-quoted >", '<div>\n' + '<a b '.repeat(20000) + "c='>'"],
+    ['<a b="x"  then a quoted >', '<div>\n' + '<a b="x" '.repeat(11111) + 'c=">"']
   ])('%s repeated', (_name, body) => {
     const started = performance.now()
     markdown2Html({ author: 'x', permlink: `unterminated-${body.length}`, last_update: '2026-11-16', body } as never)

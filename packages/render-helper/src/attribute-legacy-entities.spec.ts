@@ -51,6 +51,18 @@ describe('legacy entity names in raw-HTML attributes (#2085)', () => {
     )
   })
 
+  // A LITERAL tab or newline is attribute whitespace: xmldom reads it as a
+  // space, and a hand-written href with a trailing newline must stay the
+  // internal link it was, not flip to an external one.
+  it('treats literal tab, line feed and carriage return as spaces', () => {
+    expect(removeDuplicateAttributes('<a href="/@alice/post\n" title="a\tb&times">x</a>')).toBe(
+      '<a href="/@alice/post " title="a b×">x</a>'
+    )
+    for (const href of ['https://ecency.com/@alice/post\n', '/@alice/post\n', 'https://ecency.com/hive-125125/@alice/post\r\n']) {
+      expect(render(`<a href="${href}">x</a>`)).toContain('markdown-post-link')
+    }
+  })
+
   it('rewrites a value only as far as its references go', () => {
     expect(removeDuplicateAttributes('<p class="a b" title="x &amp; y">t</p>')).toBe(
       '<p class="a b" title="x &amp; y">t</p>'
