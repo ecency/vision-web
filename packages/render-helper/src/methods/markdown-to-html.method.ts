@@ -190,23 +190,23 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   const entityPlaceholders: string[] = [];
 
   if (entities && forApp) {
-    // Deduplicate entities to avoid duplicate placeholders
-    const uniqueEntities = [...new Set(entities)];
-    uniqueEntities.forEach((entity, index) => {
-      // Use markdown-inert Unicode placeholder (zero-width spaces)
-      entityPlaceholders.push(entity);
-    })
+    // Deduplicate entities to avoid duplicate placeholders. Each distinct entity
+    // gets a markdown-inert placeholder (zero-width spaces around its index).
+    const indexOf = new Map<string, number>();
+    for (const entity of entities) {
+      if (!indexOf.has(entity)) {
+        indexOf.set(entity, entityPlaceholders.length);
+        entityPlaceholders.push(entity);
+      }
+    }
     // Replace every occurrence OUTSIDE a URL. The placeholders stand in for
     // entities in text; inside a URL one reached the transforms instead, and an
     // image was proxied with the placeholder in its URL, inside the proxy hash
     // where the final restore cannot reach, so the app loaded a different image
-    // URL than the post names (#2092). A URL keeps its entities and renders
-    // exactly as on the web.
+    // URL than the post names (#2092). One regex pass per segment, linear in
+    // its length (a split/join per distinct entity was not).
     const protect = (text: string) =>
-      entityPlaceholders.reduce(
-        (acc, entity, index) => acc.split(entity).join(`\u200B${index}\u200B`),
-        text
-      );
+      text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
     let protectedInput = '';
     let last = 0;
     for (const m of regexMatches(input, URL_RUN)) {
@@ -277,12 +277,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   }
 
   // Restore original entities from placeholders
+  // in one pass (a split/join per distinct entity was quadratic on a body of
+  // many distinct references).
   if (forApp && output && entityPlaceholders.length > 0) {
-    entityPlaceholders.forEach((entity, index) => {
-      const placeholder = `\u200B${index}\u200B`;
-      // Replace all occurrences of the placeholder
-      output = output.split(placeholder).join(entity);
-    })
+    output = output.replace(/\u200B(\d+)\u200B/g, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder);
   }
 
   output = stripDocumentWrapper(output)
