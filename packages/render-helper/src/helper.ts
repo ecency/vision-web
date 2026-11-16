@@ -82,6 +82,11 @@ export function decodeImageSrc(src: string): string {
  * backtracking that pinned a 6 KB body for >30 seconds, tripping the watchdog
  * and killing the container.
  */
+// Escapes a decoded attribute value for a double-quoted attribute.
+function escapeAttrValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function isSpaceChar(c: number): boolean {
   return c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d || c === 0x0c
 }
@@ -166,6 +171,9 @@ export function removeDuplicateAttributes(html: string): string {
       while (r < n && isSpaceChar(html.charCodeAt(r))) r++
 
       let valueEnd = q
+      // The value without its quotes, when it is complete; null keeps the
+      // attribute's bytes as written (no value, or an unterminated quote).
+      let rawValue: string | null = null
       if (r < n && html.charCodeAt(r) === 0x3d /* '=' */) {
         r++
         while (r < n && isSpaceChar(html.charCodeAt(r))) r++
@@ -182,6 +190,7 @@ export function removeDuplicateAttributes(html: string): string {
               valueEnd = gt < 0 ? n : gt
             } else {
               valueEnd = end + 1
+              rawValue = html.slice(r + 1, end)
             }
           } else {
             // Unquoted value: read until whitespace or `>`
@@ -192,6 +201,7 @@ export function removeDuplicateAttributes(html: string): string {
               s++
             }
             valueEnd = s
+            rawValue = html.slice(r, s)
           }
         } else {
           valueEnd = r
@@ -209,7 +219,19 @@ export function removeDuplicateAttributes(html: string): string {
         // past every transform that reads attributes by their lower-case name
         // (img proxying, the link policy, marker stripping), and xss then
         // lower-cases them on output, where they took effect.
-        attrs.push(key + fullAttr.slice(attrName.length))
+        //
+        // A value is handed on with only explicit references (#2085): decoded
+        // the way a browser decodes an attribute, then re-escaped. xmldom
+        // decodes `&times` / `&copy` / `&lt` even without `;` and before `=`,
+        // which a browser never does in an attribute, so `?video=1&times=1`
+        // came out as `?video=1×=1`.
+        // A value that is already in that form keeps its bytes as written.
+        const value = rawValue === null ? null : escapeAttrValue(decodeAttributeEntities(rawValue))
+        attrs.push(
+          value === null || value === rawValue
+            ? key + fullAttr.slice(attrName.length)
+            : `${key}="${value}"`
+        )
       }
     }
 
