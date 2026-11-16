@@ -9,6 +9,7 @@ import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
 import * as ls from "@/utils/local-storage";
 import { PREFIX } from "@/utils/local-storage";
+import { failedDeclineKey } from "./failed-decline";
 import { createReplyPermlink, isBlankBody, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../package.json";
 import { setProxyBase } from "@ecency/render-helper";
@@ -110,7 +111,7 @@ function CommentForm({
   // brings the draft back declined. It applies only while the draft is that text.
   const [declinePayout, setDeclinePayout] = useState(false);
   const pendingDeclineKey = activeUser?.username
-    ? `reply_failed_decline_${activeUser.username}_${entry.author}_${entry.permlink}`
+    ? failedDeclineKey(activeUser.username, entry.author, entry.permlink)
     : null;
   const forgetPendingDecline = useCallback(() => {
     if (pendingDeclineKey) ls.remove(pendingDeclineKey);

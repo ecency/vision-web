@@ -462,6 +462,36 @@ describe("CurationQuickView", () => {
     expect(screen.queryByTestId("comment-box")).toBeNull();
   });
 
+  // The failure keeps the sender's decline next to the kept text, so a reload or a
+  // return to this post (even after switching accounts or moving on) brings the text
+  // back declined as it was sent; the stored decline applies only to that exact text.
+  it("keeps a failed reply's decline for its sender with the kept text", async () => {
+    renderDrawer({ row });
+    await screen.findByTestId("renderer");
+    fireEvent.click(screen.getByRole("button", { name: "curation-desk.actions.comment-key" }));
+    fireEvent.change(screen.getByLabelText("reply"), { target: { value: "kept text" } });
+    fireEvent.click(screen.getByRole("button", { name: "g.reply" }));
+    await waitFor(() => expect(screen.queryByTestId("comment-box")).toBeNull());
+
+    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: true, username: "sender" }));
+    expect(window.localStorage.getItem("ecency_reply_failed_decline_sender_alice_morning-light")).toBe(
+      JSON.stringify("kept text")
+    );
+  });
+
+  it("a later undeclined failure of the same text drops the sender's stored decline", async () => {
+    renderDrawer({ row });
+    await screen.findByTestId("renderer");
+    fireEvent.click(screen.getByRole("button", { name: "curation-desk.actions.comment-key" }));
+    fireEvent.change(screen.getByLabelText("reply"), { target: { value: "kept text" } });
+    fireEvent.click(screen.getByRole("button", { name: "g.reply" }));
+    await waitFor(() => expect(screen.queryByTestId("comment-box")).toBeNull());
+
+    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: true, username: "sender" }));
+    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: false, username: "sender" }));
+    expect(window.localStorage.getItem("ecency_reply_failed_decline_sender_alice_morning-light")).toBeNull();
+  });
+
   it("opens the reply box for the c key once the entry arrives, then hands the flag back", async () => {
     const onCommentHandled = vi.fn();
     let resolveEntry: ((value: unknown) => void) | undefined;
