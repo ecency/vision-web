@@ -2199,6 +2199,7 @@
     "scheduled-published-title": "Your scheduled post \"{{title}}\" is now live."
   },
   "notifications": {
+    "auth-required-desc": "Log in to see notifications",
     "type-all": "All Notifications",
     "type-all-short": "All",
     "load-failed": "Notifications could not be loaded.",
