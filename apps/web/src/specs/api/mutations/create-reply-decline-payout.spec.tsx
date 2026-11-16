@@ -133,3 +133,63 @@ describe("useCreateReply: decline payout", () => {
     expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true, username: "bob" });
   });
 });
+
+// #2104: the composer clears its draft on submit, so a broadcast that fails after
+// the reader left the post (the box unmounted, no callback to restore into) used
+// to lose the text. The failure itself puts the text back into the post's reply
+// draft, with the payout choice it was sent with, for whichever box opens next.
+describe("useCreateReply: a failed reply is kept for the post", () => {
+  const draft = () => window.localStorage.getItem("ecency_reply_text_alice_post-1");
+  const decline = () => window.localStorage.getItem("ecency_reply_failed_decline_bob_alice_post-1");
+
+  async function failWith(declinePayout: boolean, text = "a reply") {
+    sdkComment.mockRejectedValueOnce(new Error("rc"));
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, text, declinePayout });
+    });
+    await act(async () => {});
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    sdkComment.mockReset();
+  });
+
+  it("puts the text back into the post's reply draft with no box mounted", async () => {
+    await failWith(false);
+    expect(draft()).toBe(JSON.stringify("a reply"));
+    expect(decline()).toBeNull();
+  });
+
+  it("keeps a declined reply declined for its sender", async () => {
+    await failWith(true);
+    expect(draft()).toBe(JSON.stringify("a reply"));
+    expect(decline()).toBe(JSON.stringify("a reply"));
+  });
+
+  it("a later undeclined failure of the same text drops the decline", async () => {
+    await failWith(true);
+    await failWith(false);
+    expect(decline()).toBeNull();
+  });
+
+  // A newer draft the writer started meanwhile (another box, another account) is
+  // theirs: the failed text goes back only into a blank draft or its own text.
+  it("does not overwrite a newer draft for the post", async () => {
+    window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("a newer draft"));
+    await failWith(true);
+    expect(draft()).toBe(JSON.stringify("a newer draft"));
+  });
+
+  it("writes nothing on success", async () => {
+    sdkComment.mockResolvedValue({ id: "tx" });
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, declinePayout: true });
+    });
+    await act(async () => {});
+    expect(draft()).toBeNull();
+    expect(decline()).toBeNull();
+  });
+});

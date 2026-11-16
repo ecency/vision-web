@@ -1,4 +1,5 @@
 import * as ls from "@/utils/local-storage";
+import { isBlankBody } from "@/utils";
 
 // A failed DECLINED reply keeps its exact text under the sending account and the
 // parent post; the composer re-applies the decline only while its draft is still
@@ -23,4 +24,25 @@ export function rememberFailedDecline(
   } else if (ls.get(key) === text) {
     ls.remove(key);
   }
+}
+
+// A reply whose broadcast failed goes back into its post's reply draft (the form
+// cleared it on submit), with the payout choice it was sent with, so whichever
+// reply box opens on that post next finds it, even when the one that sent it is
+// gone (#2104). Called from the reply mutation's failure path, for every box.
+export function keepFailedReply(
+  username: string,
+  author: string,
+  permlink: string,
+  text: string,
+  declinePayout: boolean
+) {
+  // Only into a blank draft or one already holding this text: a newer draft the
+  // writer started meanwhile (another box, another account) stays theirs.
+  const draftKey = `reply_text_${author}_${permlink}`;
+  const draft = ls.get(draftKey);
+  if (draft === null || draft === text || (typeof draft === "string" && isBlankBody(draft))) {
+    ls.set(draftKey, text);
+  }
+  rememberFailedDecline(username, author, permlink, text, declinePayout);
 }
