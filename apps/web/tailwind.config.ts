@@ -188,7 +188,11 @@ const config: Config = {
         "default-010-light": "#394d66"
       },
       "input-bg-light": "#f5f5f5",
+      // Tailwind's own scales sit under this palette's tokens (#1742): with
+      // `presets: []`, a shade missing here compiles to nothing, silently. A key
+      // written here wins over Tailwind's value for the same name.
       gray: {
+        ...colors.gray,
         100: "#f8f9fa",
         200: "#e9ecef",
         300: "#dee2e6",
@@ -215,6 +219,7 @@ const config: Config = {
       },
       tundora: "#414141",
       blue: {
+        ...colors.blue,
         powder: "#cee2ff",
         "light-powder": "#E5EFFC",
         dusk: "#2d5aa0",
@@ -247,7 +252,7 @@ const config: Config = {
       "silver-010": "#a6acaf",
       "silver-035": "#656d70",
       gunmetal: "#525b63",
-      red: "#e05e5e",
+      red: { ...colors.red, DEFAULT: "#e05e5e" },
       "red-light-020": "#ff6666",
       "red-020": "#c24f4f",
       "red-020-50": "rgba(208,82,82,0.8)",
@@ -255,9 +260,14 @@ const config: Config = {
       "red-040": "#ec3323",
       pink: "#FF6E87",
       indigo: {
+        ...colors.indigo,
         dark: "#081c36"
       },
-      green: "#69bb85",
+      purple: colors.purple,
+      yellow: colors.yellow,
+      amber: colors.amber,
+      neutral: colors.neutral,
+      green: { ...colors.green, DEFAULT: "#69bb85" },
       "green-hover": "#519362",
       "green-ink": "#27643a",
       "green-030": "#bcf3cf",
@@ -269,7 +279,7 @@ const config: Config = {
         "040": "#fff0c7",
         "046": "#fffcf2"
       },
-      orange: "#fd7e14"
+      orange: { ...colors.orange, DEFAULT: "#fd7e14" }
     }),
     columns: {
       auto: "auto",
@@ -798,15 +808,21 @@ const config: Config = {
       0: "0",
       5: "0.05",
       10: "0.1",
+      15: "0.15",
       20: "0.2",
       25: "0.25",
       30: "0.3",
+      35: "0.35",
       40: "0.4",
+      45: "0.45",
       50: "0.5",
+      55: "0.55",
       60: "0.6",
+      65: "0.65",
       70: "0.7",
       75: "0.75",
       80: "0.8",
+      85: "0.85",
       90: "0.9",
       95: "0.95",
       100: "1"
