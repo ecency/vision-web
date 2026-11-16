@@ -23,7 +23,7 @@ export function ProfileMenu({ username }: Props) {
   const section = useMemo(() => pathname?.split("/")[2] ?? "posts", [pathname]);
 
   const kebabMenuItemsAll = [
-    ...["trail", "replies", "followers", "following"].map((x) => ({
+    ...["trail", "replies", "followers", "following", "notifications"].map((x) => ({
       label: i18next.t(`profile.section-${x}`),
       href: `/@${username}/${x}`,
       selected: section === x,

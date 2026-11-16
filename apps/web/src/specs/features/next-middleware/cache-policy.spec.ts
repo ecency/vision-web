@@ -201,7 +201,7 @@ describe("getCachePolicyForPath", () => {
       }
     );
 
-    it.each(["followers", "following"])(
+    it.each(["followers", "following", "notifications"])(
       "does not treat /@alice/%s as an entry page (viewer-independent profile tier)",
       (section) => {
         // Regression: a 2-segment /@author/<section> must not fall through to
@@ -473,7 +473,8 @@ describe("parseEntryUrl", () => {
     "feed",
     "trail",
     "followers",
-    "following"
+    "following",
+    "notifications"
   ])("returns null for profile section /@alice/%s", (section) => {
     expect(parseEntryUrl(`/@alice/${section}`)).toBeNull();
   });

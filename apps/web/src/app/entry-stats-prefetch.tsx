@@ -39,6 +39,7 @@ const PROFILE_SECTIONS = new Set([
   "trail",
   "followers",
   "following",
+  "notifications",
   "rss",
   "rss.xml",
   "feed"
