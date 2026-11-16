@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.1
+
+### Patch Changes
+
+- Bug batch: render-helper embed policy and entities, Safari 12 matchAll, dead Tailwind colours, app image URLs (#2096)
+
+- [#2096](https://github.com/ecency/vision-web/pull/2096) [`0d2a824`](https://github.com/ecency/vision-web/commit/0d2a824cf2e26ec945515a25336ecc42e5d9fd4b) Thanks [@feruzm](https://github.com/feruzm)! - `SearchQuery` parses `author:`, `type:`, `category:` and `tag:` tokens with an exec loop instead of `String.prototype.matchAll`, which is missing on Safari 12 and threw there (#1701).
+
 ## 2.9.0
 
 ### Minor Changes

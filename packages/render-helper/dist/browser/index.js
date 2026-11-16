@@ -1,5 +1,5 @@
 import { DOMParser as DOMParser$1, XMLSerializer } from '@xmldom/xmldom';
-import { decodeHTML } from 'entities';
+import { decodeHTMLAttribute, decodeHTML } from 'entities';
 import xss from 'xss';
 import querystring from 'querystring';
 import { LRUCache } from 'lru-cache';
@@ -179,6 +179,30 @@ var ALLOWED_ATTRIBUTES = {
   "del": [],
   "ins": []
 };
+var RENDER_HELPER_DATA_ATTRIBUTES = /* @__PURE__ */ new Set([
+  "data-author",
+  "data-community",
+  "data-embed-src",
+  "data-filter",
+  "data-href",
+  "data-is-inline",
+  "data-permlink",
+  "data-proposal",
+  "data-start-time",
+  "data-tag",
+  "data-video-href",
+  "data-youtube"
+]);
+function stripMarkdownClasses(value) {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  const kept = tokens.filter((token) => !/markdown-/i.test(token));
+  return kept.length === tokens.length ? value : kept.join(" ");
+}
+var IFRAME_SANDBOX_GRANTS = /* @__PURE__ */ new Set([
+  "allow-scripts",
+  "allow-same-origin",
+  "allow-popups"
+]);
 
 // src/consts/embed-hosts.const.ts
 var ALLOWED_EMBED_HOSTS = /* @__PURE__ */ new Set([
@@ -219,8 +243,8 @@ var ALLOWED_EMBED_HOSTS = /* @__PURE__ */ new Set([
   // LBRY / Odysee
   "lbry.tv",
   "odysee.com",
-  // Skatehive / Skatehype
-  "ipfs.skatehive.app",
+  // Skatehype. (The skatehive IPFS gateway is not an embed host: iframe()
+  // turns those sources into a <video>, so no iframe may point at it.)
   "www.skatehype.com",
   "skatehype.com",
   // archive.org
@@ -244,7 +268,9 @@ var EMBED_HOST_PATH_PATTERNS = {
   "emb.d.tube": /^\/$/,
   // dtube carries the ref in the #! fragment
   "play.3speak.tv": /^\/(watch|embed)/,
-  "open.spotify.com": /^\/embed\//,
+  // embed-podcast is Spotify's older episode/show embed route, still emitted
+  // for those (SPOTIFY_EMBED_REGEX) and answered by Spotify.
+  "open.spotify.com": /^\/embed(?:-podcast)?\//,
   "www.loom.com": /^\/embed\//,
   "www.bitchute.com": /^\/embed\//,
   "bitchute.com": /^\/embed\//,
@@ -257,23 +283,66 @@ var EMBED_HOST_PATH_PATTERNS = {
   // form, while Odysee's own share dialog hands out fully-encoded URLs, and
   // `URL.pathname` does not decode either. ODYSEE_REGEX accepts both for the
   // same reason.
-  "odysee.com": /^\/(?:\$|%24)\/embed\//
+  "odysee.com": /^\/(?:\$|%24)\/embed\//,
+  // The rest mirror the iframe.method.ts provider patterns (#1919), so the
+  // sanitizer holds an untransformed iframe to the same shapes iframe() does.
+  "lbry.tv": /^\/(?:\$|%24)\/embed\//,
+  "3speak.tv": /^\/(watch|embed)$/,
+  "audio.3speak.tv": /^\/play$/,
+  "w.soundcloud.com": /^\/player\/$/,
+  "archive.org": /^\/embed\/[^/]+$/,
+  "www.vimm.tv": /^\/[A-Za-z0-9_-]+(?:\/embed)?\/?$/,
+  "brandnewtube.com": /^\/embed\/[a-z0-9]+$/i,
+  "www.skatehype.com": /^\/ifplay\.php$/,
+  "skatehype.com": /^\/ifplay\.php$/,
+  "embed.truvvl.com": /^\/@[\w.\d-]+\//,
+  "aureal-embed.web.app": /^\/\d+$/,
+  "www.aureal-embed.web.app": /^\/\d+$/
 };
+var EMBED_SUFFIX_PATH_PATTERNS = {
+  ".dapplr.in": /^\/file\/dapplr-videos\//
+};
+var isTrimmable = (code) => code >= 1 && code <= 32;
+function trimC0AndSpace(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && isTrimmable(value.charCodeAt(start))) start++;
+  while (end > start && isTrimmable(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
 function isAllowedEmbedSrc(value) {
   if (!value) return false;
+  const trimmed = trimC0AndSpace(value);
+  if (!/^https:\/\//i.test(trimmed) || trimmed.includes("\0")) return false;
   let url;
   try {
-    url = new URL(value.trim());
+    url = new URL(trimmed);
   } catch {
     return false;
   }
   if (url.protocol !== "https:") return false;
   const host = url.hostname.toLowerCase();
-  const hostAllowed = ALLOWED_EMBED_HOSTS.has(host) || ALLOWED_EMBED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
-  if (!hostAllowed) return false;
-  const pathPattern = EMBED_HOST_PATH_PATTERNS[host];
-  if (pathPattern && !pathPattern.test(url.pathname)) return false;
-  return true;
+  if (ALLOWED_EMBED_HOSTS.has(host)) {
+    const pathPattern = EMBED_HOST_PATH_PATTERNS[host];
+    return !pathPattern || pathPattern.test(url.pathname);
+  }
+  const suffix = ALLOWED_EMBED_HOST_SUFFIXES.find((s) => host.endsWith(s) && host.length > s.length && !host.startsWith("."));
+  if (!suffix) return false;
+  const suffixPattern = EMBED_SUFFIX_PATH_PATTERNS[suffix];
+  return !suffixPattern || suffixPattern.test(url.pathname);
+}
+function canonicalEmbedSrc(src) {
+  let s = src.trim().replace(/^(?:https?:)?\/\//i, "https://").replace(/^https:\/\/(?:m\.)?youtube\.com\//i, "https://www.youtube.com/").replace(/^https:\/\/(?:play\.)?3speak\.[a-z]+\//i, "https://play.3speak.tv/");
+  if (/^https:\/\/www\.youtube\.com\//i.test(s)) {
+    s = s.replace(/^(https:\/\/www\.youtube\.com)\/embed\//i, "$1/embed/");
+    const shortId = s.match(/^https:\/\/www\.youtube\.com\/shorts\/([A-Za-z0-9_-]{11})\/?(?=[?#]|$)/i);
+    if (shortId) s = `https://www.youtube.com/embed/${shortId[1]}`;
+  }
+  const bitchute = s.match(BITCHUTE_REGEX);
+  if (bitchute) s = `https://www.bitchute.com/embed/${bitchute[1]}/`;
+  const brighteon = s.match(BRIGHTEON_REGEX);
+  if (brighteon) s = `https://www.brighteon.com/embed/${brighteon[2]}`;
+  return s;
 }
 function createParser() {
   return new DOMParser$1({
@@ -285,10 +354,21 @@ var DOMParser = createParser();
 var LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g;
 var LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi;
 var OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi;
+function guardNumericRefs(value) {
+  return value.replace(LEADING_ZEROS_DEC, "&#").replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3)).replace(OVERLONG_NUMERIC_REF, "\uFFFD");
+}
 function decodeEntities(value) {
-  const safe = value.replace(LEADING_ZEROS_DEC, "&#").replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3)).replace(OVERLONG_NUMERIC_REF, "\uFFFD");
+  const safe = guardNumericRefs(value);
   try {
     return decodeHTML(safe);
+  } catch {
+    return safe;
+  }
+}
+function decodeAttributeEntities(value) {
+  const safe = guardNumericRefs(value);
+  try {
+    return decodeHTMLAttribute(safe);
   } catch {
     return safe;
   }
@@ -300,6 +380,9 @@ function decodeImageSrc(src) {
   } catch {
     return entityDecoded.trim();
   }
+}
+function escapeAttrValue(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\t/g, "&#9;").replace(/\n/g, "&#10;").replace(/\r/g, "&#13;");
 }
 function isSpaceChar(c) {
   return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
@@ -315,6 +398,9 @@ function isAttrNameChar(c) {
 }
 function removeDuplicateAttributes(html) {
   const n = html.length;
+  const lastGt = html.lastIndexOf(">");
+  const scanBudget = 4 * n + 4096;
+  let wasted = 0;
   let out = "";
   let i = 0;
   while (i < n) {
@@ -324,6 +410,10 @@ function removeDuplicateAttributes(html) {
       break;
     }
     out += html.slice(i, lt);
+    if (lt > lastGt) {
+      out += html.slice(lt);
+      break;
+    }
     if (lt + 1 >= n || !isAsciiLetter(html.charCodeAt(lt + 1))) {
       out += "<";
       i = lt + 1;
@@ -356,6 +446,7 @@ function removeDuplicateAttributes(html) {
       let r = q;
       while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
       let valueEnd = q;
+      let rawValue = null;
       if (r < n && html.charCodeAt(r) === 61) {
         r++;
         while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
@@ -369,6 +460,7 @@ function removeDuplicateAttributes(html) {
               valueEnd = gt < 0 ? n : gt;
             } else {
               valueEnd = end + 1;
+              rawValue = html.slice(r + 1, end);
             }
           } else {
             let s = r;
@@ -378,6 +470,7 @@ function removeDuplicateAttributes(html) {
               s++;
             }
             valueEnd = s;
+            rawValue = html.slice(r, s);
           }
         } else {
           valueEnd = r;
@@ -388,7 +481,10 @@ function removeDuplicateAttributes(html) {
       const key = attrName.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
-        attrs.push(fullAttr);
+        const value = rawValue === null ? null : escapeAttrValue(decodeAttributeEntities(rawValue.replace(/\r\n?|[\n\t]/g, " ")));
+        attrs.push(
+          value === null || value === rawValue ? key + fullAttr.slice(attrName.length) : `${key}="${value}"`
+        );
       }
     }
     let selfClose = false;
@@ -397,6 +493,11 @@ function removeDuplicateAttributes(html) {
       q++;
     }
     if (q >= n || html.charCodeAt(q) !== 62) {
+      wasted += q - lt;
+      if (wasted > scanBudget) {
+        out += html.slice(lt);
+        break;
+      }
       out += "<";
       i = lt + 1;
       continue;
@@ -773,6 +874,64 @@ function buildPictureSources(rawUrl) {
   return { avif, webp };
 }
 
+// src/methods/render-boundary.method.ts
+var RENDER_NONCE_ATTRIBUTE = "data-rh";
+var VALID_ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9:_.-]*$/;
+var VALID_ATTRIBUTE_NAME = /^[A-Za-z0-9_:.-]+$/;
+var STRICT_STAMPED_TAG = /^<[A-Za-z][A-Za-z0-9:_.-]*(?:\s+[A-Za-z0-9_:.-]+="[^"]*")*\s*\/?>$/;
+function isStrictTag(rawTag) {
+  return STRICT_STAMPED_TAG.test(rawTag);
+}
+var WRAPPER_ELEMENTS = /* @__PURE__ */ new Set(["html", "head", "body"]);
+function isHiddenElement(node) {
+  const name = node.nodeName;
+  if (!VALID_ELEMENT_NAME.test(name)) return true;
+  const local = name.toLowerCase().replace(/^.*:/, "");
+  return local === "script" || local === "style";
+}
+function createRenderNonce() {
+  const cryptoApi = typeof globalThis !== "undefined" ? globalThis.crypto : void 0;
+  const words = new Uint32Array(4);
+  if (cryptoApi && typeof cryptoApi.getRandomValues === "function") {
+    cryptoApi.getRandomValues(words);
+  } else {
+    for (let i = 0; i < words.length; i++) words[i] = Math.floor(Math.random() * 4294967296);
+  }
+  return `rh${Array.from(words, (w) => w.toString(36)).join("")}`;
+}
+var DROPPED = "<!---->";
+var escapeText = (text2) => text2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function xmldomNodeFilter(nonce) {
+  return renderNodeFilter(nonce);
+}
+function renderNodeFilter(nonce) {
+  return (node) => {
+    switch (node.nodeType) {
+      case 1: {
+        if (isHiddenElement(node)) return DROPPED;
+        const el = node;
+        for (const attr2 of Array.from(el.attributes)) {
+          if (!VALID_ATTRIBUTE_NAME.test(attr2.name)) el.removeAttributeNode(attr2);
+        }
+        if (!WRAPPER_ELEMENTS.has(node.nodeName.toLowerCase())) {
+          node.setAttribute(RENDER_NONCE_ATTRIBUTE, nonce);
+        }
+        return node;
+      }
+      case 4:
+        return escapeText(node.nodeValue || "");
+      case 7:
+      // processing instruction
+      case 8:
+      // comment
+      case 10:
+        return DROPPED;
+      default:
+        return node;
+    }
+  };
+}
+
 // src/methods/image-dimensions.ts
 var MAX_IMAGE_DIMENSION_PX = 8192;
 var MAX_IMAGE_DIMENSION_RATIO = 40;
@@ -794,6 +953,22 @@ function authorPixelSize(width, height) {
   return { width: String(w), height: String(h) };
 }
 
+// src/regex-matches.ts
+function* regexMatches(text2, re) {
+  const copy = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+  const unicode = copy.unicode || copy.flags.includes("v");
+  let match;
+  while ((match = copy.exec(text2)) !== null) {
+    if (match[0] === "") {
+      const code = text2.charCodeAt(copy.lastIndex);
+      const next = text2.charCodeAt(copy.lastIndex + 1);
+      const pair = unicode && code >= 55296 && code <= 56319 && next >= 56320 && next <= 57343;
+      copy.lastIndex += pair ? 2 : 1;
+    }
+    yield match;
+  }
+}
+
 // src/methods/sanitize-html.method.ts
 var EMBED_SRC_DATA_ATTRS = /* @__PURE__ */ new Set(["data-embed-src", "data-video-href"]);
 var isSafeNavValue = (value) => {
@@ -803,11 +978,25 @@ var isSafeNavValue = (value) => {
   const isRelative = /^(\/\/|\/[^/]?|#|\?|[a-z0-9._\-]+(\/|$))/i.test(trimmed);
   return isSafeScheme || isRelative;
 };
+var ASCII_WS = /[\t\n\f\r ]+/;
+var srcsetCandidates = (srcset) => srcset.split(",").map((candidate) => candidate.split(ASCII_WS).filter(Boolean)).filter((parts) => parts.length > 0);
+var isWellFormedSrcset = (srcset) => srcsetCandidates(srcset).every(
+  (parts) => parts.length === 1 || parts.length === 2 && /^(?:\d+(?:\.\d+)?|\.\d+)[wx]$/i.test(parts[1])
+);
 var isProxyPSrcset = (srcset) => {
   const base = trimTrailingSlash(getProxyBase());
-  const candidates = srcset.split(",").map((c) => c.trim().split(/\s+/)[0]).filter(Boolean);
+  const candidates = srcsetCandidates(srcset).map((parts) => parts[0]);
   return candidates.length > 0 && candidates.every((url) => url.startsWith(`${base}/p/`));
 };
+var escapeAttr = (value) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+var hasQuotedAttr = (attrs, wanted) => {
+  for (const m of regexMatches(attrs, /\s([^\s"'>\/=]+)="[^"]*"/g)) {
+    if (m[1].toLowerCase() === wanted) return true;
+  }
+  return false;
+};
+var isUrlAttribute = (tag, name) => name === "src" && tag !== "a" || name === "srcset" || name === "poster" || name === "data-href" || EMBED_SRC_DATA_ATTRS.has(name);
+var RENDER_HELPER_RELS = /* @__PURE__ */ new Set(["nofollow ugc noopener", "noopener"]);
 var QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g;
 function enforceImageDimensionPair(html) {
   return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
@@ -815,11 +1004,11 @@ function enforceImageDimensionPair(html) {
     const attrs = [];
     let match;
     while (match = QUOTED_ATTR.exec(tag)) {
-      attrs.push({ name: match[1].toLowerCase(), value: decodeEntities(match[2]) });
+      attrs.push({ name: match[1].toLowerCase(), value: decodeAttributeEntities(match[2]) });
     }
-    const width = attrs.find((attr) => attr.name === "width")?.value;
-    const height = attrs.find((attr) => attr.name === "height")?.value;
-    const src = (attrs.find((attr) => attr.name === "src")?.value ?? "").trim();
+    const width = attrs.find((attr2) => attr2.name === "width")?.value;
+    const height = attrs.find((attr2) => attr2.name === "height")?.value;
+    const src = (attrs.find((attr2) => attr2.name === "src")?.value ?? "").trim();
     if (src && authorPixelSize(width, height)) return tag;
     QUOTED_ATTR.lastIndex = 0;
     return tag.replace(
@@ -830,23 +1019,34 @@ function enforceImageDimensionPair(html) {
 }
 function sanitizeHtml(html, options) {
   const preserveImageDimensions = !!options?.preserveImageDimensions;
+  const untransformed = !!options?.untransformed;
+  const beforeTransform = !!options?.beforeTransform;
+  const renderNonce = options?.renderNonce;
+  const enforce = untransformed || !!renderNonce;
+  const proxyBase2 = `${trimTrailingSlash(getProxyBase())}/`;
   const whiteList = preserveImageDimensions ? {
     ...ALLOWED_ATTRIBUTES,
     img: [...ALLOWED_ATTRIBUTES.img ?? [], "width", "height"]
   } : ALLOWED_ATTRIBUTES;
+  let trusted = false;
   const cleaned = xss(html, {
     whiteList,
+    onTag: (_tag, rawTag) => {
+      trusted = !!renderNonce && rawTag.indexOf(renderNonce) !== -1 && isStrictTag(rawTag);
+      return void 0;
+    },
     stripIgnoreTag: true,
     stripIgnoreTagBody: ["style"],
     css: false,
     // block style attrs entirely for safety
-    onTagAttr: (tag, name, value) => {
-      const decoded = decodeEntities(value.trim());
+    onTagAttr: (tag, name, value, isWhiteAttr) => {
+      const decoded = decodeAttributeEntities(value.trim());
       const decodedLower = decoded.toLowerCase();
       if (name.startsWith("on")) return "";
       if (tag === "img" && name === "src" && !/^https?:\/\//.test(decodedLower)) return "";
+      if ((tag === "img" || tag === "source") && name === "srcset" && !beforeTransform && !isWellFormedSrcset(decoded)) return "";
       if (tag === "img" && name === "srcset") {
-        const candidates = decoded.split(",").map((c) => c.trim().split(/\s+/)[0]);
+        const candidates = srcsetCandidates(decoded).map((parts) => parts[0]);
         if (candidates.some((url) => !/^https?:\/\//i.test(url))) return "";
       }
       if (tag === "source" && name === "srcset" && !isProxyPSrcset(decoded)) return "";
@@ -858,10 +1058,54 @@ function sanitizeHtml(html, options) {
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return "";
       }
       if (tag === "span" && name === "class" && decoded.toLowerCase().trim() === "wr") return "";
+      if (!beforeTransform && (tag === "iframe" && name === "src" || EMBED_SRC_DATA_ATTRS.has(name)) && /[\t\n\r]/.test(decoded)) return "";
+      if (tag === "iframe" && name === "src" && !beforeTransform && !isAllowedEmbedSrc(decoded)) {
+        const canonical = canonicalEmbedSrc(decoded);
+        return isAllowedEmbedSrc(canonical) ? `src="${escapeAttr(canonical)}"` : "";
+      }
+      if (tag === "iframe" && name === "sandbox") {
+        const tokens = decodedLower.split(/\s+/).filter(Boolean);
+        const kept = tokens.filter((token) => IFRAME_SANDBOX_GRANTS.has(token));
+        if (kept.length !== tokens.length) return `sandbox="${kept.join(" ")}"`;
+      }
+      if (enforce) {
+        if (tag === "img" && name === "src" && !decoded.startsWith(proxyBase2)) {
+          const proxied = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
+          return proxied ? `src="${escapeAttr(proxied)}"` : "";
+        }
+        if (tag === "img" && name === "srcset" && srcsetCandidates(decoded).some((parts) => !parts[0].startsWith(proxyBase2))) return "";
+        if (tag === "video" && name === "poster" && !decoded.startsWith(proxyBase2)) {
+          const proxied = /^https?:\/\//i.test(decoded) ? proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true }) : "";
+          return proxied ? `poster="${escapeAttr(proxied)}"` : "";
+        }
+      }
+      if (enforce) {
+        if (isWhiteAttr && name === "class" && /[&\u0000-\u001f\u007f]/.test(value)) {
+          const kept = decoded.replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).filter((token) => token && !/markdown/i.test(token)).join(" ");
+          return kept ? `class="${escapeAttr(kept)}"` : "";
+        }
+        if (tag === "a" && name === "rel" && !RENDER_HELPER_RELS.has(decodedLower.replace(/\s+/g, " "))) return "";
+        if (tag === "a" && name === "target" && decodedLower !== "_blank") return "";
+      }
+      if (enforce && !trusted) {
+        if (tag === "a" && (name === "target" || name === "rel")) return "";
+        const navigable = tag === "a" && name === "href" ? decoded.replace(/^[\u0000- �]+/, "").replace(/[\t\n\r]/g, "").replace(/\\/g, "/") : "";
+        if (navigable && /^(?:https?:)?\/\//i.test(navigable)) {
+          return `href="${escapeAttr(navigable)}" rel="nofollow ugc noopener"`;
+        }
+        if (RENDER_HELPER_DATA_ATTRIBUTES.has(name)) return "";
+        if (isWhiteAttr && name === "class") {
+          const kept = stripMarkdownClasses(decoded);
+          if (kept !== decoded) return kept ? `class="${escapeAttr(kept)}"` : "";
+        }
+      }
       if (EMBED_SRC_DATA_ATTRS.has(name) && !isAllowedEmbedSrc(decoded)) return "";
       if (name === "data-href" && !isSafeNavValue(decoded)) return "";
       if (name === "id") {
         if (!ID_WHITELIST.test(decoded)) return "";
+      }
+      if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
+        return `${name}="${escapeAttr(decoded)}"`;
       }
       return void 0;
     }
@@ -870,7 +1114,18 @@ function sanitizeHtml(html, options) {
     /<source\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi,
     (t) => /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ""
   );
-  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareSource) : withoutBareSource;
+  let withoutBareIframe = withoutBareSource;
+  if (!beforeTransform) {
+    let previous;
+    do {
+      previous = withoutBareIframe;
+      withoutBareIframe = withoutBareIframe.replace(
+        /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
+        (t, attrs) => hasQuotedAttr(attrs, "src") ? t : ""
+      );
+    } while (withoutBareIframe !== previous);
+  }
+  return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
 }
 
 // src/methods/internal-thumbnail.ts
@@ -911,7 +1166,7 @@ function img(el, state, forApp = true, renderOptions) {
   const src = el.getAttribute("src") || "";
   const decodedSrc = decodeImageSrc(src);
   const reserved = renderOptions?.preserveImageDimensions ? authorPixelSize(el.getAttribute("width"), el.getAttribute("height")) : null;
-  ["onerror", "dynsrc", "lowsrc", "width", "height"].forEach((attr) => el.removeAttribute(attr));
+  ["onerror", "dynsrc", "lowsrc", "width", "height"].forEach((attr2) => el.removeAttribute(attr2));
   const isInvalid = !src || decodedSrc.startsWith("javascript") || decodedSrc.startsWith("vbscript") || decodedSrc === "x";
   if (isInvalid) {
     el.removeAttribute("src");
@@ -1088,6 +1343,14 @@ var addLineBreakBeforePostLink = (el, forApp, isInline) => {
     el.parentNode.insertBefore(br, el);
   }
 };
+function isInSiteHref(href) {
+  try {
+    return WHITE_LIST.includes(new URL(href.trim(), "https://ecency.com/").hostname.replace(/^www\./, ""));
+  } catch {
+    return false;
+  }
+}
+var CHIP_CLASS_TOKENS = /* @__PURE__ */ new Set(["markdown-author-link", "markdown-tag-link", "er-author", "er-author-link", "er-tag", "er-tag-link"]);
 function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (!el || !el.parentNode) {
     return;
@@ -1104,7 +1367,10 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     return;
   }
   const className = el.getAttribute("class");
-  if (className && (["markdown-author-link", "markdown-tag-link"].includes(className) || className.includes("er-author") || className.includes("er-tag"))) {
+  const classTokens = (className || "").split(/\s+/);
+  const isChip = classTokens.some((token) => CHIP_CLASS_TOKENS.has(token));
+  if (isChip && isInSiteHref(href)) {
+    el.removeAttribute("rel");
     if (el.getAttribute("target")) {
       el.setAttribute("rel", getExternalLinkRel(seoContext));
     }
@@ -1680,6 +1946,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     href = `https://${href}`;
   }
   if (forApp) {
+    el.removeAttribute("rel");
+    el.removeAttribute("target");
     el.setAttribute("data-href", href);
     const match2 = href.match(YOUTUBE_REGEX);
     if (match2 && match2[1]) {
@@ -1695,6 +1963,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     const matchS = href.trim().startsWith("#");
     if (matchS) {
       el.setAttribute("class", "markdown-internal-link");
+      el.removeAttribute("rel");
+      el.removeAttribute("target");
     } else {
       el.setAttribute("target", "_blank");
       el.setAttribute("rel", getExternalLinkRel(seoContext));
@@ -1708,10 +1978,39 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
   if (!el || !el.parentNode) {
     return;
   }
-  const src = el.getAttribute("src");
+  const src = trimAsciiWhitespace(el.getAttribute("src") || "");
   if (!src) {
     el.parentNode.removeChild(el);
     return;
+  }
+  const supported = applyProvider(el, src, parentDomain, forApp, renderOptions);
+  if (!el.parentNode) {
+    return;
+  }
+  if (supported) {
+    const finalSrc = canonicalEmbedSrc(el.getAttribute("src") || "");
+    if (isAllowedEmbedSrc(finalSrc)) {
+      el.setAttribute("src", finalSrc);
+      return;
+    }
+  }
+  const replaceNode = el.ownerDocument.createElement("div");
+  replaceNode.setAttribute("class", "unsupported-iframe");
+  replaceNode.textContent = `(Unsupported ${src})`;
+  el.parentNode.insertBefore(replaceNode, el);
+  el.parentNode.removeChild(el);
+}
+var isAsciiWhitespace = (c) => c === 9 || c === 10 || c === 12 || c === 13 || c === 32;
+function trimAsciiWhitespace(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && isAsciiWhitespace(value.charCodeAt(start))) start++;
+  while (end > start && isAsciiWhitespace(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
+function applyProvider(el, src, parentDomain, forApp, renderOptions) {
+  if (!el.parentNode) {
+    return false;
   }
   const ytMatch = src.match(YOUTUBE_EMBED_REGEX);
   if (ytMatch) {
@@ -1719,24 +2018,28 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
     if (!/^(https?:)?\/\/www\./i.test(stripped)) {
       stripped = stripped.replace(/^(https?:)?\/\/(?:m\.)?youtube\.com/i, "https://www.youtube.com");
     }
+    stripped = stripped.replace(/^((?:https?:)?\/\/[^/]+)\/embed\//i, "$1/embed/");
     el.setAttribute("src", stripped);
     if (ytMatch[2].toLowerCase() === "shorts") {
       const shortId = stripped.match(/\/shorts\/([A-Za-z0-9_-]{11})\/?(?=[?#]|$)/i);
-      if (shortId) {
-        el.setAttribute("src", `https://www.youtube.com/embed/${shortId[1]}`);
-        el.setAttribute("class", "portrait-embed");
+      if (!shortId) {
+        return false;
       }
+      el.setAttribute("src", `https://www.youtube.com/embed/${shortId[1]}`);
+      el.setAttribute("class", "portrait-embed");
     }
-    return;
+    return true;
   }
-  if (src.match(BITCHUTE_REGEX)) {
-    return;
+  const bcMatch = src.match(BITCHUTE_REGEX);
+  if (bcMatch) {
+    el.setAttribute("src", `https://www.bitchute.com/embed/${bcMatch[1]}/`);
+    return true;
   }
   const m = src.match(VIMEO_EMBED_REGEX);
   if (m && m.length === 2) {
     const s = `https://player.vimeo.com/video/${m[1]}`;
     el.setAttribute("src", s);
-    return;
+    return true;
   }
   if (src.match(TWITCH_EMBED_REGEX)) {
     let s = src;
@@ -1749,7 +2052,7 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
       s = `${s}${separator}autoplay=false`;
     }
     el.setAttribute("src", s);
-    return;
+    return true;
   }
   if (src.match(SPEAK_EMBED_REGEX)) {
     let normalizedSrc = src.replace(/(?:play\.)?3speak\.[a-z]+/i, "play.3speak.tv");
@@ -1770,7 +2073,7 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
     }
     el.setAttribute("src", s);
     el.setAttribute("class", "speak-iframe");
-    return;
+    return true;
   }
   if (src.match(SPEAK_AUDIO_EMBED_REGEX)) {
     let normalizedSrc = src;
@@ -1784,13 +2087,13 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
     el.setAttribute("class", "speak-audio-iframe");
     el.setAttribute("frameborder", "0");
     el.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
-    return;
+    return true;
   }
   if (src.match(SPOTIFY_EMBED_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(SOUNDCLOUD_EMBED_REGEX)) {
     const match = src.match(/url=(.+?)(?:&|$)/);
@@ -1798,28 +2101,28 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
       const s = `https://w.soundcloud.com/player/?url=${match[1]}&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&visual=true`;
       el.setAttribute("src", s);
     }
-    return;
+    return true;
   }
   if (src.match(D_TUBE_EMBED_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("sandbox", "allow-scripts allow-same-origin");
     el.setAttribute("frameborder", "0");
     el.setAttribute("allowfullscreen", "true");
-    return;
+    return true;
   }
   if (src.match(VIMM_EMBED_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
     el.setAttribute("frameborder", "0");
     el.setAttribute("allowfullscreen", "true");
-    return;
+    return true;
   }
   if (src.match(DAPPLR_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("sandbox", "allow-scripts allow-same-origin");
     el.setAttribute("frameborder", "0");
     el.setAttribute("allowfullscreen", "true");
-    return;
+    return true;
   }
   if (src.match(TRUVVL_REGEX)) {
     el.setAttribute("src", src);
@@ -1827,70 +2130,65 @@ function iframe(el, parentDomain = "ecency.com", forApp = false, renderOptions) 
     el.setAttribute("frameborder", "0");
     el.setAttribute("class", "portrait-embed");
     el.setAttribute("allowfullscreen", "true");
-    return;
+    return true;
   }
   if (src.match(LBRY_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(ODYSEE_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(SKATEHIVE_IPFS_REGEX)) {
-    const video = el.ownerDocument.createElement("video");
-    video.setAttribute("src", src);
-    video.setAttribute("controls", "");
-    el.parentNode.insertBefore(video, el);
+    const video2 = el.ownerDocument.createElement("video");
+    video2.setAttribute("src", src);
+    video2.setAttribute("controls", "");
+    el.parentNode.insertBefore(video2, el);
     el.parentNode.removeChild(el);
-    return;
+    return true;
   }
   if (src.match(SKATEHYPE_EMBED_REGEX)) {
     const normalizedSrc = src.replace(/^(https?:)?\/\//i, "https://");
     el.setAttribute("src", normalizedSrc);
     el.setAttribute("frameborder", "0");
     el.setAttribute("allowfullscreen", "true");
-    return;
+    return true;
   }
   if (src.match(ARCH_REGEX)) {
     el.setAttribute("src", src);
-    return;
+    return true;
   }
   if (src.match(RUMBLE_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
-  if (src.match(BRIGHTEON_REGEX)) {
-    el.setAttribute("src", src);
+  const bnMatch = src.match(BRIGHTEON_REGEX);
+  if (bnMatch) {
+    el.setAttribute("src", `https://www.brighteon.com/embed/${bnMatch[2]}`);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(BRAND_NEW_TUBE_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(LOOM_EMBED_REGEX)) {
     el.setAttribute("src", src);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
   if (src.match(AUREAL_EMBED_REGEX)) {
     const normalizedSrc = src.startsWith("//") ? `https:${src}` : src;
     el.setAttribute("src", normalizedSrc);
     el.setAttribute("frameborder", "0");
-    return;
+    return true;
   }
-  const replaceNode = el.ownerDocument.createElement("div");
-  replaceNode.setAttribute("class", "unsupported-iframe");
-  replaceNode.textContent = `(Unsupported ${src})`;
-  if (el.parentNode) {
-    el.parentNode.insertBefore(replaceNode, el);
-    el.parentNode.removeChild(el);
-  }
+  return false;
 }
 
 // src/methods/p.method.ts
@@ -1902,42 +2200,97 @@ function p(el) {
 }
 
 // src/methods/linkify.method.ts
+var RUN_TAG = "#[-a-z\\d]+";
+var RUN_MENTION = "[@\uFF20][a-z][-.a-z\\d^/]+[a-z\\d]";
+var RUN_ITEM = new RegExp(`${RUN_TAG}|${RUN_MENTION}`, "gi");
+var TAG_RUN = new RegExp(`(^|\\s|>|&gt;)(${RUN_TAG}(?:${RUN_TAG}|${RUN_MENTION})*)`, "gi");
+var MENTION_RUN = new RegExp(
+  `(^|[^a-zA-Z0-9_!#$%&*@\uFF20/]|(^|[^a-zA-Z0-9_+~.-/]))[@\uFF20]([a-z][-.a-z\\d^/]+[a-z\\d])((?:${RUN_MENTION}|${RUN_TAG})*)`,
+  "gi"
+);
+function itemsLength(items, count) {
+  let n = 0;
+  for (let i = 0; i < count; i++) n += items[i].length;
+  return n;
+}
+function replaceRuns(content, re, fn) {
+  re.lastIndex = 0;
+  let out = "";
+  let last = 0;
+  let match;
+  while (match = re.exec(content)) {
+    const [replacement, consumed] = fn(match);
+    out += content.slice(last, match.index) + replacement;
+    last = match.index + Math.max(consumed, 1);
+    re.lastIndex = last;
+  }
+  return out + content.slice(last);
+}
+function isLinkableMention(mention) {
+  const user = mention.substring(1);
+  return user.indexOf("/") === -1 && isValidUsername(user);
+}
+var attr = (value) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function linkify(content, forApp, renderOptions) {
-  content = content.replace(/(^|\s|>)(#[-a-z\d]+)/gi, (tag) => {
-    if (/#[\d]+$/.test(tag)) return tag;
-    const preceding = /^\s|>/.test(tag) ? tag[0] : "";
-    tag = tag.replace(/^>/, "");
-    const tag2 = tag.trim().substring(1);
-    const tagLower = tag2.toLowerCase();
-    if (!forApp) {
-      if (renderOptions?.inertAuthorAndTagChips) {
-        return `${preceding}<span class="er-tag er-tag-link">${tag.trim()}</span>`;
-      }
-      return `${preceding}<a class="er-tag er-tag-link" href="/trending/${tagLower}">${tag.trim()}</a>`;
-    }
-    return `${preceding}<a class="markdown-tag-link" data-tag="${tagLower}">${tag.trim()}</a>`;
-  });
   const authorPlaceholders = [];
-  content = content.replace(
-    /(^|[^a-zA-Z0-9_!#$%&*@＠/]|(^|[^a-zA-Z0-9_+~.-/]))[@＠]([a-z][-.a-z\d^/]+[a-z\d])/gi,
-    (match, preceeding1, preceeding2, user) => {
-      const userLower = user.toLowerCase();
-      const preceedings = (preceeding1 || "") + (preceeding2 || "");
-      if (userLower.indexOf("/") === -1 && isValidUsername(user)) {
-        if (!forApp) {
-          const avatarSrc = `${getProxyBase()}/u/${userLower}/avatar/small`;
-          const inner = `<img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}`;
-          const html = renderOptions?.inertAuthorAndTagChips ? `${preceedings}<span class="er-author er-author-link">${inner}</span>` : `${preceedings}<a class="er-author er-author-link" href="/@${userLower}">${inner}</a>`;
-          const placeholder = `\u200C${authorPlaceholders.length}\u200C`;
-          authorPlaceholders.push({ placeholder, html });
-          return placeholder;
-        }
-        return `${preceedings}<a class="markdown-author-link" data-author="${userLower}">@${user}</a>`;
-      } else {
-        return match;
-      }
+  const tagHtml = (tag) => {
+    const tagLower = tag.substring(1).toLowerCase();
+    if (!forApp) {
+      return renderOptions?.inertAuthorAndTagChips ? `<span class="er-tag er-tag-link">${tag}</span>` : `<a class="er-tag er-tag-link" href="/trending/${attr(tagLower)}">${tag}</a>`;
     }
-  );
+    return `<a class="markdown-tag-link" data-tag="${attr(tagLower)}">${tag}</a>`;
+  };
+  const mentionHtml = (mention, before, placeholder) => {
+    if (!isLinkableMention(mention)) return null;
+    const user = mention.substring(1);
+    const userLower = user.toLowerCase();
+    let html;
+    if (!forApp) {
+      const avatarSrc = `${getProxyBase()}/u/${userLower}/avatar/small`;
+      const inner = `<img class="er-author-link-image" src="${attr(avatarSrc)}" alt="${attr(userLower)}"/>@${userLower}`;
+      html = renderOptions?.inertAuthorAndTagChips ? `${before}<span class="er-author er-author-link">${inner}</span>` : `${before}<a class="er-author er-author-link" href="/@${attr(userLower)}">${inner}</a>`;
+    } else {
+      html = `${before}<a class="markdown-author-link" data-author="${attr(userLower)}">@${user}</a>`;
+      if (!placeholder) return html;
+    }
+    const token = `\u200C${authorPlaceholders.length}\u200C`;
+    authorPlaceholders.push(html);
+    return token;
+  };
+  const linkRun = (items, before, placeholder) => {
+    let out = "";
+    let pending = before;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const html = item[0] === "#" ? /^#\d+$/.test(item) ? null : pending + tagHtml(item) : mentionHtml(item, pending, placeholder);
+      if (html === null) return [out, i];
+      out += html;
+      pending = "";
+    }
+    return [out, items.length];
+  };
+  content = replaceRuns(content, TAG_RUN, (match) => {
+    const before = match[1];
+    const items = match[2].match(RUN_ITEM);
+    const preceding = before === ">" || before === "&gt;" || /^\s$/.test(before) ? before : "";
+    const [html, linked] = linkRun(items, preceding, true);
+    if (linked === 0) {
+      const head = before.length + items[0].length;
+      return [match[0].substring(0, head), head];
+    }
+    return [html, before.length + itemsLength(items, linked)];
+  });
+  content = replaceRuns(content, MENTION_RUN, (match) => {
+    const preceedings = match[1] || "";
+    const user = match[3];
+    const rest = match[4];
+    const head = match[0].length - rest.length;
+    const first = match[0].substring(head - user.length - 1, head);
+    const items = [first, ...rest.match(RUN_ITEM) ?? []];
+    const [html, linked] = linkRun(items, preceedings, false);
+    if (linked === 0) return [match[0].substring(0, head), head];
+    return [html, head - first.length + itemsLength(items, linked)];
+  });
   content = content.replace(
     /(^|\s)\/([a-z0-9-]+)\/@([\w.\d-]+)\/(\S+)/gi,
     (match, preceding, tag, author, p3) => {
@@ -1977,9 +2330,23 @@ function linkify(content, forApp, renderOptions) {
     firstImageUsed = true;
     return createImageHTML(imglink, isLCP, forApp);
   });
-  authorPlaceholders.forEach(({ placeholder, html }) => {
-    content = content.replace(placeholder, html);
-  });
+  if (authorPlaceholders.length > 0) {
+    const restored = /* @__PURE__ */ new Set();
+    const token = /\u200C(\d+)(?=\u200C)/g;
+    let out = "";
+    let last = 0;
+    let match;
+    while (match = token.exec(content)) {
+      const index = Number(match[1]);
+      if (index >= authorPlaceholders.length || restored.has(index)) continue;
+      restored.add(index);
+      const end = match.index + match[0].length + 1;
+      out += content.slice(last, match.index) + authorPlaceholders[index];
+      last = end;
+      token.lastIndex = end;
+    }
+    content = out + content.slice(last);
+  }
   return content;
 }
 
@@ -2018,8 +2385,9 @@ function text(node, forApp, renderOptions) {
     return;
   }
   const nodeValue = node.nodeValue || "";
-  const linkified = linkify(nodeValue, forApp, renderOptions);
-  if (linkified !== nodeValue) {
+  const escaped = nodeValue.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const linkified = linkify(escaped, forApp, renderOptions);
+  if (linkified !== escaped) {
     const doc = DOMParser.parseFromString(
       `<span class="wr">${linkified}</span>`,
       "text/html"
@@ -2065,7 +2433,16 @@ function text(node, forApp, renderOptions) {
       play.setAttribute("class", "markdown-video-play");
       anchor.appendChild(play);
       container.appendChild(anchor);
-      node.parentNode.replaceChild(container, node);
+      let start = e.index;
+      while (start > 0 && !/\s/.test(nodeValue[start - 1])) start--;
+      let end = e.index + e[0].length;
+      while (end < nodeValue.length && !/\s/.test(nodeValue[end])) end++;
+      const before = nodeValue.slice(0, start);
+      const after = nodeValue.slice(end);
+      const parent = node.parentNode;
+      if (before) parent.insertBefore(node.ownerDocument.createTextNode(before), node);
+      if (after) parent.insertBefore(node.ownerDocument.createTextNode(after), node.nextSibling);
+      parent.replaceChild(container, node);
       return;
     }
   }
@@ -2091,15 +2468,57 @@ function text(node, forApp, renderOptions) {
   }
 }
 
+// src/methods/video.method.ts
+function video(el) {
+  const poster = el.getAttribute("poster");
+  if (poster === null) {
+    return;
+  }
+  let decoded;
+  try {
+    decoded = decodeURIComponent(poster).trim();
+  } catch {
+    decoded = poster.trim();
+  }
+  if (decoded.startsWith(`${trimTrailingSlash(getProxyBase())}/`)) {
+    return;
+  }
+  const proxied = /^https?:\/\//i.test(decoded) ? proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true }) : "";
+  if (proxied) {
+    el.setAttribute("poster", proxied);
+  } else {
+    el.removeAttribute("poster");
+  }
+}
+
 // src/methods/traverse.method.ts
+var MAX_TRAVERSE_DEPTH = 2e3;
+function flattenToText(node) {
+  if (node.nodeType !== 1) return;
+  const text2 = node.textContent || "";
+  while (node.firstChild) {
+    node.removeChild(node.firstChild);
+  }
+  if (text2 && node.ownerDocument) {
+    node.appendChild(node.ownerDocument.createTextNode(text2));
+  }
+}
 function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (!node || !node.childNodes) {
+    return;
+  }
+  if (depth > MAX_TRAVERSE_DEPTH) {
+    flattenToText(node);
     return;
   }
   let child = node.firstChild;
   while (child) {
     const next = child.nextSibling;
     const prev = child.previousSibling;
+    if (child.nodeType === 1 && isHiddenElement(child)) {
+      child = next;
+      continue;
+    }
     if (child.nodeName.toLowerCase() === "a") {
       a(child, forApp, parentDomain, seoContext, renderOptions);
     }
@@ -2114,6 +2533,9 @@ function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, p
     }
     if (child.nodeName.toLowerCase() === "p") {
       p(child);
+    }
+    if (child.nodeName.toLowerCase() === "video") {
+      video(child);
     }
     if (child.parentNode) {
       traverse(child, forApp, depth + 1, state, parentDomain, seoContext, renderOptions);
@@ -2141,7 +2563,55 @@ function cleanReply(s) {
     return !(l.includes("_posted from liketu clips") && l.includes("short video, trimmed"));
   }).filter((item) => item.toLowerCase().includes("[via Inbox]") === false).filter((item) => item.toLowerCase().includes("<sub>[via apps from](") === false).join("\n") : "").replace('Posted via <a href="https://d.buzz" data-link="promote-link">D.Buzz</a>', "").replace('<div class="pull-right"><a href="/@hive.engage">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace('<div><a href="https://engage.hivechain.app">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace(`<div class="text-center"><img src="https://cdn.steemitimages.com/DQmNp6YwAm2qwquALZw8PdcovDorwaBSFuxQ38TrYziGT6b/A-20.png"><a href="https://bit.ly/actifit-app"><img src="https://cdn.steemitimages.com/DQmQqfpSmcQtfrHAtzfBtVccXwUL9vKNgZJ2j93m8WNjizw/l5.png"></a><a href="https://bit.ly/actifit-ios"><img src="https://cdn.steemitimages.com/DQmbWy8KzKT1UvCvznUTaFPw6wBUcyLtBT5XL9wdbB7Hfmn/l6.png"></a></div>`, "");
 }
+
+// src/methods/strip-author-markers.method.ts
+var ELEMENT_NODE = 1;
+function normalizeElement(el) {
+  const attrs = Array.from(el.attributes);
+  const seen = /* @__PURE__ */ new Set();
+  for (const attr2 of attrs) {
+    const name = attr2.name;
+    if (!VALID_ATTRIBUTE_NAME.test(name)) {
+      el.removeAttributeNode(attr2);
+      continue;
+    }
+    const lower = name.toLowerCase();
+    if (seen.has(lower) || RENDER_HELPER_DATA_ATTRIBUTES.has(lower)) {
+      seen.add(lower);
+      el.removeAttributeNode(attr2);
+      continue;
+    }
+    seen.add(lower);
+    let value = attr2.value;
+    if (lower === "class") {
+      value = stripMarkdownClasses(value);
+      if (!value) {
+        el.removeAttributeNode(attr2);
+        continue;
+      }
+    }
+    if (name !== lower) {
+      el.removeAttributeNode(attr2);
+      el.setAttribute(lower, value);
+    } else if (value !== attr2.value) {
+      el.setAttribute(lower, value);
+    }
+  }
+}
+function stripAuthorMarkers(doc) {
+  const stack = [doc];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    const children = Array.from(node.childNodes || []);
+    for (const child of children) {
+      if (child.nodeType !== ELEMENT_NODE || isHiddenElement(child)) continue;
+      normalizeElement(child);
+      stack.push(child);
+    }
+  }
+}
 var domSerializer = domSerializerModule.default || domSerializerModule;
+var URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi;
 var lolightPromise = null;
 var lolightModule = null;
 async function loadLolight() {
@@ -2182,6 +2652,9 @@ function fixBlockLevelTagsInParagraphs(html) {
   html = html.replace(/<p>\s*<\/p>/g, "");
   html = html.replace(/<p><br>\s*<\/p>/g, "");
   return html;
+}
+function stripDocumentWrapper(html) {
+  return html.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "").replace(/^<\?xml[^?]*\?>/, "").replace(/^<!DOCTYPE[^>]*>/i, "").replace(/<\/?html(?=[\s/>])[^>]*>/g, "").replace(/<head(?=[\s/>])[^>]*>[\s\S]*?<\/head>/g, "").replace('<body id="root">', "").replace("</body>", "").trim();
 }
 function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   input = input.replace(new RegExp("https://leofinance.io/threads/view/", "g"), "/@");
@@ -2232,22 +2705,35 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   const entities = input.match(ENTITY_REGEX);
   const entityPlaceholders = [];
   if (entities && forApp) {
-    const uniqueEntities = [...new Set(entities)];
-    uniqueEntities.forEach((entity, index) => {
-      const placeholder = `\u200B${index}\u200B`;
-      entityPlaceholders.push(entity);
-      input = input.split(entity).join(placeholder);
-    });
+    const indexOf = /* @__PURE__ */ new Map();
+    for (const entity of entities) {
+      if (!indexOf.has(entity)) {
+        indexOf.set(entity, entityPlaceholders.length);
+        entityPlaceholders.push(entity);
+      }
+    }
+    const protect = (text2) => text2.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    let protectedInput = "";
+    let last = 0;
+    for (const m of regexMatches(input, URL_RUN)) {
+      const at = m.index ?? 0;
+      protectedInput += protect(input.slice(last, at)) + m[0];
+      last = at + m[0].length;
+    }
+    input = protectedInput + protect(input.slice(last));
   }
+  const untransformed = { ...renderOptions, untransformed: true };
+  const nonce = createRenderNonce();
   try {
     output = md.render(input);
     output = fixBlockLevelTagsInParagraphs(output);
     const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
+    stripAuthorMarkers(doc);
     traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
-    output = serializer.serializeToString(doc);
+    output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
   } catch (error) {
     try {
-      const preSanitized = sanitizeHtml(output, renderOptions);
+      const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true });
       const dom = htmlparser2.parseDocument(preSanitized, {
         // lenient options - don't throw on malformed HTML
         lowerCaseTags: false,
@@ -2255,20 +2741,31 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
       });
       const repairedHtml = domSerializer(dom.children);
       const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, "text/html");
+      stripAuthorMarkers(doc);
       traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
-      output = serializer.serializeToString(doc);
+      output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
     } catch (fallbackError) {
-      output = sanitizeHtml(output || md.render(input), renderOptions);
+      output = sanitizeHtml(output || md.render(input), untransformed);
     }
   }
   if (forApp && output && entityPlaceholders.length > 0) {
-    entityPlaceholders.forEach((entity, index) => {
-      const placeholder = `\u200B${index}\u200B`;
-      output = output.split(placeholder).join(entity);
-    });
+    const placeholderRe = /\u200B(0|[1-9]\d*)\u200B/g;
+    let restored = "";
+    let last = 0;
+    let match;
+    while ((match = placeholderRe.exec(output)) !== null) {
+      const entity = entityPlaceholders[+match[1]];
+      if (entity === void 0) {
+        placeholderRe.lastIndex = match.index + 1;
+        continue;
+      }
+      restored += output.slice(last, match.index) + entity;
+      last = placeholderRe.lastIndex;
+    }
+    output = restored + output.slice(last);
   }
-  output = output.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "").replace(/^<\?xml[^?]*\?>/, "").replace(/^<!DOCTYPE[^>]*>/i, "").replace(/<\/?html[^>]*>/g, "").replace(/<head[^>]*>[\s\S]*?<\/head>/g, "").replace('<body id="root">', "").replace("</body>", "").trim();
-  return sanitizeHtml(output, renderOptions);
+  output = stripDocumentWrapper(output);
+  return sanitizeHtml(output, { ...renderOptions, renderNonce: nonce });
 }
 var mdInstance = null;
 function getMd() {
@@ -2570,6 +3067,7 @@ function stripHiddenRegions(text2) {
   spellings = blankMasked(spellings, codeMask);
   spellings = blankSpans(spellings, "<!--", "-->", false, null);
   spellings = blankSpans(spellings, "<style", "</style", true, null);
+  spellings = blankSpans(spellings, "<script", "<\/script", true, null);
   spellings = blankSpans(spellings, "<pre", "</pre", true, blockMask);
   spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
   return spellings.text;
@@ -2582,7 +3080,7 @@ var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
 var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
 function imageToken(token) {
   let end = -1;
-  for (const m of token.matchAll(IMAGE_EXT_G)) {
+  for (const m of regexMatches(token, IMAGE_EXT_G)) {
     end = (m.index ?? 0) + m[0].length;
   }
   if (end === -1) return null;
@@ -2661,7 +3159,7 @@ function isStandalone(scan, idx) {
   return true;
 }
 function* standaloneMatches(scan, classify) {
-  for (const m of scan.text.matchAll(URL_TOKEN_RE)) {
+  for (const m of regexMatches(scan.text, URL_TOKEN_RE)) {
     const idx = m.index ?? 0;
     if (!isStandalone(scan, idx)) continue;
     const value = classify(m[0]);
@@ -2760,7 +3258,7 @@ function findFirstVideoPoster(prepared) {
     best = { url: hit.url, pos: hit.pos };
     break;
   }
-  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+  for (const m of regexMatches(cleaned, MD_LINK_RE)) {
     const idx = m.index ?? 0;
     if (idx > 0 && cleaned[idx - 1] === "!") continue;
     if (best && idx >= best.pos) break;
@@ -2804,7 +3302,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
       candidates.push(bareMatch);
     }
     const deAmp = (s) => s.trim().replace(/&amp;/g, "&");
-    for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0;
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
