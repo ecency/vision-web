@@ -130,6 +130,6 @@ describe("useCreateReply: decline payout", () => {
     });
 
     expect(onBlockchainError).toHaveBeenCalledTimes(1);
-    expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true });
+    expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true, username: "bob" });
   });
 });

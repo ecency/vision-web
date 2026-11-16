@@ -55,6 +55,8 @@ export interface CommentSubmitOptions {
  */
 export interface FailedReply extends CommentSubmitOptions {
   text: string;
+  /** The account that sent it: only that account's form takes it back. */
+  username: string;
 }
 
 interface Props {
@@ -216,7 +218,7 @@ export function Comment({
 
   // Restore a reply whose blockchain submission failed, with its payout choice
   useEffect(() => {
-    if (!failedReply) return;
+    if (!failedReply || failedReply.username !== activeUser?.username) return;
     if (failedReply.text !== text) {
       setText(failedReply.text);
     }
@@ -230,7 +232,14 @@ export function Comment({
 
   // A form opened without a failure in hand: re-apply a pending decline when the
   // restored draft is still the failed reply's text, and drop it otherwise.
+  // A switch of account with the form open resets the choice first: it was the
+  // previous account's.
+  const lastPendingDeclineKey = useRef(pendingDeclineKey);
   useEffect(() => {
+    if (lastPendingDeclineKey.current !== pendingDeclineKey) {
+      lastPendingDeclineKey.current = pendingDeclineKey;
+      setDeclinePayout(false);
+    }
     if (failedReply || isEdit || !pendingDeclineKey) return;
     const pending = ls.get(pendingDeclineKey);
     if (pending === null) return;

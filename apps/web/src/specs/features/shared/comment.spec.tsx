@@ -330,16 +330,23 @@ describe("Comment composer", () => {
 
     // A failed broadcast hands the reply back as { text, declinePayout }: the choice
     // the reply was SENT with, carried by the failure itself (#333 review).
-    function renderFailed(failedReply: { text: string; declinePayout: boolean }) {
+    type Failed = { text: string; declinePayout: boolean; username?: string };
+    // `username` is the account that sent the failed reply; the spec's active account by default.
+    function renderFailed(failedReply: Failed | null) {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const onSubmit = vi.fn().mockResolvedValue(undefined);
-      const ui = (reply: { text: string; declinePayout: boolean }) => (
+      const ui = (reply: Failed | null) => (
         <QueryClientProvider client={queryClient}>
-          <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" failedReply={reply} />
+          <Comment
+            entry={entry}
+            onSubmit={onSubmit}
+            submitText="Reply"
+            failedReply={reply && { username: "tester", ...reply }}
+          />
         </QueryClientProvider>
       );
       const utils = render(ui(failedReply));
-      return { ...utils, onSubmit, rerenderFailed: (r: typeof failedReply) => utils.rerender(ui(r)) };
+      return { ...utils, onSubmit, rerenderFailed: (r: Failed | null) => utils.rerender(ui(r)) };
     }
     const checkbox = (getByRole: (role: string, o: { name: string }) => HTMLElement) =>
       getByRole("checkbox", { name: "comment.decline-payout" });
@@ -461,6 +468,35 @@ describe("Comment composer", () => {
       failed.unmount();
 
       expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("a reply that fails after switching accounts is not restored into the new account's form", () => {
+      const view = renderFailed(null);
+      activeAccount.username = "other";
+      try {
+        view.rerenderFailed(null);
+        view.rerenderFailed({ text: "sent by tester", declinePayout: true, username: "tester" });
+
+        expect(view.getByRole("textbox")).toHaveValue("");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        expect(declineKeys()).toEqual([]);
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("switching accounts with the box checked unchecks it", () => {
+      const view = renderFailed(null);
+      fireEvent.click(checkbox(view.getByRole));
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+
+      activeAccount.username = "other";
+      try {
+        view.rerenderFailed(null);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
     });
 
     test("a failed reply that kept its payout stores nothing", () => {

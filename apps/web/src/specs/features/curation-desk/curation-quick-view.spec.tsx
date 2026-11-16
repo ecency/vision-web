@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   toggleUiProp: vi.fn(),
   replies: [] as Array<Record<string, unknown>>,
   // The reply mutation's callbacks, so a test can settle or fail the broadcast.
-  replyCallbacks: { onSuccess: undefined as (() => void) | undefined, onError: undefined as ((text: string, err: unknown, submitted: { declinePayout: boolean }) => void) | undefined },
+  replyCallbacks: { onSuccess: undefined as (() => void) | undefined, onError: undefined as ((text: string, err: unknown, submitted: { declinePayout: boolean; username: string }) => void) | undefined },
 }));
 
 vi.mock("@ecency/sdk", async () => {
@@ -83,7 +83,7 @@ vi.mock("@/features/shared/comment", () => ({
   ),
 }));
 vi.mock("@/api/mutations", () => ({
-  useCreateReply: (_entry: unknown, _root: unknown, onSuccess?: () => void, onError?: (text: string, err: unknown, submitted: { declinePayout: boolean }) => void) => {
+  useCreateReply: (_entry: unknown, _root: unknown, onSuccess?: () => void, onError?: (text: string, err: unknown, submitted: { declinePayout: boolean; username: string }) => void) => {
     state.replyCallbacks.onSuccess = onSuccess;
     state.replyCallbacks.onError = onError;
     return {
@@ -450,7 +450,7 @@ describe("CurationQuickView", () => {
     fireEvent.click(screen.getByRole("button", { name: "g.reply" }));
     await waitFor(() => expect(screen.queryByTestId("comment-box")).toBeNull());
 
-    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: true }));
+    act(() => state.replyCallbacks.onError?.("kept text", new Error("rc"), { declinePayout: true, username: "curator" }));
     expect(screen.getByTestId("comment-box")).toHaveAttribute("data-initial", "kept text");
     // The payout choice the reply was sent with comes back with it.
     expect(screen.getByTestId("comment-box")).toHaveAttribute("data-decline", "1");
