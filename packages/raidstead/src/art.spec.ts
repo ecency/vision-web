@@ -3,7 +3,10 @@ import { BOSS_KINDS, BUILDING_IDS, SPECIES, TOWN } from "./art";
 import { COL, PRINT, buildModel, path, pip } from "./print";
 
 describe("art", () => {
-  it("every species prints into dots", () => {
+  // Prints every species at full detail: about 2 s on a dev box, and it went past
+  // vitest's 5 s default on a shared CI runner while the other packages' suites ran
+  // alongside it. The budget is for the machine, not the art.
+  it("every species prints into dots", { timeout: 30_000 }, () => {
     for (const [kind, spec] of Object.entries(SPECIES)) {
       const parts = spec.parts();
       parts.forEach((p, i) => expect(p.id, kind).toBe(i));
