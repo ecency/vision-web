@@ -4,7 +4,7 @@ import { AccountNotification } from "../types";
 import { callRPC } from "@/modules/core/hive-tx";
 
 type NotifPage = AccountNotification[];
-type NotifCursor = number | null;
+type NotifCursor = string | null;
 
 /**
  * Get account notifications for a community (bridge API)
