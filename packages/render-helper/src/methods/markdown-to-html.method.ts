@@ -279,8 +279,26 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // Restore original entities from placeholders
   // in one pass (a split/join per distinct entity was quadratic on a body of
   // many distinct references).
+  // A zero-width space the author wrote can sit right before a placeholder
+  // (`\u200B2024` then `\u200B0\u200B`): a match whose index is not one of ours
+  // must not consume the placeholder's opening zero-width space, so the scan
+  // resumes one character later. Indices are written without leading zeros, so
+  // `\u200B00\u200B` is the author's text, not placeholder 0.
   if (forApp && output && entityPlaceholders.length > 0) {
-    output = output.replace(/\u200B(\d+)\u200B/g, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder);
+    const placeholderRe = /\u200B(0|[1-9]\d*)\u200B/g;
+    let restored = '';
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = placeholderRe.exec(output)) !== null) {
+      const entity = entityPlaceholders[+match[1]];
+      if (entity === undefined) {
+        placeholderRe.lastIndex = match.index + 1;
+        continue;
+      }
+      restored += output.slice(last, match.index) + entity;
+      last = placeholderRe.lastIndex;
+    }
+    output = restored + output.slice(last);
   }
 
   output = stripDocumentWrapper(output)
