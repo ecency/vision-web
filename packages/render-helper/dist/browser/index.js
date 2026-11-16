@@ -1,5 +1,5 @@
 import { DOMParser as DOMParser$1, XMLSerializer } from '@xmldom/xmldom';
-import { decodeHTMLAttribute, decodeHTML } from 'entities';
+import { decodeHTMLAttribute, decodeHTML, decodeHTMLStrict } from 'entities';
 import xss from 'xss';
 import querystring from 'querystring';
 import { LRUCache } from 'lru-cache';
@@ -49,7 +49,9 @@ var SECTION_LIST = [
   "payout",
   "activities",
   "spk",
-  "trail"
+  "trail",
+  "insights",
+  "notifications"
 ];
 
 // src/consts/regexes.const.ts
@@ -374,12 +376,49 @@ function decodeAttributeEntities(value) {
   }
 }
 function decodeImageSrc(src) {
-  const entityDecoded = decodeEntities(src);
+  return decodeDomImageSrc(decodeEntities(src));
+}
+function decodeDomImageSrc(src) {
   try {
-    return decodeURIComponent(entityDecoded).trim();
+    return decodeURIComponent(src).trim();
   } catch {
-    return entityDecoded.trim();
+    return src.trim();
   }
+}
+var COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi;
+var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
+var TRAILING_PUNCTUATION = ".,;:!)]}*_~";
+function imageUrlEnd(token) {
+  let contentEnd = token.length;
+  if (!/[?#]/.test(token)) {
+    while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--;
+  }
+  IMAGE_EXT_G.lastIndex = 0;
+  let m;
+  while ((m = IMAGE_EXT_G.exec(token)) !== null) {
+    const at = m.index + m[0].length;
+    if (at > contentEnd) continue;
+    if (at < contentEnd && (/[a-z\d]/i.test(token[at]) || token[at] === "." && /[a-z]/i.test(token[at + 1] ?? ""))) continue;
+    return contentEnd;
+  }
+  return -1;
+}
+function decodeCompleteReferences(value) {
+  return value.replace(COMPLETE_REFERENCE, (reference) => {
+    try {
+      return decodeHTMLStrict(guardNumericRefs(reference));
+    } catch {
+      return reference;
+    }
+  });
+}
+function hasAmpSentinel(body) {
+  return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body);
+}
+var MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g;
+function decodeRawBodyImageSrc(src, destination = false, ampEscapes2 = true) {
+  const unescaped = destination ? src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c) : src.replace(/\\&/g, "&amp;");
+  return decodeDomImageSrc(decodeCompleteReferences(unescaped));
 }
 function escapeAttrValue(value) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\t/g, "&#9;").replace(/\n/g, "&#10;").replace(/\r/g, "&#13;");
@@ -1164,7 +1203,7 @@ function wrapInPicture(el, rawUrl) {
 }
 function img(el, state, forApp = true, renderOptions) {
   const src = el.getAttribute("src") || "";
-  const decodedSrc = decodeImageSrc(src);
+  const decodedSrc = decodeDomImageSrc(src);
   const reserved = renderOptions?.preserveImageDimensions ? authorPixelSize(el.getAttribute("width"), el.getAttribute("height")) : null;
   ["onerror", "dynsrc", "lowsrc", "width", "height"].forEach((attr2) => el.removeAttribute(attr2));
   const isInvalid = !src || decodedSrc.startsWith("javascript") || decodedSrc.startsWith("vbscript") || decodedSrc === "x";
@@ -1247,7 +1286,7 @@ function img(el, state, forApp = true, renderOptions) {
   }
 }
 function createImageHTML(src, isLCP, forApp = true) {
-  const decoded = decodeImageSrc(src);
+  const decoded = decodeDomImageSrc(src);
   const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
   if (!proxified) return "";
   const base = trimTrailingSlash(getProxyBase());
@@ -1376,7 +1415,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     }
     return;
   }
-  if (href.match(IMG_REGEX) && href.trim().replace(/&amp;/g, "&") === getSerializedInnerHTML(el).trim().replace(/&amp;/g, "&")) {
+  if (href.match(IMG_REGEX) && // Not `.ico` in `.icons/readme` nor `.jpg` in `photo.jpg.html` (imageUrlEnd).
+  imageUrlEnd(href) !== -1 && href.trim().replace(/&amp;/g, "&") === getSerializedInnerHTML(el).trim().replace(/&amp;/g, "&")) {
     const isLCP = false;
     const imgHTML = createImageHTML(href, isLCP, forApp);
     const doc = DOMParser.parseFromString(imgHTML, "text/html");
@@ -2230,6 +2270,7 @@ function isLinkableMention(mention) {
   const user = mention.substring(1);
   return user.indexOf("/") === -1 && isValidUsername(user);
 }
+var URL_TOKEN_RE = /https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/gi;
 var attr = (value) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function linkify(content, forApp, renderOptions) {
   const authorPlaceholders = [];
@@ -2325,10 +2366,12 @@ function linkify(content, forApp, renderOptions) {
     }
   );
   let firstImageUsed = false;
-  content = content.replace(IMG_REGEX, (imglink) => {
+  content = content.replace(URL_TOKEN_RE, (token) => {
+    const end = imageUrlEnd(token);
+    if (end === -1) return token;
     const isLCP = !firstImageUsed;
     firstImageUsed = true;
-    return createImageHTML(imglink, isLCP, forApp);
+    return createImageHTML(token.slice(0, end), isLCP, forApp) + token.slice(end);
   });
   if (authorPlaceholders.length > 0) {
     const restored = /* @__PURE__ */ new Set();
@@ -2396,16 +2439,6 @@ function text(node, forApp, renderOptions) {
     if (replaceNode) {
       node.parentNode.insertBefore(replaceNode, node);
       node.parentNode.removeChild(node);
-    }
-    return;
-  }
-  if (nodeValue.match(IMG_REGEX)) {
-    const isLCP = false;
-    const imageHTML = createImageHTML(nodeValue, isLCP, forApp);
-    const doc = DOMParser.parseFromString(imageHTML, "text/html");
-    const replaceNode = doc.body?.firstChild || doc.firstChild;
-    if (replaceNode) {
-      node.parentNode.replaceChild(replaceNode, node);
     }
     return;
   }
@@ -2541,7 +2574,8 @@ function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, p
       traverse(child, forApp, depth + 1, state, parentDomain, seoContext, renderOptions);
     } else {
       const possibleReplacement = next ? next.previousSibling : node.lastChild;
-      if (possibleReplacement && possibleReplacement !== prev && possibleReplacement.parentNode === node) {
+      const isRefusedIframePlaceholder = possibleReplacement?.nodeType === 1 && child.nodeName.toLowerCase() === "iframe" && possibleReplacement.getAttribute("class") === "unsupported-iframe";
+      if (possibleReplacement && !isRefusedIframePlaceholder && possibleReplacement !== prev && possibleReplacement.parentNode === node) {
         traverse(possibleReplacement, forApp, depth + 1, state, parentDomain, seoContext, renderOptions);
       }
     }
@@ -2611,7 +2645,150 @@ function stripAuthorMarkers(doc) {
   }
 }
 var domSerializer = domSerializerModule.default || domSerializerModule;
-var URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi;
+var URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi;
+var AMP_PAIR = "\uE000\uE001";
+var AMP_PAIR_G = /\uE000\uE001/g;
+var AMP_PAIR_HREF = /\uE000\uE001|%EE%80%80%EE%80%81/g;
+var ampEscapes = false;
+function pairedSource(src) {
+  const paired = src.replace(
+    BACKSLASH_RUN,
+    (run) => run.endsWith("&") && run.length % 2 === 0 ? run.slice(0, -2) + AMP_PAIR : run
+  );
+  return paired.includes(AMP_PAIR) ? paired : null;
+}
+var BACKSLASH_RUN = /\\+&?/g;
+function wrapRule(ruler, name, wrap) {
+  const rule = ruler.__rules__.find((r) => r.name === name);
+  if (rule) ruler.at(name, wrap(rule.fn));
+}
+function withPairedSource(rule) {
+  return (state, silent) => {
+    if (!ampEscapes || state.ampInside) return rule(state, silent);
+    if (state.ampPaired === void 0) state.ampPaired = pairedSource(state.src);
+    const paired = state.ampPaired;
+    if (paired === null) return rule(state, silent);
+    const src = state.src;
+    state.src = paired;
+    state.ampInside = true;
+    try {
+      return rule(state, silent);
+    } finally {
+      state.src = src;
+      state.ampInside = false;
+    }
+  };
+}
+function withPairedReferences(rule) {
+  return (state) => {
+    if (!ampEscapes) return rule(state);
+    const originals = /* @__PURE__ */ new Map();
+    for (const token of state.tokens) {
+      if (token.type !== "inline" || !token.content) continue;
+      const paired = pairedSource(token.content);
+      if (paired === null) continue;
+      originals.set(token, { original: token.content, paired });
+      token.content = paired;
+    }
+    try {
+      return rule(state);
+    } finally {
+      for (const [token, { original, paired }] of originals) {
+        token.content = token.content === paired ? original : token.content?.replace(AMP_PAIR_G, "\\&");
+      }
+    }
+  };
+}
+var MAX_HIGHLIGHT_LENGTH = 2e4;
+var escapeCode = (text2) => text2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+var hrefAmp = (value) => value.replace(AMP_PAIR_HREF, "&");
+var literalAmp = (value) => value.replace(AMP_PAIR_G, "&");
+var sourceAmp = (value) => value.replace(AMP_PAIR_G, "\\&");
+function restorePairedAmpersands(token) {
+  if (token.content === void 0 || !token.content.includes(AMP_PAIR)) return;
+  token.content = token.type === "code" || token.type === "htmltag" ? sourceAmp(token.content) : literalAmp(token.content);
+}
+function decodeDestinations(state) {
+  for (const block of state.tokens) {
+    if (block.type !== "inline" || !block.children) continue;
+    for (const token of block.children) {
+      if (token.type === "image" && token.src) token.src = decodeCompleteReferences(token.src);
+      else if (token.type === "link_open" && token.href) token.href = decodeCompleteReferences(token.href);
+      if (!ampEscapes) continue;
+      if (token.src) token.src = hrefAmp(token.src);
+      if (token.href) token.href = hrefAmp(token.href);
+      if (token.alt) token.alt = literalAmp(token.alt);
+      if (token.title) token.title = literalAmp(token.title);
+      restorePairedAmpersands(token);
+    }
+  }
+  return true;
+}
+var FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/;
+var FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/;
+var quoteDepth = (prefix) => {
+  let depth = 0;
+  if (prefix) {
+    for (const c of prefix) if (c === ">") depth++;
+  }
+  return depth;
+};
+function codeRanges(src) {
+  const ranges = [];
+  const runs = [];
+  let pos = 0;
+  while (pos < src.length) {
+    const eol = src.indexOf("\n", pos);
+    const lineEnd = eol === -1 ? src.length : eol;
+    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd));
+    if (open) {
+      const depth = quoteDepth(open[1]);
+      const quoted = depth > 0;
+      const fence = open[2];
+      let end = src.length;
+      let p2 = lineEnd + 1;
+      while (p2 < src.length) {
+        const e = src.indexOf("\n", p2);
+        const le = e === -1 ? src.length : e;
+        const line = src.slice(p2, le);
+        if (quoted && !/^ {0,3}>/.test(line)) {
+          end = p2 - 1;
+          break;
+        }
+        const close = FENCE_CLOSE.exec(line);
+        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
+          end = le;
+          break;
+        }
+        p2 = le + 1;
+      }
+      ranges.push([pos, end]);
+      pos = end + 1;
+      continue;
+    }
+    for (let i = pos; i < lineEnd; i++) {
+      if (src.charCodeAt(i) !== 96) continue;
+      let j = i;
+      while (j < lineEnd && src.charCodeAt(j) === 96) j++;
+      runs.push([i, j - i]);
+      i = j - 1;
+    }
+    pos = lineEnd + 1;
+  }
+  const nextSame = new Array(runs.length).fill(-1);
+  const lastOfLength = /* @__PURE__ */ new Map();
+  for (let k = runs.length - 1; k >= 0; k--) {
+    nextSame[k] = lastOfLength.get(runs[k][1]) ?? -1;
+    lastOfLength.set(runs[k][1], k);
+  }
+  for (let k = 0; k < runs.length; k++) {
+    const close = nextSame[k];
+    if (close === -1) continue;
+    ranges.push([runs[k][0], runs[close][0] + runs[close][1]]);
+    k = close;
+  }
+  return ranges.sort((a2, b) => a2[0] - b[0]);
+}
 var lolightPromise = null;
 var lolightModule = null;
 async function loadLolight() {
@@ -2667,22 +2844,32 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     html: true,
     breaks: true,
     typographer: false,
+    // Returning '' hands the block back to remarkable, which escapes it as
+    // plain code. A raw `str` used to be returned, and token text was written
+    // unescaped, so markup in a string literal (`"<i>hi</i>"`) rendered as
+    // markup inside the code block.
     highlight: function(str) {
+      if (str.length > MAX_HIGHLIGHT_LENGTH) {
+        return "";
+      }
       const lolightInstance = getLolightInstance();
       if (!lolightInstance) {
-        return str;
+        return "";
       }
       try {
         const tokens = lolightInstance.tok(str);
         return tokens.map(
-          (token) => `<span class="ll-${token[0]}">${token[1]}</span>`
+          (token) => `<span class="ll-${token[0]}">${escapeCode(token[1])}</span>`
         ).join("");
       } catch (err) {
         console.error(err);
       }
-      return str;
+      return "";
     }
   }).use(linkify$1);
+  md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
+  wrapRule(md.inline.ruler, "links", withPairedSource);
+  wrapRule(md.core.ruler, "references", withPairedReferences);
   md.core.ruler.enable([
     "abbr"
   ]);
@@ -2702,6 +2889,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     return "";
   }
   let output = "";
+  ampEscapes = input.includes("\\&") && !hasAmpSentinel(input);
   const entities = input.match(ENTITY_REGEX);
   const entityPlaceholders = [];
   if (entities && forApp) {
@@ -2712,13 +2900,23 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
         entityPlaceholders.push(entity);
       }
     }
-    const protect = (text2) => text2.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    const swap = (text2) => text2.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    const protect = (text2) => {
+      let out = "";
+      let last2 = 0;
+      for (const m of regexMatches(text2, URL_RUN)) {
+        const at = m.index ?? 0;
+        out += swap(text2.slice(last2, at)) + m[0];
+        last2 = at + m[0].length;
+      }
+      return out + swap(text2.slice(last2));
+    };
     let protectedInput = "";
     let last = 0;
-    for (const m of regexMatches(input, URL_RUN)) {
-      const at = m.index ?? 0;
-      protectedInput += protect(input.slice(last, at)) + m[0];
-      last = at + m[0].length;
+    for (const [start, end] of codeRanges(input)) {
+      if (start < last) continue;
+      protectedInput += protect(input.slice(last, start)) + input.slice(start, end);
+      last = end;
     }
     input = protectedInput + protect(input.slice(last));
   }
@@ -2726,6 +2924,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   const nonce = createRenderNonce();
   try {
     output = md.render(input);
+    if (ampEscapes) output = sourceAmp(output);
     output = fixBlockLevelTagsInParagraphs(output);
     const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
     stripAuthorMarkers(doc);
@@ -2745,7 +2944,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
       traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
       output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
     } catch (fallbackError) {
-      output = sanitizeHtml(output || md.render(input), untransformed);
+      output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
     }
   }
   if (forApp && output && entityPlaceholders.length > 0) {
@@ -3075,16 +3274,11 @@ function stripHiddenRegions(text2) {
 var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
-var URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi;
-var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
+var URL_TOKEN_RE2 = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi;
 var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
 function imageToken(token) {
-  let end = -1;
-  for (const m of regexMatches(token, IMAGE_EXT_G)) {
-    end = (m.index ?? 0) + m[0].length;
-  }
+  const end = imageUrlEnd(token);
   if (end === -1) return null;
-  if (end < token.length && (token[end] === "?" || token[end] === "#")) end = token.length;
   const url = token.slice(0, end);
   return SAFE_URL_RE.test(url) ? url : null;
 }
@@ -3159,7 +3353,7 @@ function isStandalone(scan, idx) {
   return true;
 }
 function* standaloneMatches(scan, classify) {
-  for (const m of regexMatches(scan.text, URL_TOKEN_RE)) {
+  for (const m of regexMatches(scan.text, URL_TOKEN_RE2)) {
     const idx = m.index ?? 0;
     if (!isStandalone(scan, idx)) continue;
     const value = classify(m[0]);
@@ -3190,9 +3384,15 @@ function hasGluedAttribute(tag) {
 var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
 var SAFE_URL_RE = /^https?:\/\//i;
 var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
-var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href);
+var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1;
 function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
+}
+function firstBodyImageRawUrl(body) {
+  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate;
+  if (!candidate) return null;
+  if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url));
+  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body));
 }
 function stripCodeRegions(body) {
   let text2 = blankMatches(body, BACKTICK_FENCE_RE);
@@ -3292,9 +3492,9 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     return AMBIGUOUS;
   }
   const candidates = [];
-  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 });
+  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0, destination: true });
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
-    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 });
+    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true });
   }
   if (includeBareUrls) {
     const bareMatch = firstStandalone(prepared.image, imageToken);
@@ -3307,7 +3507,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
       if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
-        candidates.push({ url: href, pos: idx });
+        candidates.push({ url: href, pos: idx, destination: true });
         break;
       }
     }
@@ -3432,8 +3632,7 @@ function getEntryCardImageRawUrl(obj) {
 }
 function getEntryImageRawUrl(obj) {
   if (typeof obj === "string") {
-    const src = findFirstImageUrl(obj, true);
-    return src ? decodeImageSrc(src) : null;
+    return firstBodyImageRawUrl(obj);
   }
   let meta;
   if (typeof obj.json_metadata === "object") {
@@ -3451,8 +3650,7 @@ function getEntryImageRawUrl(obj) {
   if (meta && meta.image && !!meta.image.length && typeof meta.image[0] === "string" && meta.image[0].length > 0) {
     return decodeImageSrc(meta.image[0]);
   }
-  const bodySrc = findFirstImageUrl(obj.body, true);
-  return bodySrc ? decodeImageSrc(bodySrc) : null;
+  return firstBodyImageRawUrl(obj.body);
 }
 function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
   const fastMode = options.fast === true;
