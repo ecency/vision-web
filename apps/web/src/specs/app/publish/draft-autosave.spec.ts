@@ -18,6 +18,11 @@ vi.mock("@/app/publish/_hooks/use-draft-tab-coordinator", () => ({
   useDraftTabCoordinator: () => ({ isActiveTab: isActiveTab.current })
 }));
 
+const activeUsername = vi.hoisted(() => ({ current: "alice" as string | undefined }));
+vi.mock("@/core/hooks/use-active-username", () => ({
+  useActiveUsername: () => activeUsername.current
+}));
+
 const { useDraftAutosave } = await import("@/app/publish/_hooks/use-draft-autosave");
 
 async function advance(ms: number) {
@@ -40,6 +45,7 @@ describe("useDraftAutosave", () => {
     saveToDraft.mockReset();
     saveToDraft.mockResolvedValue(undefined);
     isActiveTab.current = true;
+    activeUsername.current = "alice";
   });
 
   afterEach(() => {
@@ -334,6 +340,80 @@ describe("useDraftAutosave", () => {
 
     // Post B must create its own draft. Targeting draft-for-post-a here would
     // overwrite post A with post B.
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // #2102: the draft a save created belongs to the account that was signed in.
+  // Switching accounts with the composer open is a fresh start, like a clear: the
+  // next account creates its own draft instead of writing into the first one's.
+  it("starts a new draft for the next account after an account switch", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : undefined;
+    });
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(result.current.draftId).toBe("d1");
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "b", content: "bob's post" } });
+    expect(result.current.draftId).toBeUndefined();
+    expect(result.current.lastSaved).toBeNull();
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  it("switching back does not resume writing into the first account's draft", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : undefined;
+    });
+    const { rerender } = renderAutosave({ title: "a", content: "one" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "one" } });
+    activeUsername.current = "alice";
+    rerender({ snapshot: { title: "a", content: "two" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // The first account's create can still be on the wire when the switch lands.
+  // Its result must not bind the next account's composer to that draft, nor
+  // report a save (the resume pointer is written from lastSaved).
+  it("drops a create from the previous account that lands after the switch", async () => {
+    const targets: (string | undefined)[] = [];
+    let resolveCreate: ((id: string) => void) | undefined;
+    saveToDraft.mockImplementationOnce((options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return new Promise<string>((resolve) => {
+        resolveCreate = resolve;
+      });
+    });
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return undefined;
+    });
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
+    await act(async () => {
+      resolveCreate?.("d1");
+    });
+
+    expect(result.current.draftId).toBeUndefined();
+    expect(result.current.lastSaved).toBeNull();
+
+    rerender({ snapshot: { title: "b", content: "bob's post" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
     expect(targets).toEqual([undefined, undefined]);
   });
 
