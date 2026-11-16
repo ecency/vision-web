@@ -20,6 +20,12 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // The two alternatives start with different characters, so it is linear.
 const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\))+/gi
 
+// Largest code block that is syntax highlighted (#2097).
+const MAX_HIGHLIGHT_LENGTH = 20_000
+
+const escapeCode = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 interface DestinationToken {
   type: string
   src?: string
@@ -234,21 +240,29 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     html: true,
     breaks: true,
     typographer: false,
+    // Returning '' hands the block back to remarkable, which escapes it as
+    // plain code. A raw `str` used to be returned, and token text was written
+    // unescaped, so markup in a string literal (`"<i>hi</i>"`) rendered as
+    // markup inside the code block.
     highlight: function (str: string) {
+      // The highlighter is slow on large input (3.5 s for 60 KB, #2097), and
+      // it runs synchronously on the SSR path: past this size, plain code.
+      if (str.length > MAX_HIGHLIGHT_LENGTH) {
+        return ''
+      }
       const lolightInstance = getLolightInstance()
       if (!lolightInstance) {
-        // Fallback when lolight is not available
-        return str
+        return ''
       }
 
       try {
         const tokens = lolightInstance.tok(str);
         return tokens.map(
-          (token: string[]) => `<span class="ll-${token[0]}">${token[1]}</span>`
+          (token: string[]) => `<span class="ll-${token[0]}">${escapeCode(token[1])}</span>`
         ).join('')
       } catch (err) { console.error(err) }
 
-      return str
+      return ''
     }
   }).use(linkify)
   // Before linkify, so every link and image token here was written as
