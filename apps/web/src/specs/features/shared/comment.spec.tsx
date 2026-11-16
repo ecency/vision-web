@@ -838,6 +838,37 @@ describe("Comment composer", () => {
       }
     });
 
+    // CodeRabbit (#2106): the edit form is not a reply form; a post body equal to
+    // a kept failed reply must not consume it.
+    test("an edit form whose body equals a kept failed reply leaves it for the reply form", () => {
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <Comment entry={{ ...entry, body: "K" } as Entry} onSubmit={vi.fn()} submitText="Update" isEdit />
+        </QueryClientProvider>
+      ).unmount();
+
+      expect(window.localStorage.getItem("ecency_reply_failed_text_tester_alice_post-1")).toBe(JSON.stringify("K"));
+      expect(renderComment().getByRole("textbox")).toHaveValue("K");
+    });
+
+    // Fable (#2106): a declined reply that fails at once can come back in the same
+    // render as the form's own clear; the restore's stored decline must survive it.
+    test("a failure landing in the same render as the submit's clear keeps its decline", async () => {
+      const view = renderFailed(null);
+      type(view.getByRole, "T");
+      fireEvent.click(checkbox(view.getByRole));
+      await act(async () => {
+        fireEvent.click(view.getByRole("button", { name: "Reply" }));
+        view.rerenderFailed({ text: "T", declinePayout: true });
+      });
+
+      expect(view.getByRole("textbox")).toHaveValue("T");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      expect(window.localStorage.getItem("ecency_reply_failed_decline_tester_alice_post-1")).toBe(JSON.stringify("T"));
+    });
+
     // The form's first text is a held failure only when it is this account's.
     test("a held failure of another account does not seed this account's form", () => {
       const view = renderFailed({ text: "B text", declinePayout: false, username: "other" });

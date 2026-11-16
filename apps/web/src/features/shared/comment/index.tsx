@@ -337,11 +337,15 @@ function CommentForm({
     const previous = lastText.current;
     lastText.current = text;
     // A kept failure restored into the form is done once its text has landed.
-    if (activeUser?.username && !isBlankBody(text)) {
+    // Reply forms only: the edit form has no decline key and never consumes one.
+    if (pendingDeclineKey && activeUser?.username && !isBlankBody(text)) {
       const keptKey = failedTextKey(activeUser.username, entry.author, entry.permlink);
       if (ls.get(keptKey) === text) ls.remove(keptKey);
     }
     if (previous === text || !pendingDeclineKey) return;
+    // A failure restored in this same commit wrote its own decline: the text
+    // change here is the submit's clear landing with it, not the writer's edit.
+    if (restoredThisCommit.current) return;
     if (ls.get(pendingDeclineKey) !== previous) return;
     // Cleared to blank: the failed reply is gone, and so is its decline.
     if (isBlankBody(text)) {
