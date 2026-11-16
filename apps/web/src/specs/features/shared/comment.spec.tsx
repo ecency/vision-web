@@ -595,6 +595,26 @@ describe("Comment composer", () => {
       }
     });
 
+    // A form reused for another post must judge that post's stored decline
+    // against that post's draft, never the previous post's text.
+    test("moving the form to another post does not decline that post's different draft", () => {
+      localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-2", JSON.stringify("same words"));
+      localStorage.setItem("ecency_reply_text_alice_post-2", JSON.stringify("unrelated draft"));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const ui = (e: Entry) => (
+        <QueryClientProvider client={queryClient}>
+          <Comment entry={e} onSubmit={vi.fn()} submitText="Reply" />
+        </QueryClientProvider>
+      );
+      const view = render(ui(entry));
+      type(view.getByRole, "same words");
+
+      view.rerender(ui({ ...entry, permlink: "post-2" } as Entry));
+
+      expect(view.getByRole("textbox")).toHaveValue("unrelated draft");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
     test("a failure for the new account landing with the switch is restored checked", () => {
       const view = renderFailed(null);
       try {

@@ -75,7 +75,14 @@ interface Props {
   failedReply?: FailedReply | null;
 }
 
-export function Comment({
+// One composer per post: its draft, stored decline and restore bookkeeping all
+// belong to the post it replies to, so a form reused for another post starts over
+// instead of judging that post's stored decline against the previous post's text.
+export function Comment(props: Props) {
+  return <CommentForm key={`${props.entry.author}/${props.entry.permlink}`} {...props} />;
+}
+
+function CommentForm({
   entry,
   onSubmit,
   onCancel,

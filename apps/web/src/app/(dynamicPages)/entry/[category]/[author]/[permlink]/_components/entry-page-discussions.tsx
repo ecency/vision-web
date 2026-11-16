@@ -69,7 +69,7 @@ export function EntryPageDiscussions({ entry: initialEntry, category }: Props) {
 
   return (
       <div className="reading-surface border border-[--border-color] rounded-xl p-2 md:p-3">
-        {activeUser && <EntryReplySection entry={entry} />}
+        {activeUser && <EntryReplySection key={`${entry.author}/${entry.permlink}`} entry={entry} />}
 
         {activeUser && !hasComments && <CommentEngagement />}
 
