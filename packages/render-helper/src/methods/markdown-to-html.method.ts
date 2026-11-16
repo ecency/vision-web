@@ -2,7 +2,7 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeAttributeEntities, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -13,10 +13,40 @@ import { RenderOptions, SeoContext } from '../types'
 
 const domSerializer = (domSerializerModule as any).default || domSerializerModule
 
-// A URL in the markdown source, in an attribute, a link destination or text:
-// one class run, linear on any input. It ends at whitespace, a quote, an angle
-// bracket or `)`, the delimiters a URL sits between in markdown and HTML.
-const URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi
+// A URL in the markdown source, in an attribute, a link destination or text.
+// It ends at whitespace, a quote, an angle bracket or an unbalanced `)`, the
+// delimiters a URL sits between in markdown and HTML; one level of balanced
+// parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092).
+// The two alternatives start with different characters, so it is linear.
+const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\))+/gi
+
+interface DestinationToken {
+  type: string
+  src?: string
+  href?: string
+  children?: DestinationToken[]
+}
+
+/**
+ * Decodes the entities in a markdown image or link destination once, the way
+ * a browser reads an attribute (#2092). Remarkable leaves `![](?a=1&amp;b=2)`
+ * undecoded and escapes it again, so the URL reached the document as the text
+ * `&amp;b=2`, and the image path had to decode a second time, which broke raw
+ * HTML (`<img src="?x=1&amp;times=2">` was proxied as `?x=1×=2`). Now every
+ * image URL reaches the document decoded exactly once, whichever syntax wrote
+ * it. A decoded `javascript:` is refused downstream by a()'s scheme list and
+ * the output sanitizer, as for any other link.
+ */
+function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
+  for (const block of state.tokens) {
+    if (block.type !== 'inline' || !block.children) continue
+    for (const token of block.children) {
+      if (token.type === 'image' && token.src) token.src = decodeAttributeEntities(token.src)
+      else if (token.type === 'link_open' && token.href) token.href = decodeAttributeEntities(token.href)
+    }
+  }
+  return true
+}
 
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks
@@ -221,6 +251,9 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       return str
     }
   }).use(linkify)
+  // Before linkify, so every link and image token here was written as
+  // markdown (linkify's hrefs come from text, already decoded).
+  md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
   md.core.ruler.enable([
     'abbr'
   ]);

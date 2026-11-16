@@ -60,12 +60,30 @@ export function decodeAttributeEntities(value: string): string {
  * (callers run at SSR time).
  */
 export function decodeImageSrc(src: string): string {
-  const entityDecoded = decodeEntities(src)
+  return decodeDomImageSrc(decodeEntities(src))
+}
+
+/**
+ * A body image URL read from the parsed document (an <img> src, an href, a
+ * text node). The parser, and for markdown the destination decode in
+ * markdown-to-html, have already decoded its entities exactly once (#2092):
+ * only percent-encoding is left. Guarded so a malformed `%` cannot throw.
+ */
+export function decodeDomImageSrc(src: string): string {
   try {
-    return decodeURIComponent(entityDecoded).trim()
+    return decodeURIComponent(src).trim()
   } catch {
-    return entityDecoded.trim()
+    return src.trim()
   }
+}
+
+/**
+ * A body image URL taken from the raw post body (the LCP preload's scan): its
+ * entities decoded once the way a browser reads an attribute, which is what
+ * the render does to the same markup (#2092), then percent-encoding.
+ */
+export function decodeRawBodyImageSrc(src: string): string {
+  return decodeDomImageSrc(decodeAttributeEntities(src))
 }
 
 /**

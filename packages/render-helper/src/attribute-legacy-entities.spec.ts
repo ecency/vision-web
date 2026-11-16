@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { markdown2Html } from './markdown-2-html'
 import { removeDuplicateAttributes } from './helper'
+import { proxifyImageSrc } from './proxify-image-src'
 
 // #2085: raw-HTML attribute values lost legacy entity names on the main render
 // path. xmldom decodes `&times` (with or without `;`) even before `=`, which a
@@ -35,12 +36,11 @@ describe('legacy entity names in raw-HTML attributes (#2085)', () => {
     expect(attr(render('<a href="https://example.com/?a=1&amp;b=2&#38;c=3">x</a>'), 'data-href')).toContain('a=1&b=2&c=3')
   })
 
-  // The image path decodes the URL as text before proxying (decodeImageSrc),
-  // so the proxy hash, which the LCP preload must byte-match, stays as it was.
-  it('leaves an <img> proxy URL unchanged', () => {
-    expect(render('<img src="https://example.com/i.png?x=1&times=2">')).toContain(
-      'https://i.ecency.com/p/Y2iXpRRkNSnr4LfyoULZfGFPsDU5Z4hZ6TGHRJcL3TFXX?'
-    )
+  // The image is proxied as the URL the post names, `&times=2` kept as written
+  // (#2092: the image path used to decode it a second time into `×=2`).
+  it('proxies an <img> as the URL the post names', () => {
+    const expected = proxifyImageSrc('https://example.com/i.png?x=1&times=2', 0, 0, 'match', { forceProxy: true })
+    expect(render('<img src="https://example.com/i.png?x=1&times=2">')).toContain(expected.replace(/&/g, '&amp;'))
   })
 
   // xmldom turns a literal tab or newline in an attribute into a space, but keeps

@@ -1,5 +1,5 @@
 import { proxifyImageSrc, buildSrcSet, getProxyBase, buildPictureSources } from "../proxify-image-src";
-import { trimTrailingSlash, decodeImageSrc } from "../helper";
+import { trimTrailingSlash, decodeDomImageSrc } from "../helper";
 import { authorPixelSize } from "./image-dimensions";
 import type { RenderOptions } from "../types";
 import { isInternalThumbnail } from "./internal-thumbnail";
@@ -51,7 +51,7 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
 
   // Normalize encoded characters (shared with getEntryImageRawUrl so the LCP
   // preload's proxy hash byte-matches this rendered <img>/<picture>).
-  const decodedSrc = decodeImageSrc(src);
+  const decodedSrc = decodeDomImageSrc(src);
 
   // Read before the strip. The default still removes width and height; the
   // option puts a validated pair back so the browser can reserve the box.
@@ -198,7 +198,7 @@ export function createImageHTML(src: string, isLCP: boolean, forApp = true): str
   // Decode with the same pipeline as the DOM path img() so the same source URL
   // hashes to the same proxy /p/ URL regardless of which render path produced it
   // (and so the LCP preload, which decodes via getEntryImageRawUrl, matches).
-  const decoded = decodeImageSrc(src);
+  const decoded = decodeDomImageSrc(src);
   // forceProxy: see img() — keep the fallback src unsized but proxied so uploads
   // are served WebP/AVIF rather than the original-format direct-serve bytes.
   const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });

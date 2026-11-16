@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -968,7 +968,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   // LCP image double-downloads).
   if (typeof obj === 'string') {
     const src = findFirstImageUrl(obj, true)
-    return src ? decodeImageSrc(src) : null
+    return src ? decodeRawBodyImageSrc(src) : null
   }
   let meta: Entry['json_metadata'] | null
   if (typeof obj.json_metadata === 'object') {
@@ -987,7 +987,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
     return decodeImageSrc(meta.image[0])
   }
   const bodySrc = findFirstImageUrl(obj.body, true)
-  return bodySrc ? decodeImageSrc(bodySrc) : null
+  return bodySrc ? decodeRawBodyImageSrc(bodySrc) : null
 }
 
 export interface CatchPostImageOptions {
