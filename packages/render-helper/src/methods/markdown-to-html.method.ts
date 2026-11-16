@@ -18,6 +18,64 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // bracket or `)`, the delimiters a URL sits between in markdown and HTML.
 const URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi
 
+/**
+ * Code in the markdown source, as [start, end) ranges in order: fenced blocks
+ * (``` or ~~~ at a line start, to the matching close or the end) and inline
+ * code spans (a backtick run to the next run of the same length). Linear: each
+ * line is read once, and each backtick run is paired through a precomputed
+ * "next run of the same length" table rather than a search.
+ */
+function codeRanges(src: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const runs: Array<[number, number]> = [] // [start, length] of backtick runs outside fences
+  let pos = 0
+  while (pos < src.length) {
+    const eol = src.indexOf('\n', pos)
+    const lineEnd = eol === -1 ? src.length : eol
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(src.slice(pos, lineEnd))
+    if (open) {
+      const fence = open[1]
+      let end = src.length
+      let p = lineEnd + 1
+      while (p < src.length) {
+        const e = src.indexOf('\n', p)
+        const le = e === -1 ? src.length : e
+        const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(src.slice(p, le))
+        if (close && close[1][0] === fence[0] && close[1].length >= fence.length) {
+          end = le
+          break
+        }
+        p = le + 1
+      }
+      ranges.push([pos, end])
+      pos = end + 1
+      continue
+    }
+    for (let i = pos; i < lineEnd; i++) {
+      if (src.charCodeAt(i) !== 0x60) continue
+      let j = i
+      while (j < lineEnd && src.charCodeAt(j) === 0x60) j++
+      runs.push([i, j - i])
+      i = j - 1
+    }
+    pos = lineEnd + 1
+  }
+  // Inline spans: a run opens a span closed by the next run of the same length.
+  const nextSame: number[] = new Array(runs.length).fill(-1)
+  const lastOfLength = new Map<number, number>()
+  for (let k = runs.length - 1; k >= 0; k--) {
+    nextSame[k] = lastOfLength.get(runs[k][1]) ?? -1
+    lastOfLength.set(runs[k][1], k)
+  }
+  for (let k = 0; k < runs.length; k++) {
+    const close = nextSame[k]
+    if (close === -1) continue
+    ranges.push([runs[k][0], runs[close][0] + runs[close][1]])
+    k = close
+  }
+  return ranges.sort((a, b) => a[0] - b[0])
+}
+
 // Conditionally load lolight for syntax highlighting (Node.js only)
 // Browser builds will gracefully handle missing lolight by using fallback
 type Lolight = typeof import('lolight').default
@@ -205,14 +263,29 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     // where the final restore cannot reach, so the app loaded a different image
     // URL than the post names (#2092). One regex pass per segment, linear in
     // its length (a split/join per distinct entity was not).
-    const protect = (text: string) =>
+    //
+    // Code is left out too: a code span or block renders its text verbatim,
+    // and the syntax highlighter split a placeholder across spans, so the
+    // restore missed it and the app showed `0 1b2` for `&amp; &lt;b&gt;`
+    // (#2093). Code renders exactly as on the web.
+    const swap = (text: string) =>
       text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    const protect = (text: string) => {
+      let out = '';
+      let last = 0;
+      for (const m of regexMatches(text, URL_RUN)) {
+        const at = m.index ?? 0;
+        out += swap(text.slice(last, at)) + m[0];
+        last = at + m[0].length;
+      }
+      return out + swap(text.slice(last));
+    };
     let protectedInput = '';
     let last = 0;
-    for (const m of regexMatches(input, URL_RUN)) {
-      const at = m.index ?? 0;
-      protectedInput += protect(input.slice(last, at)) + m[0];
-      last = at + m[0].length;
+    for (const [start, end] of codeRanges(input)) {
+      if (start < last) continue;
+      protectedInput += protect(input.slice(last, start)) + input.slice(start, end);
+      last = end;
     }
     input = protectedInput + protect(input.slice(last));
   }
