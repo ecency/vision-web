@@ -47,6 +47,17 @@ describe('image URL decoding (#2092)', () => {
     expect(firstImg(render(body, true))).toBe(firstImg(render(body, false)))
   })
 
+  // CommonMark only reads a reference that ends in `;` in a destination: a
+  // legacy name without one stays as written.
+  it.each([
+    ['[x](https://e.com/?a=1&copy)', 'https://e.com/?a=1&amp;copy'],
+    ['[x](https://e.com/?a=1&not-b=2)', 'https://e.com/?a=1&amp;not-b=2'],
+    ['[x](https://e.com/?a=1&amp)', 'https://e.com/?a=1&amp;amp'],
+    ['[x](https://e.com/?a=1&copy;)', 'https://e.com/?a=1©']
+  ])('markdown destination %s keeps a reference without `;` as written', (body, href) => {
+    expect(render(body, false)).toContain(`href="${href}"`)
+  })
+
   it('a markdown link with an escaped ampersand points where it says', () => {
     expect(render('[x](https://e.com/p?a=1&amp;b=2)', false)).toContain('href="https://e.com/p?a=1&amp;b=2"')
   })

@@ -2,7 +2,7 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { decodeAttributeEntities, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeEntities, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -34,8 +34,8 @@ interface DestinationToken {
 }
 
 /**
- * Decodes the entities in a markdown image or link destination once, the way
- * a browser reads an attribute (#2092). Remarkable leaves `![](?a=1&amp;b=2)`
+ * Decodes the references in a markdown image or link destination once, as
+ * CommonMark does: only a complete one, ending in `;` (#2092). Remarkable leaves `![](?a=1&amp;b=2)`
  * undecoded and escapes it again, so the URL reached the document as the text
  * `&amp;b=2`, and the image path had to decode a second time, which broke raw
  * HTML (`<img src="?x=1&amp;times=2">` was proxied as `?x=1×=2`). Now every
@@ -47,12 +47,18 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   for (const block of state.tokens) {
     if (block.type !== 'inline' || !block.children) continue
     for (const token of block.children) {
-      if (token.type === 'image' && token.src) token.src = decodeAttributeEntities(token.src)
-      else if (token.type === 'link_open' && token.href) token.href = decodeAttributeEntities(token.href)
+      if (token.type === 'image' && token.src) token.src = decodeCompleteReferences(token.src)
+      else if (token.type === 'link_open' && token.href) token.href = decodeCompleteReferences(token.href)
     }
   }
   return true
 }
+
+// CommonMark reads only a reference that ends in `;` in a destination:
+// `?a=1&copy` stays as written, `?a=1&copy;` is `?a=1©`.
+const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
+const decodeCompleteReferences = (value: string): string =>
+  value.replace(COMPLETE_REFERENCE, (reference) => decodeEntities(reference))
 
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks

@@ -78,11 +78,16 @@ export function useResumeAutosavedDraft({ composerEmpty, draftId }: Options) {
 
   const prompt = pointer && exists && !withdrawn && !shouldWithdraw ? pointer : undefined;
 
+  // The draft is then open in its own editor, which keeps saving to it; the
+  // pointer is spent, so a later empty /publish does not offer it again.
   const resume = useCallback(() => {
     if (prompt) {
+      if (username) {
+        clearAutosavePointer(username, prompt.id);
+      }
       router.push(`/publish/drafts/${prompt.id}`);
     }
-  }, [prompt, router]);
+  }, [prompt, router, username]);
 
   // Dismiss only: the draft stays in the Drafts list. Forgetting the pointer
   // means the next save here starts a new draft rather than overwriting it.

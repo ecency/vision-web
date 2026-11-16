@@ -130,6 +130,9 @@ describe("useResumeAutosavedDraft", () => {
     act(() => result.current.resume());
 
     expect(push).toHaveBeenCalledWith("/publish/drafts/d1");
+    // Resumed: the draft is open in its own editor, so a later empty /publish
+    // must not offer it again with a stale "from X ago".
+    expect(readAutosavePointer("alice")).toBeUndefined();
   });
 
   // Dismiss is not Discard: the draft stays in the Drafts list, only the
