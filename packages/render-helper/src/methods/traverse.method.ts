@@ -84,7 +84,14 @@ export function traverse(node: Node, forApp: boolean, depth = 0, state = { first
       // childNodes. Detect it by comparing next.previousSibling to the
       // captured `prev` — if they differ a new node was inserted.
       const possibleReplacement = next ? next.previousSibling : node.lastChild
-      if (possibleReplacement && possibleReplacement !== prev && possibleReplacement.parentNode === node) {
+      // A refused iframe's placeholder is text the render wrote, not the
+      // author's: linkifying it turned a URL in the refused src into a video
+      // link (#2095), so it is left as written.
+      const isRefusedIframePlaceholder =
+        possibleReplacement?.nodeType === 1 &&
+        child.nodeName.toLowerCase() === 'iframe' &&
+        (possibleReplacement as Element).getAttribute('class') === 'unsupported-iframe'
+      if (possibleReplacement && !isRefusedIframePlaceholder && possibleReplacement !== prev && possibleReplacement.parentNode === node) {
         traverse(possibleReplacement, forApp, depth + 1, state, parentDomain, seoContext, renderOptions)
       }
     }
