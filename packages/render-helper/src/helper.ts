@@ -134,14 +134,33 @@ export function decodeCompleteReferences(value: string): string {
 }
 
 /**
- * A body image URL taken from the raw post body (the LCP preload's scan),
- * decoded the way the render reads a markdown destination (#2092), then
- * percent-encoding. Raw HTML differs only for a legacy name without `;` before
- * a non-alphanumeric character, which an HTML attribute decodes.
+ * True when the body already holds, in any form, the private-use pair the
+ * render swaps an escaped `&` for while it parses a destination: the render
+ * then leaves escaped ampersands to Remarkable alone, and the LCP preload
+ * reads them the same way.
  */
-export function decodeRawBodyImageSrc(src: string): string {
-  // `\&` is a literal ampersand, as the render reads it (escapeUrlAmpersands).
-  return decodeDomImageSrc(decodeCompleteReferences(src.replace(/\\&/g, '&amp;')))
+export function hasAmpSentinel(body: string): boolean {
+  return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body)
+}
+
+// Remarkable's backslash escapes (unescapeMd).
+const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
+
+/**
+ * A body image URL taken from the raw post body (the LCP preload's scan),
+ * decoded the way the render reads it, then percent-encoding.
+ * A markdown destination (`destination`) is unescaped as Remarkable does, an
+ * escaped `&` (`\\&`) staying a literal ampersand unless the body turns that
+ * off (hasAmpSentinel), and its complete references are decoded once (#2092).
+ * A bare URL in text: the escape rule already made `\\&` a literal `&`.
+ * Raw HTML differs only for a legacy name without `;` before a
+ * non-alphanumeric character, which an HTML attribute decodes.
+ */
+export function decodeRawBodyImageSrc(src: string, destination = false, ampEscapes = true): string {
+  const unescaped = destination
+    ? src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+    : src.replace(/\\&/g, '&amp;')
+  return decodeDomImageSrc(decodeCompleteReferences(unescaped))
 }
 
 /**

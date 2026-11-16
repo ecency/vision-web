@@ -2,7 +2,7 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { decodeCompleteReferences, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeCompleteReferences, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -22,58 +22,82 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // without backtracking: linear.
 const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
-// What sits right before a markdown link or image destination: `](`, then
-// optional spaces and an optional `<` (checked on a short tail), or a whole
-// line holding a reference definition's label (`[x]: `, the label at most 999
-// characters as in CommonMark). Each test is bounded, so marking stays linear.
-const INLINE_DESTINATION_START = /\]\([ \t]*<?$/
-const REFERENCE_DESTINATION_START = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*<?$/
-function isDestinationStart(text: string, at: number): boolean {
-  if (INLINE_DESTINATION_START.test(text.slice(Math.max(0, at - 32), at))) return true
-  const lineStart = text.lastIndexOf('\n', at - 1) + 1
-  return at - lineStart <= 1010 && REFERENCE_DESTINATION_START.test(text.slice(lineStart, at))
+// A backslash-escaped `&` in a link or image destination is a literal
+// ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
+// `?q=&copy;`. Remarkable drops the backslash before decode_destinations runs,
+// which then read `&copy;` as ©. So while Remarkable parses a link, an image
+// or a reference definition, and only then, each escaped `&` in its source is
+// swapped for AMP_PAIR (same length, so every position holds). The hrefs and
+// srcs it produces get a literal `&` after their references are decoded; the
+// label's text gets the `&` the escape rule would have given; inline code and
+// HTML inside a label get the source's `\\&` back. Code blocks, raw HTML,
+// autolinks and other text are never parsed with the pair, so they render as
+// before. Off for a body that already holds the pair's characters in any form
+// (hasAmpSentinel), which then renders exactly as it did.
+const AMP_PAIR = '\uE000\uE001'
+const AMP_PAIR_G = /\uE000\uE001/g
+const AMP_PAIR_HREF = /\uE000\uE001|%EE%80%80%EE%80%81/g
+let ampEscapes = false
+
+// The source with each escaped `&` (an odd run of backslashes before it) as
+// AMP_PAIR, or null when it has none.
+function pairedSource(src: string): string | null {
+  const paired = src.replace(ESCAPED_AMP_RUN, (run) => (run.length % 2 === 0 ? run.slice(0, -2) + AMP_PAIR : run))
+  return paired.includes(AMP_PAIR) ? paired : null
 }
 
-// Stands in for a backslash-escaped `&` in a destination while Remarkable
-// parses: a private-use character, and only used when the body holds none.
-// Inside an href Remarkable's encodeURI turns it into %EE%80%80, which is read
-// back only on a render that marked something (ampMarked).
-const AMP_SENTINEL = '\uE000'
-const AMP_SENTINEL_G = /\uE000/g
-const AMP_SENTINEL_HREF = /\uE000|%EE%80%80/g
-let ampMarked = false
+// An escaped `&`: an odd run of backslashes before it. Each run is matched
+// from its first backslash only, so a long run is read once: linear.
+const ESCAPED_AMP_RUN = /(?<!\\)\\+&/g
 
-/**
- * A backslash-escaped `&` in a link or image destination is a literal
- * ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
- * `?q=&copy;`. Remarkable drops the backslash before decode_destinations runs,
- * which then read `&copy;` as ©. So each `\\&` that sits where a destination
- * or reference definition starts is marked with AMP_SENTINEL, which the parser
- * keeps as is. decode_destinations turns it into a literal `&` in the hrefs
- * and srcs the parser produced, after their references are decoded, and back
- * into the source's `\\&` everywhere else (code, raw HTML), so any text the
- * mark lands in that is not a parsed destination renders exactly as written.
- */
-function markDestinationAmpersands(src: string): string {
-  const inDestinations = (text: string) => {
-    let out = ''
-    let last = 0
-    for (const m of regexMatches(text, URL_RUN)) {
-      const at = m.index ?? 0
-      if (!isDestinationStart(text, at)) continue
-      out += text.slice(last, at) + m[0].replace(/\\&/g, AMP_SENTINEL)
-      last = at + m[0].length
+type RuleList = { __rules__: Array<{ name: string; fn: any }>; at: (name: string, fn: any) => void }
+function wrapRule(ruler: RuleList, name: string, wrap: (fn: any) => any): void {
+  const rule = ruler.__rules__.find((r) => r.name === name)
+  if (rule) ruler.at(name, wrap(rule.fn))
+}
+
+// The inline parse state, with the paired source computed once per state.
+// The links rule runs at every `[` and `!`, and its label parse re-enters the
+// rules on the same state, so nothing here compares or rescans the source.
+type PairState = { src: string; ampPaired?: string | null; ampInside?: boolean }
+type ParseRule = (state: PairState, silent?: boolean) => boolean
+
+function withPairedSource(rule: ParseRule): ParseRule {
+  return (state, silent) => {
+    if (!ampEscapes || state.ampInside) return rule(state, silent)
+    if (state.ampPaired === undefined) state.ampPaired = pairedSource(state.src)
+    const paired = state.ampPaired
+    if (paired === null) return rule(state, silent)
+    const src = state.src
+    state.src = paired
+    state.ampInside = true
+    try {
+      return rule(state, silent)
+    } finally {
+      state.src = src
+      state.ampInside = false
     }
-    return out + text.slice(last)
   }
-  let out = ''
-  let last = 0
-  for (const [start, end] of codeRanges(src)) {
-    if (start < last) continue
-    out += inDestinations(src.slice(last, start)) + src.slice(start, end)
-    last = end
+}
+
+type BlockState = { tokens: Array<{ type: string; content?: string }> }
+
+// Reference definitions are parsed from paragraph content by the core
+// `references` rule; the paragraph keeps whatever is not a definition.
+function withPairedReferences(rule: (state: BlockState) => unknown): (state: BlockState) => unknown {
+  return (state) => {
+    if (!ampEscapes) return rule(state)
+    for (const token of state.tokens) {
+      if (token.type === 'inline' && token.content) token.content = pairedSource(token.content) ?? token.content
+    }
+    try {
+      return rule(state)
+    } finally {
+      for (const token of state.tokens) {
+        if (token.type === 'inline' && token.content) token.content = token.content.replace(AMP_PAIR_G, '\\&')
+      }
+    }
   }
-  return out + inDestinations(src.slice(last))
 }
 
 // Largest code block that is syntax highlighted (#2097).
@@ -92,16 +116,17 @@ interface DestinationToken {
   children?: DestinationToken[]
 }
 
-// AMP_SENTINEL back to what the source said, by where it ended up.
-const hrefAmp = (value: string) => (ampMarked ? value.replace(AMP_SENTINEL_HREF, '&') : value)
-const literalAmp = (value: string) => value.replace(AMP_SENTINEL_G, '&')
-const sourceAmp = (value: string) => value.replace(AMP_SENTINEL_G, '\\&')
+// AMP_PAIR back to what the source said, by where it ended up. Only on a
+// render that paired anything (ampEscapes).
+const hrefAmp = (value: string) => value.replace(AMP_PAIR_HREF, '&')
+const literalAmp = (value: string) => value.replace(AMP_PAIR_G, '&')
+const sourceAmp = (value: string) => value.replace(AMP_PAIR_G, '\\&')
 
-function restoreMarkedAmpersands(token: DestinationToken): void {
-  if (token.content === undefined || !token.content.includes(AMP_SENTINEL)) return
-  // Text went through the escape rule (`\\&` is `&`); code and raw HTML keep
-  // the backslash, as the parser leaves it there.
-  token.content = token.type === 'text' ? literalAmp(token.content) : sourceAmp(token.content)
+function restorePairedAmpersands(token: DestinationToken): void {
+  if (token.content === undefined || !token.content.includes(AMP_PAIR)) return
+  // Inline code and HTML keep the backslash, as the parser leaves it there;
+  // any other token went through the escape rule (`\\&` is `&`).
+  token.content = token.type === 'code' || token.type === 'htmltag' ? sourceAmp(token.content) : literalAmp(token.content)
 }
 
 /**
@@ -116,16 +141,18 @@ function restoreMarkedAmpersands(token: DestinationToken): void {
  */
 function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   for (const block of state.tokens) {
-    restoreMarkedAmpersands(block)
     if (block.type !== 'inline' || !block.children) continue
     for (const token of block.children) {
       // A marked `\\&` becomes a literal `&` after the decode, so it never
       // starts a reference.
-      if (token.type === 'image' && token.src) token.src = hrefAmp(decodeCompleteReferences(token.src))
-      else if (token.type === 'link_open' && token.href) token.href = hrefAmp(decodeCompleteReferences(token.href))
+      if (token.type === 'image' && token.src) token.src = decodeCompleteReferences(token.src)
+      else if (token.type === 'link_open' && token.href) token.href = decodeCompleteReferences(token.href)
+      if (!ampEscapes) continue
+      if (token.src) token.src = hrefAmp(token.src)
+      if (token.href) token.href = hrefAmp(token.href)
       if (token.alt) token.alt = literalAmp(token.alt)
       if (token.title) token.title = literalAmp(token.title)
-      restoreMarkedAmpersands(token)
+      restorePairedAmpersands(token)
     }
   }
   return true
@@ -368,6 +395,8 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // Before linkify, so every link and image token here was written as
   // markdown (linkify's hrefs come from text, already decoded).
   md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
+  wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
+  wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'
   ]);
@@ -390,12 +419,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   let output = '';
 
-  ampMarked = false
-  if (input.includes('\\&') && !input.includes(AMP_SENTINEL)) {
-    const marked = markDestinationAmpersands(input)
-    ampMarked = marked !== input
-    input = marked
-  }
+  ampEscapes = input.includes('\\&') && !hasAmpSentinel(input)
 
   // Replace entities with deterministic placeholders to preserve them during rendering
   const entities = input.match(ENTITY_REGEX);
@@ -452,7 +476,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   try {
     output = md.render(input)
-    if (ampMarked) output = sourceAmp(output)
+    if (ampEscapes) output = sourceAmp(output)
 
     // Fix malformed block-level HTML tags that Remarkable wraps in <p> tags
     // This prevents "Opening and ending tag mismatch" errors from DOMParser
@@ -500,7 +524,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves
       // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || sourceAmp(md.render(input)), untransformed)
+      output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed)
     }
   }
 

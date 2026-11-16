@@ -212,3 +212,75 @@ describe('a backslash-escaped & in link syntax that is not a parsed destination'
     expect(html).toContain(`${forApp ? 'data-href' : 'href'}="https://e.com/?q=&amp;copy;"`)
   })
 })
+
+// Fourth review round of #2101.
+const PUA = ''
+const sameOrBothAbsent = (body: string) => {
+  const img = firstImg(render(body, false))
+  const pre = getEntryImageRawUrl(body)
+  expect(pre ? proxyOf(pre) : undefined, body).toBe(img)
+}
+
+describe('a body that already holds the private-use character renders as on develop', () => {
+  it.each([
+    ['x  y', '<p dir="auto">x  y</p>'],
+    ['`ab`', '<p dir="auto"><code>ab</code></p>'],
+    ['<div></div>', '<div></div>'],
+    ['&#xE000; text', '<p dir="auto"> text</p>'],
+    ['x  [x](https://e.com/?q=\\&copy;)', '<p dir="auto">x  <a href="https://e.com/?q=©" class="markdown-external-link" target="_blank" rel="nofollow ugc noopener">x</a></p>']
+  ])('%j (web)', (body, html) => {
+    expect(render(body, false)).toBe(html)
+  })
+
+  // Highlighting splits the code into spans; its text is unchanged.
+  it('keeps it in a fenced block', () => {
+    expect(strip(render('```\na\uE000b\n```', false))).toBe('a\uE000b\n')
+  })
+
+  it('keeps it in an image alt', () => {
+    expect(render(`![a${PUA}b](https://e.com/i.png)`, false)).toContain(`a${PUA}b`)
+  })
+})
+
+describe('only parsed destinations and definitions take a literal &', () => {
+  it.each([
+    ['x^](https://e.com/?q=\\&copy;)^', '<p dir="auto">x<sup>](https://e.com/?q=&amp;copy;)</sup></p>'],
+    ['a](<https://e.com/?a\\&b>', '<p dir="auto">a](<a href="https://e.com/?a%5C&amp;b" class="markdown-external-link" target="_blank" rel="nofollow ugc noopener">https://e.com/?a\\&amp;b</a></p>'],
+    ['para\n[x]: <https://e.com/?a\\&b>', '<p dir="auto">para<br />\n[x]: <a href="https://e.com/?a%5C&amp;b" class="markdown-external-link" target="_blank" rel="nofollow ugc noopener">https://e.com/?a\\&amp;b</a></p>']
+  ])('%j renders as on develop (web)', (body, html) => {
+    expect(render(body, false)).toBe(html)
+  })
+
+  it.each([
+    '[a](https://e.com/?q=\\&copy;) [b](https://e.com/?x=%EE%80%80)',
+    '[a](https://e.com/?q=\\&copy;) [b](https://e.com/?x=%ee%80%80)'
+  ])('a literal percent-encoded sentinel in another URL is kept: %j', (body) => {
+    for (const forApp of [false, true]) expect(render(body, forApp)).toMatch(/\?x=%(?:EE|ee)%80%80"/)
+  })
+})
+
+describe('backslash runs before & in a destination', () => {
+  it.each([
+    ['[x](https://e.com/?q=\\\\&copy;)', 'https://e.com/?q=%5C%C2%A9'],
+    ['[x](https://e.com/?q=\\\\\\&copy;)', 'https://e.com/?q=%5C&amp;copy;']
+  ])('%j links to %s', (body, href) => {
+    const html = render(body, false)
+    expect(html.replace(/href="([^"]*)"/, (_m, h: string) => `href="${h.replace(/\\/g, '%5C').replace(/©/g, '%C2%A9')}"`)).toContain(`href="${href}"`)
+  })
+
+  it.each(['![](https://e.com/i.png?q=\\\\&copy;)', '![](https://e.com/i.png?q=\\\\\\&copy;)'])('preload matches the render: %j', (body) => {
+    sameOrBothAbsent(body)
+  })
+})
+
+describe('preload and render read an escaped & the same way', () => {
+  it.each([
+    '![x](\nhttps://e.com/i.png?a=1\\&copy;b=2)',
+    `x ${PUA}\n\n![](https://e.com/i.png?q=\\&copy;)`,
+    `![](${' '.repeat(40)}https://e.com/i.png?q=\\&copy;)`,
+    '![x][r]\n\n[r]:\n  https://e.com/i.png?q=\\&copy;',
+    '![](https://e.com/i.png?q=\\&copy;)'
+  ])('%j', (body) => {
+    sameOrBothAbsent(body)
+  })
+})

@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -551,7 +551,8 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
 function firstBodyImageRawUrl(body: string): string | null {
   const candidate = findFirstImageCandidate(prepareBody(body), true).candidate
   if (!candidate) return null
-  return candidate.html ? decodeDomImageSrc(decodeAttributeEntities(candidate.url)) : decodeRawBodyImageSrc(candidate.url)
+  if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url))
+  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body))
 }
 
 function stripCodeRegions(body: string): string {
@@ -661,6 +662,8 @@ interface ImageCandidate {
    * way the render reads an attribute, not as a markdown destination (#2092).
    */
   html?: boolean
+  /** A markdown destination (`![](url)`, `[url](url)`): unescaped as Remarkable does. */
+  destination?: boolean
 }
 
 /**
@@ -743,7 +746,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // Collect valid candidates with their source position; the rendered document
   // surfaces whichever image appears first in source order.
   const candidates: ImageCandidate[] = []
-  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 })
+  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0, destination: true })
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true })
   }
@@ -761,7 +764,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
       const href = m[2]
       if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
-        candidates.push({ url: href, pos: idx })
+        candidates.push({ url: href, pos: idx, destination: true })
         break
       }
     }
