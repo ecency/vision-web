@@ -134,6 +134,8 @@ describe("useCreateReply: decline payout", () => {
     await act(async () => {
       failA(err);
     });
+    // Handed back on the next task, after the composer's submit has finished.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
     expect(onBlockchainError).toHaveBeenCalledTimes(1);
     expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true, username: "bob" });
@@ -148,14 +150,33 @@ describe("useCreateReply: a failed reply is kept for the post", () => {
   const draft = () => window.localStorage.getItem("ecency_reply_text_alice_post-1");
   const decline = () => window.localStorage.getItem("ecency_reply_failed_decline_bob_alice_post-1");
 
+  // The next macrotask: the failure is handed back after the composer's submit
+  // has finished (and cleared its draft).
+  const nextTick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
   async function failWith(declinePayout: boolean, text = "a reply") {
     sdkComment.mockRejectedValueOnce(new Error("rc"));
     const { result } = setup();
     await act(async () => {
       await result.current.mutateAsync({ ...base, text, declinePayout });
     });
-    await act(async () => {});
+    await nextTick();
   }
+
+  // CodeRabbit (#2106): a broadcast that rejects at once used to put the text back
+  // before the composer's submit continuation cleared its draft, so the clear
+  // erased it. The composer clears right after the mutation resolves.
+  it("keeps the text when the composer clears its draft right after submitting", async () => {
+    sdkComment.mockRejectedValueOnce(new Error("rc"));
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, text: "a reply", declinePayout: false });
+      // What the composer's submit does once the mutation resolves.
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify(""));
+    });
+    await nextTick();
+    expect(draft()).toBe(JSON.stringify("a reply"));
+  });
 
   beforeEach(() => {
     window.localStorage.clear();

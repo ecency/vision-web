@@ -185,21 +185,24 @@ export function useCreateReply(
           activeUser?.username ?? "", permlink, root.author, root.permlink, queryClient
         );
 
-        // The form cleared its draft on submit: put the text back for this post,
-        // with its payout choice, whether or not a box is still there to restore it.
-        // The reply draft is shared by every account on this browser, so the text
-        // goes back only while the sender is still the one signed in.
-        keepFailedReply(activeUser.username, entry.author, entry.permlink, text, !!declinePayout, {
-          senderSignedIn: useGlobalStore.getState().activeUser?.username === activeUser.username
-        });
+        // Handed back on the next task, never before the composer's submit has
+        // finished: a broadcast that rejects at once would otherwise put the text
+        // back before the submit clears its draft, and the clear would erase it.
+        setTimeout(() => {
+          // The form cleared its draft on submit: put the text back for this
+          // post, with its payout choice, whether or not a box is still there to
+          // restore it. The reply draft is shared by every account on this
+          // browser, so it goes back only while the sender is still signed in.
+          keepFailedReply(activeUser.username, entry.author, entry.permlink, text, !!declinePayout, {
+            senderSignedIn: useGlobalStore.getState().activeUser?.username === activeUser.username
+          });
 
-        // Notify parent component to restore text to input
-        if (onBlockchainError) {
-          onBlockchainError(text, err, {
+          // Notify parent component to restore text to input
+          onBlockchainError?.(text, err, {
             declinePayout: !!declinePayout,
             username: activeUser.username
           });
-        }
+        }, 0);
 
         const [errorMsg, errorType] = formatError(err);
 
