@@ -27,6 +27,12 @@ vi.mock("@/core/caches", () => ({
 }));
 
 vi.mock("@/features/shared", () => ({ error: vi.fn(), success: vi.fn() }));
+
+// The account signed in when the failure lands (the sender, unless switched).
+const signedIn = vi.hoisted(() => ({ username: "bob" as string | undefined }));
+vi.mock("@/core/global-store", () => ({
+  useGlobalStore: { getState: () => ({ activeUser: signedIn.username ? { username: signedIn.username } : null }) }
+}));
 vi.mock("@/utils/refresh-quests", () => ({ scheduleQuestsRefresh: vi.fn() }));
 
 vi.mock("@ecency/sdk", async () => ({
@@ -154,6 +160,17 @@ describe("useCreateReply: a failed reply is kept for the post", () => {
   beforeEach(() => {
     window.localStorage.clear();
     sdkComment.mockReset();
+    signedIn.username = "bob";
+  });
+
+  // The reply draft is per post, shared by every account on this browser: the
+  // sender's text must not land in another account's composer.
+  it("does not put the text into the shared draft once another account is signed in", async () => {
+    signedIn.username = "carol";
+    await failWith(true);
+    expect(draft()).toBeNull();
+    // The sender's decline is still kept under the sender, applying only to that text.
+    expect(decline()).toBe(JSON.stringify("a reply"));
   });
 
   it("puts the text back into the post's reply draft with no box mounted", async () => {

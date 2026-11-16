@@ -35,13 +35,16 @@ export function keepFailedReply(
   author: string,
   permlink: string,
   text: string,
-  declinePayout: boolean
+  declinePayout: boolean,
+  { senderSignedIn }: { senderSignedIn: boolean }
 ) {
-  // Only into a blank draft or one already holding this text: a newer draft the
-  // writer started meanwhile (another box, another account) stays theirs.
+  // The reply draft is per post, shared by every account on this browser: the text
+  // goes back only while the sender is signed in, so another account's composer
+  // never opens with it. And only into a blank draft or one already holding this
+  // text: a newer draft the writer started meanwhile stays theirs.
   const draftKey = `reply_text_${author}_${permlink}`;
   const draft = ls.get(draftKey);
-  if (draft === null || draft === text || (typeof draft === "string" && isBlankBody(draft))) {
+  if (senderSignedIn && (draft === null || draft === text || (typeof draft === "string" && isBlankBody(draft)))) {
     ls.set(draftKey, text);
   }
   rememberFailedDecline(username, author, permlink, text, declinePayout);

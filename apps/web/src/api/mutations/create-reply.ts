@@ -7,6 +7,7 @@ import { SortOrder } from "@/enums";
 import { error, success } from "@/features/shared";
 import { ErrorTypes } from "@/enums";
 import { keepFailedReply } from "@/features/shared/comment/failed-decline";
+import { useGlobalStore } from "@/core/global-store";
 import i18next from "i18next";
 import { getAccountRcQueryOptions, addOptimisticDiscussionEntry, removeOptimisticDiscussionEntry } from "@ecency/sdk";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -186,7 +187,11 @@ export function useCreateReply(
 
         // The form cleared its draft on submit: put the text back for this post,
         // with its payout choice, whether or not a box is still there to restore it.
-        keepFailedReply(activeUser.username, entry.author, entry.permlink, text, !!declinePayout);
+        // The reply draft is shared by every account on this browser, so the text
+        // goes back only while the sender is still the one signed in.
+        keepFailedReply(activeUser.username, entry.author, entry.permlink, text, !!declinePayout, {
+          senderSignedIn: useGlobalStore.getState().activeUser?.username === activeUser.username
+        });
 
         // Notify parent component to restore text to input
         if (onBlockchainError) {
