@@ -1,4 +1,4 @@
-import { IMG_REGEX, SECTION_LIST } from '../consts'
+import { SECTION_LIST } from '../consts'
 import { proxifyImageSrc, getProxyBase } from '../proxify-image-src'
 import { isValidPermlink, isValidUsername, sanitizePermlink } from "../helper";
 import { createImageHTML } from "./img.method";
@@ -47,6 +47,23 @@ function replaceRuns(
 function isLinkableMention(mention: string): boolean {
   const user = mention.substring(1)
   return user.indexOf('/') === -1 && isValidUsername(user)
+}
+
+// A URL token in the text, and an image extension inside one. Each is a single
+// class run, linear on any input.
+const URL_TOKEN_RE = /https?:\/\/[^\s<>"']+/gi
+const IMAGE_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
+
+// Where the image URL in a token ends: after its last image extension, or the
+// whole token when a query or fragment follows that extension. -1 when the
+// token is not an image URL.
+function imageUrlEnd(token: string): number {
+  let end = -1
+  IMAGE_EXT_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = IMAGE_EXT_RE.exec(token)) !== null) end = m.index + m[0].length
+  if (end !== -1 && end < token.length && (token[end] === '?' || token[end] === '#')) return token.length
+  return end
 }
 
 // Escapes a value for a double-quoted attribute. Tags (`#[-a-z\d]+`) and valid
@@ -198,10 +215,17 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
   // the image regex matching URLs inside enhanced author HTML
   let firstImageUsed = false;
 
-  content = content.replace(IMG_REGEX, (imglink) => {
+  // Each URL token is cut at its image extension, and what follows stays text:
+  // IMG_REGEX's trailing `(.*)` used to go into the image src, so
+  // `https://e.com/i.png & friends` was proxied as that whole string and the
+  // text vanished (#2094). Same reading as the LCP preload's standalone scan
+  // (catch-post-image.ts imageToken), so both compute the same proxy URL.
+  content = content.replace(URL_TOKEN_RE, (token) => {
+    const end = imageUrlEnd(token);
+    if (end === -1) return token;
     const isLCP = !firstImageUsed;
     firstImageUsed = true;
-    return createImageHTML(imglink, isLCP, forApp);
+    return createImageHTML(token.slice(0, end), isLCP, forApp) + token.slice(end);
   });
 
   // Restore author placeholders in one scan. One replace() per placeholder
