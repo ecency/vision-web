@@ -522,13 +522,13 @@ function extractYtStartTime(url) {
   try {
     const urlObj = new URL(url);
     const params = new URLSearchParams(urlObj.search);
-    if (params.has("t")) {
-      const t = params.get("t");
-      return "" + parseInt(t || "0");
-    } else if (params.has("start")) {
-      return params.get("start") || "";
+    const m = /^(?:(\d{1,7})h)?(?:(\d{1,7})m)?(?:(\d{1,7})s?)?$/i.exec(params.get("t") || "");
+    if (m && (m[1] || m[2] || m[3])) {
+      const seconds = +(m[1] || 0) * 3600 + +(m[2] || 0) * 60 + +(m[3] || 0);
+      if (seconds <= 9999999) return "" + seconds;
     }
-    return "";
+    const start = params.get("start") || "";
+    return /^\d{1,7}$/.test(start) ? "" + +start : "";
   } catch (error) {
     return "";
   }

@@ -1,5 +1,13 @@
 # @ecency/render-helper
 
+## 2.5.44
+
+### Patch Changes
+
+- Follow-ups: RC delegate Next, legacy chat cookie, YouTube video URL, docs-review leftovers (#2091)
+
+- [#2091](https://github.com/ecency/vision-web/pull/2091) [`66fde93`](https://github.com/ecency/vision-web/commit/66fde93cb4b4009cf2b08a8c22935f8c415bab2d) Thanks [@feruzm](https://github.com/feruzm)! - `extractYtStartTime` reads YouTube's hour, minute and second form in `t` (`1m30s` is 90, `1h2m3s` is 3723) instead of keeping only the first number, so the parsed start time (`data-start-time` on YouTube video links, used for the video link caption on web and by mobile) is right for those forms. A value that is not a time (negative, non-numeric, empty, or above 9999999 seconds) gives no start time instead of `NaN`, a negative number, `0` or a huge number, and an invalid `t` falls back to a valid `start`. Leading zeros are dropped (`start=00030` gives `30`).
+
 ## 2.5.43
 
 ### Patch Changes
