@@ -23,26 +23,45 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
 // What sits right before a markdown link or image destination: `](`, then
-// optional spaces and an optional `<`.
-const DESTINATION_START = /\]\(\s*<?$/
+// optional spaces and an optional `<` (checked on a short tail), or a whole
+// line holding a reference definition's label (`[x]: `, the label at most 999
+// characters as in CommonMark). Each test is bounded, so marking stays linear.
+const INLINE_DESTINATION_START = /\]\([ \t]*<?$/
+const REFERENCE_DESTINATION_START = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*<?$/
+function isDestinationStart(text: string, at: number): boolean {
+  if (INLINE_DESTINATION_START.test(text.slice(Math.max(0, at - 32), at))) return true
+  const lineStart = text.lastIndexOf('\n', at - 1) + 1
+  return at - lineStart <= 1010 && REFERENCE_DESTINATION_START.test(text.slice(lineStart, at))
+}
+
+// Stands in for a backslash-escaped `&` in a destination while Remarkable
+// parses: a private-use character, and only used when the body holds none.
+// Inside an href Remarkable's encodeURI turns it into %EE%80%80, which is read
+// back only on a render that marked something (ampMarked).
+const AMP_SENTINEL = '\uE000'
+const AMP_SENTINEL_G = /\uE000/g
+const AMP_SENTINEL_HREF = /\uE000|%EE%80%80/g
+let ampMarked = false
 
 /**
  * A backslash-escaped `&` in a link or image destination is a literal
  * ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
  * `?q=&copy;`. Remarkable drops the backslash before decode_destinations runs,
- * which then read `&copy;` as ©. Written as `&amp;` instead, the destination
- * decode turns it back into the literal `&`. Only destinations change: any
- * other text (code, raw HTML, autolinks, plain text) keeps its backslash
- * exactly as the parser reads it.
+ * which then read `&copy;` as ©. So each `\\&` that sits where a destination
+ * or reference definition starts is marked with AMP_SENTINEL, which the parser
+ * keeps as is. decode_destinations turns it into a literal `&` in the hrefs
+ * and srcs the parser produced, after their references are decoded, and back
+ * into the source's `\\&` everywhere else (code, raw HTML), so any text the
+ * mark lands in that is not a parsed destination renders exactly as written.
  */
-function escapeDestinationAmpersands(src: string): string {
+function markDestinationAmpersands(src: string): string {
   const inDestinations = (text: string) => {
     let out = ''
     let last = 0
     for (const m of regexMatches(text, URL_RUN)) {
       const at = m.index ?? 0
-      if (!DESTINATION_START.test(text.slice(Math.max(0, at - 16), at))) continue
-      out += text.slice(last, at) + m[0].replace(/\\&/g, '&amp;')
+      if (!isDestinationStart(text, at)) continue
+      out += text.slice(last, at) + m[0].replace(/\\&/g, AMP_SENTINEL)
       last = at + m[0].length
     }
     return out + text.slice(last)
@@ -67,7 +86,22 @@ interface DestinationToken {
   type: string
   src?: string
   href?: string
+  alt?: string
+  title?: string
+  content?: string
   children?: DestinationToken[]
+}
+
+// AMP_SENTINEL back to what the source said, by where it ended up.
+const hrefAmp = (value: string) => (ampMarked ? value.replace(AMP_SENTINEL_HREF, '&') : value)
+const literalAmp = (value: string) => value.replace(AMP_SENTINEL_G, '&')
+const sourceAmp = (value: string) => value.replace(AMP_SENTINEL_G, '\\&')
+
+function restoreMarkedAmpersands(token: DestinationToken): void {
+  if (token.content === undefined || !token.content.includes(AMP_SENTINEL)) return
+  // Text went through the escape rule (`\\&` is `&`); code and raw HTML keep
+  // the backslash, as the parser leaves it there.
+  token.content = token.type === 'text' ? literalAmp(token.content) : sourceAmp(token.content)
 }
 
 /**
@@ -82,10 +116,16 @@ interface DestinationToken {
  */
 function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   for (const block of state.tokens) {
+    restoreMarkedAmpersands(block)
     if (block.type !== 'inline' || !block.children) continue
     for (const token of block.children) {
-      if (token.type === 'image' && token.src) token.src = decodeCompleteReferences(token.src)
-      else if (token.type === 'link_open' && token.href) token.href = decodeCompleteReferences(token.href)
+      // A marked `\\&` becomes a literal `&` after the decode, so it never
+      // starts a reference.
+      if (token.type === 'image' && token.src) token.src = hrefAmp(decodeCompleteReferences(token.src))
+      else if (token.type === 'link_open' && token.href) token.href = hrefAmp(decodeCompleteReferences(token.href))
+      if (token.alt) token.alt = literalAmp(token.alt)
+      if (token.title) token.title = literalAmp(token.title)
+      restoreMarkedAmpersands(token)
     }
   }
   return true
@@ -350,7 +390,12 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   let output = '';
 
-  if (input.includes('\\&')) input = escapeDestinationAmpersands(input)
+  ampMarked = false
+  if (input.includes('\\&') && !input.includes(AMP_SENTINEL)) {
+    const marked = markDestinationAmpersands(input)
+    ampMarked = marked !== input
+    input = marked
+  }
 
   // Replace entities with deterministic placeholders to preserve them during rendering
   const entities = input.match(ENTITY_REGEX);
@@ -407,6 +452,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   try {
     output = md.render(input)
+    if (ampMarked) output = sourceAmp(output)
 
     // Fix malformed block-level HTML tags that Remarkable wraps in <p> tags
     // This prevents "Opening and ending tag mismatch" errors from DOMParser
@@ -454,7 +500,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves
       // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || md.render(input), untransformed)
+      output = sanitizeHtml(output || sourceAmp(md.render(input)), untransformed)
     }
   }
 

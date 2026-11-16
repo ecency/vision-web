@@ -9,7 +9,16 @@ const render = (body: string, forApp: boolean) =>
   markdown2Html({ author: 'edge', permlink: `e${n++}`, last_update: '2026-11-16', body } as never, forApp)
 const firstImg = (html: string) => /<img[^>]*\ssrc="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&')
 const proxyOf = (url: string) => proxifyImageSrc(url, 0, 0, 'match', { forceProxy: true })
-const strip = (html: string) => html.replace(/<[^>]+>/g, '')
+// Tags removed until none is left (a single pass can leave a tag that two
+// overlapping fragments form).
+const strip = (html: string) => {
+  let out = html
+  for (let prev = ''; prev !== out; ) {
+    prev = out
+    out = out.replace(/<[^>]*>/g, '')
+  }
+  return out
+}
 
 describe('a text URL is an image when an image extension ends at a boundary', () => {
   // An extension followed by a query keeps the whole token: a query that
@@ -183,5 +192,23 @@ describe('escaped angle brackets end a text URL', () => {
 
   it('the preload agrees', () => {
     expect(getEntryImageRawUrl('see &lt;https://e.com/i.png&gt; ok')).toBe('https://e.com/i.png')
+  })
+})
+
+// Third review round of #2101: `\&` outside a parsed destination renders as on develop.
+describe('a backslash-escaped & in link syntax that is not a parsed destination', () => {
+  it.each([
+    ['    [x](https://e.com/?q=\\&copy;)', '<pre><code>[x](https://e.com/?q=\\&amp;copy;)</code></pre>'],
+    ['- item\n\n        [x](https://e.com/?q=\\&copy;)', '<ul>\n<li><p dir="auto">item</p>\n<pre><code>  [x](https://e.com/?q=\\&amp;copy;)</code></pre></li>\n</ul>'],
+    ['<pre>[x](https://e.com/?q=\\&copy;)</pre>', '<pre>[x](https://e.com/?q=\\\u00a9)</pre>'],
+    ['<div>\n[x](https://e.com/?q=\\&copy;)\n</div>', '<div>\n[x](https://e.com/?q=\\\u00a9)\n</div>']
+  ])('%j renders as on develop, web and app', (body, html) => {
+    expect(render(body, false)).toBe(html)
+    expect(strip(render(body, true))).toBe(strip(html))
+  })
+
+  it.each([false, true])('a reference definition keeps the ampersand literal (forApp %s)', (forApp) => {
+    const html = render('[x]: https://e.com/?q=\\&copy;\n\n[x]', forApp)
+    expect(html).toContain(`${forApp ? 'data-href' : 'href'}="https://e.com/?q=&amp;copy;"`)
   })
 })
