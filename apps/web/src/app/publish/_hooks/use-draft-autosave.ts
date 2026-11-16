@@ -323,6 +323,14 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
     createdDraftIdRef.current = undefined;
     prevSnapshotRef.current = null;
     lastAttemptAtRef.current = 0;
+    // The failure breaker belongs to the binding that tripped it, and so does a
+    // retry armed for it: it would write the previous binding's edit.
+    consecutiveFailsRef.current = 0;
+    cooldownUntilRef.current = 0;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     setCreatedDraftId(undefined);
     setLastSaved(null);
   }, [bindingKey]);

@@ -409,6 +409,52 @@ describe("useDraftAutosave", () => {
     expect(calls).toEqual(["alice:route-1"]);
   });
 
+  // CodeRabbit (#2106): the failure breaker belongs to the binding that tripped
+  // it. The next account's composer starts with a clean slate.
+  it("does not carry the previous account's failure cooldown into the next account", async () => {
+    saveToDraft.mockRejectedValue(new Error("drafts-add 406"));
+    const { rerender } = renderAutosave({ title: "a", content: "body 0" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    for (let i = 1; i < AUTOSAVE_FAIL_THRESHOLD; i++) {
+      rerender({ snapshot: { title: "a", content: `body ${i}` } });
+      await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    }
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD);
+
+    saveToDraft.mockResolvedValue("d-bob");
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: `body ${AUTOSAVE_FAIL_THRESHOLD - 1}` } });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD + 1);
+  });
+
+  // Fable (#2106): a retry armed under the previous account must not fire into
+  // the route's draft under the next one.
+  it("drops a pending retry when the account changes on a route draft", async () => {
+    const calls: string[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      calls.push(`${activeUsername.current}:${options?.draftId}`);
+      return undefined;
+    });
+    const { rerender } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ draftId: "route-1", enabled: true, snapshot }),
+      { initialProps: { snapshot: { title: "a", content: "one" } } }
+    );
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    // An edit inside the minimum interval arms a retry. The composer memoizes its
+    // snapshot, so unchanged content keeps the same object across the switch.
+    const edited = { title: "a", content: "two" };
+    rerender({ snapshot: edited });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: edited });
+    await advance(AUTOSAVE_MIN_INTERVAL_MS * 2);
+
+    expect(calls).toEqual(["alice:route-1"]);
+  });
+
   it("switching back does not resume writing into the first account's draft", async () => {
     const targets: (string | undefined)[] = [];
     saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
