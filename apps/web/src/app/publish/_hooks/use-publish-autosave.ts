@@ -73,8 +73,19 @@ export function usePublishAutosave() {
   // with the new username and the previous account's draft, which must not be
   // filed under the new account.
   const writtenRef = useRef<{ username: string; id: string; savedAt: Date } | null>(null);
+  // Set once the post is published, until the composer resets for the next one.
+  // Publish can succeed while the first autosave is still on the wire, and the
+  // reset (clearAll) commits a render later, so that save can still land for
+  // the published post; it must not point a later visit at it.
+  const forgottenRef = useRef(false);
   useEffect(() => {
-    if (!username || !draftId || !lastSaved || writtenRef.current?.savedAt === lastSaved) {
+    if (
+      forgottenRef.current ||
+      !username ||
+      !draftId ||
+      !lastSaved ||
+      writtenRef.current?.savedAt === lastSaved
+    ) {
       return;
     }
     writtenRef.current = { username, id: draftId, savedAt: lastSaved };
@@ -87,11 +98,19 @@ export function usePublishAutosave() {
    * started, possibly before the first autosave had created the draft.
    */
   const forgetPointer = useCallback(() => {
+    forgottenRef.current = true;
     const written = writtenRef.current;
     if (written) {
       clearAutosavePointer(written.username, written.id);
     }
   }, []);
+
+  // Declared after the write above, so in the commit that carries the reset the
+  // write still sees the flag; the reset itself drops lastSaved on the next render,
+  // and the autosave engine abandons any save of the old post from then on.
+  useEffect(() => {
+    forgottenRef.current = false;
+  }, [clearGeneration]);
 
   return { ...autosave, forgetPointer };
 }
