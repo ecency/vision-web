@@ -80,6 +80,39 @@ export function decodeDomImageSrc(src: string): string {
 // A complete reference: one that ends in `;`.
 const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
 
+// An image extension, the set the renderer has always recognised.
+const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
+// Prose punctuation that can follow a URL in text without belonging to it.
+const TRAILING_PUNCTUATION = '.,;:!)]}*_~'
+
+/**
+ * Where the image URL in a bare URL token ends, or -1 when the token is not an
+ * image URL. An extension counts only at a boundary: the end of the token,
+ * before a query or fragment (`?`, `#`, `&`), or before trailing punctuation.
+ * So `.ico` in `.icons/readme` and `.jpg` in `photo.jpg.html` are not images.
+ * An extension followed by a query keeps the whole token, query included:
+ * `i.png?name=a.jpg&sig=x` and `image.php?file=x.jpg` stay whole rather than
+ * being cut at an extension inside the query. Before trailing punctuation the
+ * URL ends at the extension (`i.png,`), and the punctuation stays text. Shared
+ * by the render's text linkify and the LCP preload's bare-URL scan, so both
+ * read a token the same way. Linear: one pass for the extensions, one for the
+ * punctuation.
+ */
+export function imageUrlEnd(token: string): number {
+  let contentEnd = token.length
+  while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
+  let end = -1
+  IMAGE_EXT_G.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = IMAGE_EXT_G.exec(token)) !== null) {
+    const at = m.index + m[0].length
+    const next = token[at]
+    if (next === '?' || next === '#' || next === '&') return token.length
+    if (at >= contentEnd) end = at
+  }
+  return end
+}
+
 /**
  * Decodes only complete references, as CommonMark reads a link or image
  * destination: `?a=1&copy` stays as written, `?a=1&copy;` is `?a=1©`. A legacy
@@ -105,7 +138,8 @@ export function decodeCompleteReferences(value: string): string {
  * a non-alphanumeric character, which an HTML attribute decodes.
  */
 export function decodeRawBodyImageSrc(src: string): string {
-  return decodeDomImageSrc(decodeCompleteReferences(src))
+  // `\&` is a literal ampersand, as the render reads it (escapeUrlAmpersands).
+  return decodeDomImageSrc(decodeCompleteReferences(src.replace(/\\&/g, '&amp;')))
 }
 
 /**

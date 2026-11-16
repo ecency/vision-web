@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -345,26 +345,18 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // pattern itself is one class run, linear on any input. Global, so regexMatches
 // can walk the tokens in source order.
 const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
-// An image extension, the same set the renderer's IMG_REGEX uses. Global and
-// without a wildcard before it: every occurrence is found in one linear pass.
-const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
 // A YouTube video id as the renderer's YOUTUBE_REGEX captures it.
 const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
 
 /**
- * The image URL a bare token denotes, or null: the token up to its last image
- * extension, extended through the query or fragment when one follows, which
- * is what the earlier greedy pattern matched (prose punctuation or emphasis
- * after the extension is left out, a URL carried in another URL's query is
- * taken whole).
+ * The image URL a bare token denotes, or null, read exactly as the render's
+ * linkify reads it (imageUrlEnd): an image when the path ends in an image
+ * extension, kept whole with its query and fragment, with prose punctuation
+ * after a query-less URL left out.
  */
 function imageToken(token: string): string | null {
-  let end = -1
-  for (const m of regexMatches(token, IMAGE_EXT_G)) {
-    end = (m.index ?? 0) + m[0].length
-  }
+  const end = imageUrlEnd(token)
   if (end === -1) return null
-  if (end < token.length && (token[end] === '?' || token[end] === '#')) end = token.length
   const url = token.slice(0, end)
   return SAFE_URL_RE.test(url) ? url : null
 }

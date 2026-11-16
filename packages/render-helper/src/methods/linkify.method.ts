@@ -1,6 +1,6 @@
 import { SECTION_LIST } from '../consts'
 import { proxifyImageSrc, getProxyBase } from '../proxify-image-src'
-import { isValidPermlink, isValidUsername, sanitizePermlink } from "../helper";
+import { imageUrlEnd, isValidPermlink, isValidUsername, sanitizePermlink } from "../helper";
 import { createImageHTML } from "./img.method";
 import { RenderOptions } from "../types";
 
@@ -49,22 +49,8 @@ function isLinkableMention(mention: string): boolean {
   return user.indexOf('/') === -1 && isValidUsername(user)
 }
 
-// A URL token in the text, and an image extension inside one. Each is a single
-// class run, linear on any input.
+// A URL token in the text, a single class run, linear on any input.
 const URL_TOKEN_RE = /https?:\/\/[^\s<>"']+/gi
-const IMAGE_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
-
-// Where the image URL in a token ends: after its last image extension, or the
-// whole token when a query or fragment follows that extension. -1 when the
-// token is not an image URL.
-function imageUrlEnd(token: string): number {
-  let end = -1
-  IMAGE_EXT_RE.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = IMAGE_EXT_RE.exec(token)) !== null) end = m.index + m[0].length
-  if (end !== -1 && end < token.length && (token[end] === '?' || token[end] === '#')) return token.length
-  return end
-}
 
 // Escapes a value for a double-quoted attribute. Tags (`#[-a-z\d]+`) and valid
 // usernames can never hold a quote or an angle bracket, so this changes no
@@ -215,7 +201,8 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
   // the image regex matching URLs inside enhanced author HTML
   let firstImageUsed = false;
 
-  // Each URL token is cut at its image extension, and what follows stays text:
+  // Each URL token whose path ends in an image extension is an image, and what
+  // follows it stays text:
   // IMG_REGEX's trailing `(.*)` used to go into the image src, so
   // `https://e.com/i.png & friends` was proxied as that whole string and the
   // text vanished (#2094). Same reading as the LCP preload's standalone scan

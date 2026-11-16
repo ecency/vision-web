@@ -16,9 +16,43 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // A URL in the markdown source, in an attribute, a link destination or text.
 // It ends at whitespace, a quote, an angle bracket or an unbalanced `)`, the
 // delimiters a URL sits between in markdown and HTML; one level of balanced
-// parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092).
-// The two alternatives start with different characters, so it is linear.
-const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\))+/gi
+// parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092),
+// and so does an unclosed `(` (`a_(x&amp;y.png`), which no markdown construct
+// closes. Nothing follows the repetition, so the first (greedy) parse is taken
+// without backtracking: linear.
+const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+
+/**
+ * A backslash-escaped `&` in a URL is a literal ampersand (CommonMark), so
+ * `[x](https://e.com/?q=\\&copy;)` names `?q=&copy;`. Remarkable drops the
+ * backslash before decode_destinations runs, which then read `&copy;` as ©.
+ * Written as `&amp;` instead, the destination decode turns it back into the
+ * literal `&`, and in text it shows as `&`, as the escape did. Only URLs in
+ * markdown change: code keeps its backslash, and a URL in a raw HTML attribute
+ * (after `=`, `"` or `'`) is left to the attribute's own reading.
+ */
+function escapeUrlAmpersands(src: string): string {
+  const inUrls = (text: string) => {
+    let out = ''
+    let last = 0
+    for (const m of regexMatches(text, URL_RUN)) {
+      const at = m.index ?? 0
+      const before = at > 0 ? text[at - 1] : ''
+      if (before === '=' || before === '"' || before === "'") continue
+      out += text.slice(last, at) + m[0].replace(/\\&/g, '&amp;')
+      last = at + m[0].length
+    }
+    return out + text.slice(last)
+  }
+  let out = ''
+  let last = 0
+  for (const [start, end] of codeRanges(src)) {
+    if (start < last) continue
+    out += inUrls(src.slice(last, start)) + src.slice(start, end)
+    last = end
+  }
+  return out + inUrls(src.slice(last))
+}
 
 // Largest code block that is syntax highlighted (#2097).
 const MAX_HIGHLIGHT_LENGTH = 20_000
@@ -54,9 +88,15 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   return true
 }
 
+// A fence line, optionally inside blockquotes: `(?: {0,3}>)+` then one
+// optional space; each `>` ends its own repetition, so the match is linear.
+const FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/
+const FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/
+
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks
- * (``` or ~~~ at a line start, to the matching close or the end) and inline
+ * (``` or ~~~ at a line start, inside blockquotes too, to the matching close,
+ * the end of a quoted fence's blockquote, or the end) and inline
  * code spans (a backtick run to the next run of the same length). Linear: each
  * line is read once, and each backtick run is paired through a precomputed
  * "next run of the same length" table rather than a search.
@@ -68,16 +108,25 @@ function codeRanges(src: string): Array<[number, number]> {
   while (pos < src.length) {
     const eol = src.indexOf('\n', pos)
     const lineEnd = eol === -1 ? src.length : eol
-    const open = /^ {0,3}(`{3,}|~{3,})/.exec(src.slice(pos, lineEnd))
+    // A fence may sit in a blockquote (`> ~~~`): each `>` takes its own
+    // optional indent, so the prefix is read without ambiguity.
+    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd))
     if (open) {
-      const fence = open[1]
+      const quoted = open[1] !== undefined
+      const fence = open[2]
       let end = src.length
       let p = lineEnd + 1
       while (p < src.length) {
         const e = src.indexOf('\n', p)
         const le = e === -1 ? src.length : e
-        const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(src.slice(p, le))
-        if (close && close[1][0] === fence[0] && close[1].length >= fence.length) {
+        const line = src.slice(p, le)
+        // A quoted fence ends with its blockquote: the next line without `>`.
+        if (quoted && !/^ {0,3}>/.test(line)) {
+          end = p - 1
+          break
+        }
+        const close = FENCE_CLOSE.exec(line)
+        if (close && close[2][0] === fence[0] && close[2].length >= fence.length) {
           end = le
           break
         }
@@ -289,6 +338,8 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   }
 
   let output = '';
+
+  if (input.includes('\\&')) input = escapeUrlAmpersands(input)
 
   // Replace entities with deterministic placeholders to preserve them during rendering
   const entities = input.match(ENTITY_REGEX);
