@@ -7,6 +7,7 @@ import { NewsletterGate } from "@/features/newsletter/runtime";
 import { PostSubscribePrompt } from "@/features/newsletter/post-subscribe-prompt";
 import { EntryFooterControls } from "./entry-footer-controls";
 import { EntryFooterInfo } from "./entry-footer-info";
+import { EntryPreferredSource } from "./entry-preferred-source";
 import { EntryPageIsCommentHeader } from "./entry-page-is-comment-header";
 import { EntryPageMainInfo } from "./entry-page-main-info";
 import { EntryPageRawBody } from "./entry-page-raw-body";
@@ -20,9 +21,11 @@ import { ListenPlayer } from "@/features/listen";
 interface Props {
   entry: Entry;
   isRawContent?: boolean;
+  /** The request's site base, which gates the Google Preferred Sources link. */
+  base?: string;
 }
 
-export function EntryPageContentSSR({ entry, isRawContent }: Props) {
+export function EntryPageContentSSR({ entry, isRawContent, base }: Props) {
   const location = useEntryLocation(entry);
   const postPoll = useEntryPollExtractor(entry);
   return (
@@ -70,6 +73,7 @@ export function EntryPageContentSSR({ entry, isRawContent }: Props) {
           <div className="border-b border-[--border-color] px-3 md:px-4 py-2 md:py-3">
             <EntryTags entry={entry} />
             <EntryFooterInfo entry={entry} />
+            <EntryPreferredSource base={base} />
           </div>
           <EntryFooterControls entry={entry} />
         </div>

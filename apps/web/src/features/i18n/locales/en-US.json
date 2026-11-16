@@ -1187,6 +1187,7 @@
   "entry": {
     "via-app": "via <span class=\"app-name\">{{app}}</span>",
     "author-reputation": "Author's reputation",
+    "preferred-source": "Add Ecency as a preferred source on Google",
     "disclaimer": "This post was published via {{appName}}. Ecency is not the originator or editor of this content and displays it for discovery purposes only.",
     "comment-entry-title": "You are viewing a single comment's thread from: ",
     "comment-entry-go-root": "View the full context",
