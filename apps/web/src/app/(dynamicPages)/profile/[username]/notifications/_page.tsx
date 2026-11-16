@@ -46,7 +46,7 @@ export function ProfileNotifications({ username }: Props) {
     <div className="bg-white/80 dark:bg-dark-200/90 glass-box rounded-none sm:rounded-xl w-full p-2 sm:p-4">
       <div className="flex justify-end">
         <Dropdown>
-          <DropdownToggle withChevron={true}>
+          <DropdownToggle withChevron={true} className="gap-1 [&_svg]:size-5">
             {i18next.t(`notifications.type-${filter ?? "all"}`)}
           </DropdownToggle>
           <DropdownMenu align="right">
