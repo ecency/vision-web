@@ -12,6 +12,7 @@ import useMount from "react-use/lib/useMount";
 import { getAccessToken } from "@/utils";
 import { Button } from "@ui/button";
 import type { Draft } from "@/entities";
+import { clearAutosavePointer } from "@/app/publish/_utils/autosave-pointer";
 
 // Bounds the automatic page waterfall that skips template-only pages.
 const AUTO_FETCH_PAGE_BUDGET = 5;
@@ -64,6 +65,8 @@ export function DraftsList({ onHide, onPick }: Props) {
     listRef.current?.scrollIntoView(true);
   });
   const { mutateAsync: deleteDraft } = useDeleteDraft((id) => {
+    // /publish must not offer to resume a draft that no longer exists.
+    if (activeUser?.username) clearAutosavePointer(activeUser.username, id);
     // if user editing the draft, redirect to submit page
     if (pathname === `/draft/${id}`) {
       router.push("/publish");

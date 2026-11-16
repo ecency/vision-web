@@ -18,11 +18,14 @@ import { normalizePollSnapshot } from "@/app/publish/_utils/poll";
 import { PublishEditorHtmlWarning } from "../../_components/publish-editor-html-warning";
 import { PublishSuccessState } from "../../_components/publish-success-state";
 import { PublishDraftsNoDraft } from "./_components";
+import { clearAutosavePointer } from "@/app/publish/_utils/autosave-pointer";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 export default function PublishPage() {
   const params = useParams();
   const router = useRouter();
   const draftId = params?.id as string | undefined;
+  const { username } = useActiveAccount();
 
   // Starts on "loading", not "edit". Rendering the editor before the draft
   // arrives let someone type into an empty composer that was about to be
@@ -133,6 +136,8 @@ export default function PublishPage() {
         <PublishValidatePost
           onClose={() => setStep("edit")}
           onSuccess={(step, entryInfo) => {
+            // A resumed draft that is now published is no longer one to offer.
+            if (username && draftId) clearAutosavePointer(username, draftId);
             setPublishedEntry(entryInfo);
             setStep(step);
           }}
