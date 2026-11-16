@@ -101,21 +101,36 @@ function CommentForm({
   const { selection, setSelection } = useContext(EntryPageContext);
 
   const [text, setText] = useLocalStorage(
-    PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
+    // The edit form keeps its own text: on mount it loads the post body, which
+    // used to land on the reply key and wipe an unsent reply to that post.
+    PREFIX + `_${isEdit ? "edit" : "reply"}_text_${entry.author}_${entry.permlink}`,
     failedReply?.text ?? ""
   );
   // Not stored while composing: it belongs to this form and this account. A reply
   // whose broadcast fails comes back through `failedReply` with the choice it was
   // sent with. A failed DECLINED reply is the one thing stored, until it is posted:
   // its exact text, under this account and parent, so closing the form or reloading
-  // brings the draft back declined. It applies only while the draft is that text.
+  // brings the draft back declined. It applies only while the draft is that text,
+  // and follows the writer's own edits of it (below). The edit form has no
+  // decline (comment_options cannot be set again), so it never touches one.
   const [declinePayout, setDeclinePayout] = useState(false);
-  const pendingDeclineKey = activeUser?.username
+  const pendingDeclineKey = !isEdit && activeUser?.username
     ? failedDeclineKey(activeUser.username, entry.author, entry.permlink)
     : null;
   const forgetPendingDecline = useCallback(() => {
     if (pendingDeclineKey) ls.remove(pendingDeclineKey);
   }, [pendingDeclineKey]);
+  // The stored decline, or null. A blank one is dropped, never applied: every new
+  // reply form starts blank, so it would pre-check an unrelated reply.
+  const readPendingDecline = (key: string): string | null => {
+    const value = ls.get(key);
+    if (value === null) return null;
+    if (typeof value !== "string" || isBlankBody(value)) {
+      ls.remove(key);
+      return null;
+    }
+    return value;
+  };
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
   const [inputHeight, setInputHeight] = useState(0);
@@ -261,13 +276,13 @@ function CommentForm({
       if (!restoredThisCommit.current) {
         const ownFailure =
           !!failedReply && failedReply.username === activeUser?.username && !!pendingDeclineKey;
-        const pending = ownFailure ? ls.get(pendingDeclineKey!) : null;
+        const pending = ownFailure ? readPendingDecline(pendingDeclineKey!) : null;
         setDeclinePayout(ownFailure && failedReply!.declinePayout && pending !== null && pending === text);
         if (pending !== null && pending !== text) forgetPendingDecline();
       }
     }
     if (failedReply || isEdit || !pendingDeclineKey) return;
-    const pending = ls.get(pendingDeclineKey);
+    const pending = readPendingDecline(pendingDeclineKey);
     if (pending === null) return;
     if (pending === text) {
       setDeclinePayout(true);
@@ -275,6 +290,25 @@ function CommentForm({
       forgetPendingDecline();
     }
   }, [pendingDeclineKey]);
+  // A pending decline follows the writer's edits of the failed reply (#2103):
+  // whenever the draft changes from the text the decline was stored for, the
+  // decline moves to the new text. Only from that exact text, so a decline stored
+  // for some other text is never adopted (the checks above drop that one), and
+  // whatever changed the draft (typing, the toolbar, a quote) is covered alike.
+  const lastText = useRef(text);
+  useEffect(() => {
+    const previous = lastText.current;
+    lastText.current = text;
+    if (previous === text || !pendingDeclineKey) return;
+    if (ls.get(pendingDeclineKey) !== previous) return;
+    // Cleared to blank: the failed reply is gone, and so is its decline.
+    if (isBlankBody(text)) {
+      forgetPendingDecline();
+    } else {
+      ls.set(pendingDeclineKey, text);
+    }
+  }, [text]);
+
   // Runs last in every commit: the restore flag above only spans the commit it ran in.
   useEffect(() => {
     restoredThisCommit.current = false;
@@ -305,10 +339,7 @@ function CommentForm({
       }
       setText(text);
       setInputHeight(scHeight);
-      if (pendingDeclineKey && ls.get(pendingDeclineKey) !== null && ls.get(pendingDeclineKey) !== text) {
-        forgetPendingDecline();
-      }
-    }, [setText, pendingDeclineKey, forgetPendingDecline]);
+    }, [setText]);
 
     // Nothing to broadcast without a body: the chain op requires one, and the
     // SDK builder throws `[SDK][buildCommentOp] Missing required parameters`

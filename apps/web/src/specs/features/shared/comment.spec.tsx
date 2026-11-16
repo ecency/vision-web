@@ -463,13 +463,11 @@ describe("Comment composer", () => {
       expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
     });
 
-    test("editing the failed text forgets the pending decline", () => {
+    // #2103: an edit moves the stored decline to the new text rather than dropping it.
+    test("editing the failed text moves the pending decline to the new text", () => {
       const failed = renderFailed({ text: "hello world", declinePayout: true });
       type(failed.getByRole, "something else");
-      expect(declineKeys()).toEqual([]);
-      failed.unmount();
-
-      expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
+      expect(declineKeys().map((k) => window.localStorage.getItem(k))).toEqual([JSON.stringify("something else")]);
     });
 
     test("a reply that fails after switching accounts is not restored into the new account's form", () => {
@@ -588,8 +586,9 @@ describe("Comment composer", () => {
         view.rerenderFailed(failed);
         activeAccount.username = "tester";
         view.rerenderFailed(failed);
+        // The writer's edit stays, and so does the decline that followed it (#2103).
         expect(view.getByRole("textbox")).toHaveValue("edited");
-        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
       } finally {
         activeAccount.username = "tester";
       }
@@ -626,6 +625,84 @@ describe("Comment composer", () => {
       } finally {
         activeAccount.username = "tester";
       }
+    });
+
+    // #2103: fixing a typo in a failed declined reply keeps it declined.
+    test("editing a failed declined reply keeps the decline across reopening", () => {
+      const failed = renderFailed({ text: "hello wrold", declinePayout: true });
+      type(failed.getByRole, "hello world");
+      expect(checkbox(failed.getByRole)).toHaveAttribute("aria-checked", "true");
+      failed.unmount();
+
+      const reopened = renderComment();
+      expect(reopened.getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(reopened.getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    // Every new reply form starts at "": a decline that followed the draft down to
+    // blank would pre-check the next, unrelated reply (cannot be undone on chain).
+    test("clearing a failed declined reply drops the decline", async () => {
+      const failed = renderFailed({ text: "hello world", declinePayout: true });
+      type(failed.getByRole, "");
+      expect(declineKeys()).toEqual([]);
+      failed.unmount();
+
+      const next = renderComment();
+      expect(checkbox(next.getByRole)).toHaveAttribute("aria-checked", "false");
+      type(next.getByRole, "a brand new reply, days later");
+      await act(async () => {
+        fireEvent.click(next.getByRole("button", { name: "Reply" }));
+      });
+      expect(next.onSubmit).toHaveBeenCalledWith("a brand new reply, days later", { declinePayout: false });
+    });
+
+    test("a blank stored decline is never applied", () => {
+      window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify(""));
+      expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
+      expect(declineKeys()).toEqual([]);
+    });
+
+    test("several edits in a row keep the decline in step with the draft", () => {
+      const failed = renderFailed({ text: "one", declinePayout: true });
+      type(failed.getByRole, "one two");
+      type(failed.getByRole, "one two three");
+      failed.unmount();
+
+      expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("typing in the edit form of the same post leaves a pending reply decline alone", () => {
+      renderFailed({ text: "hello world", declinePayout: true }).unmount();
+      const keys = declineKeys();
+      expect(keys).not.toEqual([]);
+
+      const editing = renderComment(undefined, { isEdit: true });
+      type(editing.getByRole, "an edit of the post itself");
+      editing.unmount();
+
+      expect(declineKeys()).toEqual(keys);
+      expect(window.localStorage.getItem(keys[0])).toBe(JSON.stringify("hello world"));
+    });
+
+    test("opening the edit form of the same post keeps the unsent reply draft", () => {
+      const reply = renderComment();
+      type(reply.getByRole, "my unsent reply");
+      reply.unmount();
+
+      renderComment(undefined, { isEdit: true }).unmount();
+
+      expect(renderComment().getByRole("textbox")).toHaveValue("my unsent reply");
+    });
+
+    test("an edited declined reply posts declined and leaves nothing stored", async () => {
+      const failed = renderFailed({ text: "hello wrold", declinePayout: true });
+      type(failed.getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(failed.getByRole("button", { name: "Reply" }));
+      });
+
+      expect(failed.onSubmit).toHaveBeenCalledWith("hello world", { declinePayout: true });
+      expect(declineKeys()).toEqual([]);
     });
 
     test("a failed reply that kept its payout stores nothing", () => {
