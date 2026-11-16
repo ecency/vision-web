@@ -1,6 +1,6 @@
 "use client";
 
-import { Comment } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions, type FailedReply } from "@/features/shared/comment";
 import i18next from "i18next";
 import { Entry } from "@/entities";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
@@ -15,7 +15,7 @@ interface Props {
 
 export function EntryReplySection({ entry }: Props) {
     const { commentsInputRef, setSelection } = useContext(EntryPageContext);
-    const [failedReplyText, setFailedReplyText] = useState<string | null>(null);
+    const [failedReply, setFailedReply] = useState<FailedReply | null>(null);
 
     const { mutateAsync: createReply, isPending } = useCreateReply(
         entry,
@@ -23,15 +23,15 @@ export function EntryReplySection({ entry }: Props) {
         () => {
             // Success - clear selection and failed text
             setSelection("");
-            setFailedReplyText(null);
+            setFailedReply(null);
         },
-        (text, error) => {
-            // Blockchain failed - restore text
-            setFailedReplyText(text);
+        (text, error, submitted) => {
+            // Blockchain failed - restore text and payout choice
+            setFailedReply({ text, ...submitted });
         }
     );
 
-    const replySubmitted = async (text: string) => {
+    const replySubmitted = async (text: string, { declinePayout }: CommentSubmitOptions) => {
         const permlink = createReplyPermlink(entry.author);
         const tags = entry.json_metadata?.tags || ["ecency"];
 
@@ -39,7 +39,8 @@ export function EntryReplySection({ entry }: Props) {
             jsonMeta: makeJsonMetaDataReply(tags, appPackage.version),
             text,
             permlink,
-            point: true
+            point: true,
+            declinePayout
         });
 
         // Don't clear selection here - let onSuccess callback handle it
@@ -53,7 +54,7 @@ export function EntryReplySection({ entry }: Props) {
             onSubmit={replySubmitted}
             inProgress={isPending}
             inputRef={commentsInputRef}
-            initialText={failedReplyText}
+            failedReply={failedReply}
         />
     );
 }

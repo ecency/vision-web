@@ -2,7 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatError } from "../format-error";
 import { Entry, FullAccount, MetaData, CommentOptions } from "@/entities";
-import { isBlankBody, tempEntry } from "@/utils";
+import { isBlankBody, makeCommentOptions, tempEntry } from "@/utils";
 import { SortOrder } from "@/enums";
 import { error, success } from "@/features/shared";
 import { ErrorTypes } from "@/enums";
@@ -15,11 +15,37 @@ import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
 import { useCommentMutation } from "@/api/sdk-mutations";
 import type { CommentPayload } from "@ecency/sdk";
 
+/**
+ * The comment_options a reply broadcasts with: the caller's own, or the publish flow's
+ * "Decline payout" options when the reply declines its payout.
+ */
+function resolveReplyOptions(
+  author: string,
+  permlink: string,
+  options?: CommentOptions,
+  declinePayout?: boolean
+): CommentOptions | null {
+  return options ?? (declinePayout ? makeCommentOptions(author, permlink, "dp") : null);
+}
+
+/** Show the reply's payout terms on its optimistic entry before the chain indexes it. */
+function applyPayoutTerms(entry: Entry, options: CommentOptions | null) {
+  if (options) {
+    entry.max_accepted_payout = options.max_accepted_payout;
+    entry.percent_hbd = options.percent_hbd;
+  }
+}
+
 export function useCreateReply(
   entry: Entry,
   root: Entry,
   onSuccess?: () => void,
-  onBlockchainError?: (text: string, error: any) => void
+  /** `submitted` is the account the failed reply was sent from and its payout choice. */
+  onBlockchainError?: (
+    text: string,
+    error: any,
+    submitted: { declinePayout: boolean; username: string }
+  ) => void
 ) {
   const { activeUser, account } = useActiveAccount();
   const queryClient = useQueryClient();
@@ -49,6 +75,7 @@ export function useCreateReply(
                          text,
                          jsonMeta,
                          options,
+                         declinePayout,
                          point
                        }: {
       permlink: string;
@@ -56,6 +83,11 @@ export function useCreateReply(
       jsonMeta: MetaData;
       point: boolean;
       options?: CommentOptions;
+      /**
+       * Decline the reply's payout. comment_options is create-only, so it goes in the
+       * same transaction as the comment, built exactly as the publish flow builds it.
+       */
+      declinePayout?: boolean;
     }) => {
       if (!activeUser || !account || !entry) throw new Error("Missing active user or entry");
       if (isBlankBody(text)) throw new Error(i18next.t("comment.empty-body"));
@@ -71,6 +103,14 @@ export function useCreateReply(
         tags: [],
         description: null
       });
+
+      const commentOptions = resolveReplyOptions(
+        activeUser.username,
+        permlink,
+        options,
+        declinePayout
+      );
+      applyPayoutTerms(optimisticEntry, commentOptions);
 
       // Fire blockchain broadcast in background without blocking
       const draftKey = `reply_draft_${entry.author}_${entry.permlink}`;
@@ -90,7 +130,7 @@ export function useCreateReply(
       };
 
       // Add options if provided
-      if (options) {
+      if (commentOptions) {
         // Extract beneficiaries defensively from extensions array
         const extractBeneficiaries = (extensions: any[]): Array<{ account: string; weight: number }> => {
           if (!Array.isArray(extensions)) return [];
@@ -107,11 +147,11 @@ export function useCreateReply(
         };
 
         commentPayload.options = {
-          maxAcceptedPayout: options.max_accepted_payout,
-          percentHbd: options.percent_hbd,
-          allowVotes: options.allow_votes,
-          allowCurationRewards: options.allow_curation_rewards,
-          beneficiaries: extractBeneficiaries(options.extensions),
+          maxAcceptedPayout: commentOptions.max_accepted_payout,
+          percentHbd: commentOptions.percent_hbd,
+          allowVotes: commentOptions.allow_votes,
+          allowCurationRewards: commentOptions.allow_curation_rewards,
+          beneficiaries: extractBeneficiaries(commentOptions.extensions),
         };
       }
 
@@ -150,7 +190,10 @@ export function useCreateReply(
 
         // Notify parent component to restore text to input
         if (onBlockchainError) {
-          onBlockchainError(text, err);
+          onBlockchainError(text, err, {
+            declinePayout: !!declinePayout,
+            username: activeUser.username
+          });
         }
 
         // Keep draft in storage so user can retry by clicking Reply again
@@ -168,7 +211,7 @@ export function useCreateReply(
       return optimisticEntry;
     },
 
-    onMutate: async ({ permlink, text }) => {
+    onMutate: async ({ permlink, text, options, declinePayout }) => {
       if (!activeUser || !account) return;
 
       const optimistic = tempEntry({
@@ -182,6 +225,10 @@ export function useCreateReply(
         description: null
       });
       optimistic.is_optimistic = true;
+      applyPayoutTerms(
+        optimistic,
+        resolveReplyOptions(activeUser.username, permlink, options, declinePayout)
+      );
 
       // Add optimistic entry to all discussions caches (all sort orders)
       addOptimisticDiscussionEntry(optimistic, root.author, root.permlink, queryClient);

@@ -79,7 +79,11 @@ export const DeckPostViewer = ({ entry: initialEntry, onClose, backTitle }: Prop
         <EntryTipBtn entry={entry} />
       </div>
       <div className="px-3 dark:[&>*>.comment-preview]:bg-dark-default">
-        <DeckPostViewerCommentBox entry={entry} onReplied={() => {}} />
+        <DeckPostViewerCommentBox
+          key={`${entry.author}/${entry.permlink}`}
+          entry={entry}
+          onReplied={() => {}}
+        />
       </div>
       <div className="px-3">
         <Discussion parent={entry} community={null} hideControls={false} isRawContent={false} />

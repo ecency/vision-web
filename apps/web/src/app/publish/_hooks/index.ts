@@ -13,3 +13,4 @@ export * from "./use-draft-tab-coordinator";
 export * from "./use-publish-handoff";
 export * from "./use-back-to-classic";
 export * from "./use-open-autosaved-draft";
+export * from "./use-resume-autosaved-draft";

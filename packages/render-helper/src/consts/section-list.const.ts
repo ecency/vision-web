@@ -16,5 +16,7 @@ export const SECTION_LIST = [
   'payout',
   'activities',
   'spk',
-  'trail'
+  'trail',
+  'insights',
+  'notifications'
 ]

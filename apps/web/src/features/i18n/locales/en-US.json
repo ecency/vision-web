@@ -1187,6 +1187,7 @@
   "entry": {
     "via-app": "via <span class=\"app-name\">{{app}}</span>",
     "author-reputation": "Author's reputation",
+    "preferred-source": "Add Ecency as a preferred source on Google",
     "disclaimer": "This post was published via {{appName}}. Ecency is not the originator or editor of this content and displays it for discovery purposes only.",
     "comment-entry-title": "You are viewing a single comment's thread from: ",
     "comment-entry-go-root": "View the full context",
@@ -1260,7 +1261,8 @@
     "retry-hint": "Your text is preserved below - please try again",
     "rc-error-hint": "Insufficient Resource Credits - your text is preserved below",
     "short-reply-hint": "Replies of {{n}} characters or fewer do not earn points (links do not count)",
-    "empty-body": "Write something before posting"
+    "empty-body": "Write something before posting",
+    "decline-payout": "Decline payout"
   },
   "discussion": {
     "join": "Join the conversation now",
@@ -1435,6 +1437,7 @@
     "section-communities": "Communities",
     "section-wallet": "Wallet",
     "section-insights": "Insights",
+    "section-notifications": "Notifications",
     "section-settings": "Settings",
     "section-referrals": "Referrals",
     "section-permission": "Permission",
@@ -2196,6 +2199,7 @@
     "scheduled-published-title": "Your scheduled post \"{{title}}\" is now live."
   },
   "notifications": {
+    "auth-required-desc": "Log in to see notifications",
     "type-all": "All Notifications",
     "type-all-short": "All",
     "load-failed": "Notifications could not be loaded.",
@@ -2206,6 +2210,7 @@
     "type-mentions": "Mentions",
     "type-follows": "Follows",
     "type-reblogs": "Reblogs",
+    "type-communities": "Communities",
     "type-transfers": "Transfers",
     "type-delegations": "Delegations",
     "type-payouts": "Payouts",
@@ -3932,6 +3937,9 @@
     "edit-mode": "Post Editing",
     "auto-save": "Auto saved",
     "open-draft": "Open draft",
+    "resume-draft-prompt": "You have an unsaved post from {{time}}",
+    "resume-draft-resume": "Resume",
+    "resume-draft-dismiss": "Dismiss",
     "classic-handoff-conflict-title": "Replace the classic editor draft?",
     "classic-handoff-conflict-description": "The classic editor already holds an unsaved post. Continuing here replaces it with what you have written in this editor, and it cannot be recovered.",
     "classic-handoff-conflict-ok": "Replace it",

@@ -8,6 +8,8 @@ import routes from "@/routes";
 import { PostBase } from "@/app/submit/_types";
 import { hasDraftableContent } from "../_utils/content";
 import { usePublishState } from "./use-publish-state";
+import { clearAutosavePointer } from "../_utils/autosave-pointer";
+import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 export const SUBMIT_LOCAL_DRAFT_KEY = PREFIX + "_local_draft";
 
@@ -58,8 +60,12 @@ export function useBackToClassic() {
   const [, setLocalDraft] = useLocalStorage<PostBase>(SUBMIT_LOCAL_DRAFT_KEY);
   const { title, content, tags, metaDescription, isMetaDescriptionAuto } = usePublishState();
   const [conflict, setConflict] = useState(false);
+  const { username } = useActiveAccount();
 
   const handOver = useCallback(() => {
+    // The post now lives in the classic editor. Offering its older server copy
+    // on the next /publish visit would split the writer's work in two.
+    if (username) clearAutosavePointer(username);
     setLocalDraft({
       title: title ?? "",
       tags: tags ?? [],
@@ -69,7 +75,7 @@ export function useBackToClassic() {
       description: isMetaDescriptionAuto() ? "" : (metaDescription ?? "")
     });
     router.push(routes.SUBMIT);
-  }, [content, isMetaDescriptionAuto, metaDescription, router, setLocalDraft, tags, title]);
+  }, [content, isMetaDescriptionAuto, metaDescription, router, setLocalDraft, tags, title, username]);
 
   const backToClassic = useCallback(() => {
     // Nothing worth handing over, so leave whatever is over there alone.

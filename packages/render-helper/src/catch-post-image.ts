@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -344,27 +344,20 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // repeated group before a literal, is polynomial on crafted input. The token
 // pattern itself is one class run, linear on any input. Global, so regexMatches
 // can walk the tokens in source order.
-const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
-// An image extension, the same set the renderer's IMG_REGEX uses. Global and
-// without a wildcard before it: every occurrence is found in one linear pass.
-const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
+// `&lt;`/`&gt;` end a token as `<`/`>` do: the render reads the decoded text.
+const URL_TOKEN_RE = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi
 // A YouTube video id as the renderer's YOUTUBE_REGEX captures it.
 const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
 
 /**
- * The image URL a bare token denotes, or null: the token up to its last image
- * extension, extended through the query or fragment when one follows, which
- * is what the earlier greedy pattern matched (prose punctuation or emphasis
- * after the extension is left out, a URL carried in another URL's query is
- * taken whole).
+ * The image URL a bare token denotes, or null, read exactly as the render's
+ * linkify reads it (imageUrlEnd): an image when the path ends in an image
+ * extension, kept whole with its query and fragment, with prose punctuation
+ * after a query-less URL left out.
  */
 function imageToken(token: string): string | null {
-  let end = -1
-  for (const m of regexMatches(token, IMAGE_EXT_G)) {
-    end = (m.index ?? 0) + m[0].length
-  }
+  const end = imageUrlEnd(token)
   if (end === -1) return null
-  if (end < token.length && (token[end] === '?' || token[end] === '#')) end = token.length
   const url = token.slice(0, end)
   return SAFE_URL_RE.test(url) ? url : null
 }
@@ -534,7 +527,8 @@ const SAFE_URL_RE = /^https?:\/\//i
 // Eligibility for an avif <source> is then decided separately by
 // isPictureEligibleRawUrl.
 const IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i
-const isImageHref = (href: string): boolean => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href)
+const isImageHref = (href: string): boolean =>
+  SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1
 
 /**
  * Fast-path: extract the first image URL from raw markdown without rendering
@@ -550,6 +544,15 @@ const isImageHref = (href: string): boolean => SAFE_URL_RE.test(href) && IMG_EXT
  */
 function findFirstImageUrl(body: string, includeBareUrls = false): string | null {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null
+}
+
+// The first body image as the render will proxy it: decoded by where it came
+// from, an HTML attribute or a markdown destination (#2092).
+function firstBodyImageRawUrl(body: string): string | null {
+  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate
+  if (!candidate) return null
+  if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url))
+  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body))
 }
 
 function stripCodeRegions(body: string): string {
@@ -654,6 +657,13 @@ interface ImageCandidate {
   url: string
   /** Offset in the code-stripped body, for source-order comparisons. */
   pos: number
+  /**
+   * Taken from a raw HTML attribute (`<img src>`): its references decode the
+   * way the render reads an attribute, not as a markdown destination (#2092).
+   */
+  html?: boolean
+  /** A markdown destination (`![](url)`, `[url](url)`): unescaped as Remarkable does. */
+  destination?: boolean
 }
 
 /**
@@ -735,10 +745,10 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
 
   // Collect valid candidates with their source position; the rendered document
   // surfaces whichever image appears first in source order.
-  const candidates: { url: string; pos: number }[] = []
-  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0 })
+  const candidates: ImageCandidate[] = []
+  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0, destination: true })
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
-    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0 })
+    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true })
   }
   if (includeBareUrls) {
     const bareMatch = firstStandalone(prepared.image, imageToken)
@@ -754,7 +764,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
       const href = m[2]
       if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
-        candidates.push({ url: href, pos: idx })
+        candidates.push({ url: href, pos: idx, destination: true })
         break
       }
     }
@@ -967,8 +977,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   // %-encoded / non-ASCII cover URLs (otherwise the preload is wasted and the
   // LCP image double-downloads).
   if (typeof obj === 'string') {
-    const src = findFirstImageUrl(obj, true)
-    return src ? decodeImageSrc(src) : null
+    return firstBodyImageRawUrl(obj)
   }
   let meta: Entry['json_metadata'] | null
   if (typeof obj.json_metadata === 'object') {
@@ -986,8 +995,7 @@ export function getEntryImageRawUrl(obj: Entry | string): string | null {
   if (meta && meta.image && !!meta.image.length && typeof meta.image[0] === 'string' && meta.image[0].length > 0) {
     return decodeImageSrc(meta.image[0])
   }
-  const bodySrc = findFirstImageUrl(obj.body, true)
-  return bodySrc ? decodeImageSrc(bodySrc) : null
+  return firstBodyImageRawUrl(obj.body)
 }
 
 export interface CatchPostImageOptions {

@@ -4,7 +4,8 @@ import {
   PublishActionBar,
   PublishModeHeader,
   PublishValidatePost,
-  PublishMultiTabWarning
+  PublishMultiTabWarning,
+  PublishResumeDraftBar
 } from "@/app/publish/_components";
 import {
   useBackToClassic,
@@ -12,8 +13,10 @@ import {
   usePublishAutosave,
   usePublishEditor,
   usePublishHandoff,
-  usePublishState
+  usePublishState,
+  useResumeAutosavedDraft
 } from "@/app/publish/_hooks";
+import { hasDraftableContent } from "@/app/publish/_utils/content";
 import type { ImportResult } from "@/app/publish/_components/publish-import-dialog";
 import { isCommunity } from "@/utils";
 import { useSearchParams } from "next/navigation";
@@ -48,7 +51,8 @@ export default function Publish() {
 
   const { editor, setEditorContent } = usePublishEditor(() => setShowHtmlWarning(true));
   const searchParams = useSearchParams();
-  const { tags, setTags, setTitle, setContent, setSelectedThumbnail } = usePublishState();
+  const { title, content, tags, setTags, setTitle, setContent, setSelectedThumbnail } =
+    usePublishState();
 
   const handleImport = useCallback(
     (result: ImportResult) => {
@@ -83,9 +87,15 @@ export default function Publish() {
     )
   );
 
-  const { isActiveTab, lastSaved, draftId, flush } = usePublishAutosave();
+  const { isActiveTab, lastSaved, draftId, flush, forgetPointer } = usePublishAutosave();
   const { backToClassic, conflict, confirmHandOver, cancelHandOver } = useBackToClassic();
   const { openDraft, isOpening } = useOpenAutosavedDraft({ draftId, flush });
+  // A previous visit's autosaved draft, offered only while this composer is
+  // empty, so content handed in by a wave, deck or raid report never gets it.
+  const resumable = useResumeAutosavedDraft({
+    composerEmpty: !hasDraftableContent(title, content),
+    draftId
+  });
 
   useEffect(() => {
     const communityParam = searchParams?.get("com");
@@ -128,6 +138,13 @@ export default function Publish() {
             onOpenDraft={draftId && isActiveTab ? openDraft : undefined}
             isOpeningDraft={isOpening}
           />
+          {resumable.prompt && (
+            <PublishResumeDraftBar
+              savedAt={resumable.prompt.savedAt}
+              onResume={resumable.resume}
+              onDismiss={resumable.dismiss}
+            />
+          )}
           <PublishActionBar
             onPublish={() => setStep("validation")}
             onBackToClassic={backToClassic}
@@ -144,6 +161,8 @@ export default function Publish() {
         <PublishValidatePost
           onClose={() => setStep("edit")}
           onSuccess={(step, entryInfo, wasFirst) => {
+            // The post is out, so its draft is no longer one to come back to.
+            forgetPointer();
             setPublishedEntry(entryInfo);
             setFirstPublish(Boolean(wasFirst));
             setStep(step);

@@ -258,7 +258,7 @@ export function getCachePolicyForPath(pathname: string): CachePolicy | null {
       const second = segments[1];
       if (
         !NO_CACHE_PROFILE_SECTIONS.has(second) &&
-        !["posts", "blog", "comments", "replies", "communities", "trail", "followers", "following", "insights", "rss", "rss.xml", "feed"].includes(
+        !["posts", "blog", "comments", "replies", "communities", "trail", "followers", "following", "insights", "notifications", "rss", "rss.xml", "feed"].includes(
           second
         )
       ) {
@@ -378,7 +378,7 @@ export function parseEntryUrl(
     if (
       NO_CACHE_PROFILE_SECTIONS.has(second) ||
       PROFILE_FEED_SECTIONS.has(second) ||
-      ["posts", "blog", "comments", "replies", "communities", "followers", "following", "insights", "rss", "rss.xml"].includes(second)
+      ["posts", "blog", "comments", "replies", "communities", "followers", "following", "insights", "notifications", "rss", "rss.xml"].includes(second)
     ) {
       return null; // profile section, not an entry
     }

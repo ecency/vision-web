@@ -292,7 +292,7 @@ export default async function EntryPage({ params, searchParams }: Props) {
             {breadcrumbs.length > 0 && <EntryPageBreadcrumb items={breadcrumbs} />}
             {structuredData && <JsonLd data={structuredData} />}
             <EntryRenderBoundary>
-              <EntryPageContentSSR entry={entry} isRawContent={isRawContent} />
+              <EntryPageContentSSR entry={entry} isRawContent={isRawContent} base={base} />
               {/* Compact 3-column related footer (Read next / From author / In
                   community): durable server-rendered internal links so crawlers
                   can reach related posts beyond the sitemap. Suspense-wrapped so

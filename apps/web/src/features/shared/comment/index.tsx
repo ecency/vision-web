@@ -7,11 +7,14 @@ import { CommentPreview } from "@/features/shared/comment/comment-preview";
 import { EditorToolbar, toolbarEventListener } from "@/features/shared/editor-toolbar";
 import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts";
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
+import * as ls from "@/utils/local-storage";
 import { PREFIX } from "@/utils/local-storage";
+import { failedDeclineKey } from "./failed-decline";
 import { createReplyPermlink, isBlankBody, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../package.json";
 import { setProxyBase } from "@ecency/render-helper";
 import { Button } from "@ui/button";
+import { FormControl } from "@ui/input/form-controls";
 import i18next from "i18next";
 import React, {
   Ref,
@@ -42,6 +45,21 @@ import { RcPrecheckBanner } from "@/features/shared/rc-precheck";
 
 setProxyBase(defaults.imageServer);
 
+export interface CommentSubmitOptions {
+  declinePayout: boolean;
+}
+
+/**
+ * A reply whose broadcast failed, handed back to the form: its text and the payout
+ * choice it was sent with. A new object per failure, so the same reply failing
+ * twice is restored twice.
+ */
+export interface FailedReply extends CommentSubmitOptions {
+  text: string;
+  /** The account that sent it: only that account's form takes it back. */
+  username: string;
+}
+
 interface Props {
   submitText: string;
   entry: Entry;
@@ -49,15 +67,23 @@ interface Props {
   isCommented?: boolean;
   cancellable?: boolean;
   autoFocus?: boolean;
-  onSubmit: (text: string) => Promise<any>;
+  /** `declinePayout` is always false for an edit: comment_options is create-only. */
+  onSubmit: (text: string, options: CommentSubmitOptions) => Promise<any>;
   onCancel?: () => void;
   inputRef?: Ref<HTMLTextAreaElement>;
   clearOnSubmit?: boolean;
   isEdit?: boolean;
-  initialText?: string | null;
+  failedReply?: FailedReply | null;
 }
 
-export function Comment({
+// One composer per post: its draft, stored decline and restore bookkeeping all
+// belong to the post it replies to, so a form reused for another post starts over
+// instead of judging that post's stored decline against the previous post's text.
+export function Comment(props: Props) {
+  return <CommentForm key={`${props.entry.author}/${props.entry.permlink}`} {...props} />;
+}
+
+function CommentForm({
   entry,
   onSubmit,
   onCancel,
@@ -68,7 +94,7 @@ export function Comment({
   autoFocus,
   isEdit,
   clearOnSubmit = true,
-  initialText = null
+  failedReply = null
 }: Props) {
   const commentBodyRef = useRef<HTMLDivElement>(null);
   const { activeUser } = useActiveAccount();
@@ -76,8 +102,20 @@ export function Comment({
 
   const [text, setText] = useLocalStorage(
     PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
-    initialText ?? ""
+    failedReply?.text ?? ""
   );
+  // Not stored while composing: it belongs to this form and this account. A reply
+  // whose broadcast fails comes back through `failedReply` with the choice it was
+  // sent with. A failed DECLINED reply is the one thing stored, until it is posted:
+  // its exact text, under this account and parent, so closing the form or reloading
+  // brings the draft back declined. It applies only while the draft is that text.
+  const [declinePayout, setDeclinePayout] = useState(false);
+  const pendingDeclineKey = activeUser?.username
+    ? failedDeclineKey(activeUser.username, entry.author, entry.permlink)
+    : null;
+  const forgetPendingDecline = useCallback(() => {
+    if (pendingDeclineKey) ls.remove(pendingDeclineKey);
+  }, [pendingDeclineKey]);
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
   const [inputHeight, setInputHeight] = useState(0);
@@ -186,12 +224,61 @@ export function Comment({
     };
   }, [isMobile]);
 
-  // Restore failed text when blockchain submission fails
+  // Restore a reply whose blockchain submission failed, with its payout choice,
+  // once, into the account that sent it: a failure that lands while another account
+  // is active waits for its sender to come back, and one already restored is never
+  // replayed over what the writer did with it since.
+  const restoredFailedReply = useRef<FailedReply | null>(null);
+  const restoredThisCommit = useRef(false);
   useEffect(() => {
-    if (initialText !== null && initialText !== text) {
-      setText(initialText);
+    if (!failedReply || failedReply.username !== activeUser?.username) return;
+    if (restoredFailedReply.current === failedReply) return;
+    restoredFailedReply.current = failedReply;
+    restoredThisCommit.current = true;
+    if (failedReply.text !== text) {
+      setText(failedReply.text);
     }
-  }, [initialText]);
+    setDeclinePayout(failedReply.declinePayout);
+    if (failedReply.declinePayout && pendingDeclineKey) {
+      ls.set(pendingDeclineKey, failedReply.text);
+    } else {
+      forgetPendingDecline();
+    }
+  }, [failedReply, activeUser?.username]);
+
+  // A form opened without a failure in hand: re-apply a pending decline when the
+  // restored draft is still the failed reply's text, and drop it otherwise.
+  // A switch of account with the form open resets the choice first: it was the
+  // previous account's. A failure restored by the switch itself (above) keeps its
+  // own choice. Otherwise a held failed reply of the now-active account wins over
+  // the reset only while its stored decline still exists AND is still the draft's
+  // text: unchecking or editing forgets it, another account may have replaced the
+  // shared draft meanwhile, and a declined payout cannot be undone on chain.
+  const lastPendingDeclineKey = useRef(pendingDeclineKey);
+  useEffect(() => {
+    if (lastPendingDeclineKey.current !== pendingDeclineKey) {
+      lastPendingDeclineKey.current = pendingDeclineKey;
+      if (!restoredThisCommit.current) {
+        const ownFailure =
+          !!failedReply && failedReply.username === activeUser?.username && !!pendingDeclineKey;
+        const pending = ownFailure ? ls.get(pendingDeclineKey!) : null;
+        setDeclinePayout(ownFailure && failedReply!.declinePayout && pending !== null && pending === text);
+        if (pending !== null && pending !== text) forgetPendingDecline();
+      }
+    }
+    if (failedReply || isEdit || !pendingDeclineKey) return;
+    const pending = ls.get(pendingDeclineKey);
+    if (pending === null) return;
+    if (pending === text) {
+      setDeclinePayout(true);
+    } else {
+      forgetPendingDecline();
+    }
+  }, [pendingDeclineKey]);
+  // Runs last in every commit: the restore flag above only spans the commit it ran in.
+  useEffect(() => {
+    restoredThisCommit.current = false;
+  });
 
   useMount(() => {
     if (isEdit) {
@@ -218,7 +305,10 @@ export function Comment({
       }
       setText(text);
       setInputHeight(scHeight);
-    }, [setText]);
+      if (pendingDeclineKey && ls.get(pendingDeclineKey) !== null && ls.get(pendingDeclineKey) !== text) {
+        forgetPendingDecline();
+      }
+    }, [setText, pendingDeclineKey, forgetPendingDecline]);
 
     // Nothing to broadcast without a body: the chain op requires one, and the
     // SDK builder throws `[SDK][buildCommentOp] Missing required parameters`
@@ -233,9 +323,11 @@ export function Comment({
       }
 
       try {
-        await onSubmit(text!);
+        await onSubmit(text!, { declinePayout: !isEdit && declinePayout });
+        forgetPendingDecline();
         if (clearOnSubmit) {
           setText("");
+          setDeclinePayout(false);
         }
       } catch (err: any) {
         const handled = handleAndReportError(err, "comment");
@@ -243,7 +335,15 @@ export function Comment({
           throw err; // ❌ only throw unexpected errors
         }
       }
-    }, [onSubmit, text, clearOnSubmit, setText]);
+    }, [
+      onSubmit,
+      text,
+      clearOnSubmit,
+      setText,
+      isEdit,
+      declinePayout,
+      forgetPendingDecline
+    ]);
 
   const cancel = useCallback(() => {
     if (onCancel) onCancel();
@@ -363,11 +463,27 @@ export function Comment({
           </div>
         )}
         <div className="comment-buttons flex items-center mt-3">
-          {!isMobile && (
-            <span className="comment-submit-hint mr-auto text-xs opacity-60">
-              {i18next.t("comment.submit-shortcut")}
-            </span>
-          )}
+          <div className="mr-auto flex items-center gap-3">
+            {!isMobile && (
+              <span className="comment-submit-hint text-xs opacity-60">
+                {i18next.t("comment.submit-shortcut")}
+              </span>
+            )}
+            {/* comment_options is create-only, so an edit cannot change the payout. */}
+            {!isEdit && (
+              <div className="comment-decline-payout text-sm">
+                <FormControl
+                  type="checkbox"
+                  label={i18next.t("comment.decline-payout")}
+                  checked={declinePayout}
+                  onChange={(checked: boolean) => {
+                    setDeclinePayout(checked);
+                    if (!checked) forgetPendingDecline();
+                  }}
+                />
+              </div>
+            )}
+          </div>
           {cancellable && (
             <Button
               className="mr-2"

@@ -41,6 +41,7 @@ const TABS_WITH_LEAF_LOADING = [
   "followers",
   "following",
   "insights",
+  "notifications",
   "permissions",
   "referrals",
   "settings",

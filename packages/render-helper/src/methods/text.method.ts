@@ -1,9 +1,8 @@
-import { IMG_REGEX, YOUTUBE_REGEX, WHITE_LIST, DOMParser, POST_REGEX  } from '../consts'
+import { YOUTUBE_REGEX, WHITE_LIST, DOMParser, POST_REGEX  } from '../consts'
 import { markInternalThumbnail } from './internal-thumbnail'
 import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink } from '../helper'
 import { proxifyImageSrc } from '../proxify-image-src'
 import { linkify } from './linkify.method'
-import {createImageHTML} from "./img.method";
 import { RenderOptions } from "../types";
 
 function hasAncestor(node: Node, tagNames: string[]): boolean {
@@ -91,16 +90,10 @@ export function text(node: HTMLElement | null, forApp: boolean, renderOptions?: 
     return
   }
 
-  if (nodeValue.match(IMG_REGEX)) {
-    const isLCP = false; // Traverse handles LCP; no need to double-count
-    const imageHTML = createImageHTML(nodeValue, isLCP, forApp);
-    const doc = DOMParser.parseFromString(imageHTML, 'text/html');
-    const replaceNode = (doc as any).body?.firstChild || doc.firstChild
-    if (replaceNode) {
-      node.parentNode.replaceChild(replaceNode, node);
-    }
-    return; // Early return after replacing node
-  }
+  // Image URLs were handled by linkify above (imageUrlEnd). A node it left
+  // unchanged holds no URL whose path ends in an image extension, so it is not
+  // turned into an image here either: IMG_REGEX also matched `.ico` inside
+  // `.icons/readme` and proxied the whole node as an image.
   // If a youtube video
   if (nodeValue.match(YOUTUBE_REGEX)) {
     const e = YOUTUBE_REGEX.exec(nodeValue)

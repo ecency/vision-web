@@ -2,7 +2,7 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeCompleteReferences, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -13,10 +13,243 @@ import { RenderOptions, SeoContext } from '../types'
 
 const domSerializer = (domSerializerModule as any).default || domSerializerModule
 
-// A URL in the markdown source, in an attribute, a link destination or text:
-// one class run, linear on any input. It ends at whitespace, a quote, an angle
-// bracket or `)`, the delimiters a URL sits between in markdown and HTML.
-const URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi
+// A URL in the markdown source, in an attribute, a link destination or text.
+// It ends at whitespace, a quote, an angle bracket or an unbalanced `)`, the
+// delimiters a URL sits between in markdown and HTML; one level of balanced
+// parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092),
+// and so does an unclosed `(` (`a_(x&amp;y.png`), which no markdown construct
+// closes. Nothing follows the repetition, so the first (greedy) parse is taken
+// without backtracking: linear.
+const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+
+// A backslash-escaped `&` in a link or image destination is a literal
+// ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
+// `?q=&copy;`. Remarkable drops the backslash before decode_destinations runs,
+// which then read `&copy;` as ©. So while Remarkable parses a link, an image
+// or a reference definition, and only then, each escaped `&` in its source is
+// swapped for AMP_PAIR (same length, so every position holds). The hrefs and
+// srcs it produces get a literal `&` after their references are decoded; the
+// label's text gets the `&` the escape rule would have given; inline code and
+// HTML inside a label get the source's `\\&` back. Code blocks, raw HTML,
+// autolinks and other text are never parsed with the pair, so they render as
+// before. Off for a body that already holds the pair's characters in any form
+// (hasAmpSentinel), which then renders exactly as it did.
+const AMP_PAIR = '\uE000\uE001'
+const AMP_PAIR_G = /\uE000\uE001/g
+const AMP_PAIR_HREF = /\uE000\uE001|%EE%80%80%EE%80%81/g
+let ampEscapes = false
+
+// The source with each escaped `&` (an odd run of backslashes before it) as
+// AMP_PAIR, or null when it has none.
+function pairedSource(src: string): string | null {
+  const paired = src.replace(BACKSLASH_RUN, (run) =>
+    run.endsWith('&') && run.length % 2 === 0 ? run.slice(0, -2) + AMP_PAIR : run
+  )
+  return paired.includes(AMP_PAIR) ? paired : null
+}
+
+// Every whole run of backslashes, with the `&` after it if there is one; an
+// escaped `&` is an odd run (even length with the `&`). The match is greedy and
+// the next search starts after it, so each run is read once: linear. No
+// lookbehind: Safari before 16.4 cannot parse one (no-regex-lookbehind.spec).
+const BACKSLASH_RUN = /\\+&?/g
+
+type RuleList = { __rules__: Array<{ name: string; fn: any }>; at: (name: string, fn: any) => void }
+function wrapRule(ruler: RuleList, name: string, wrap: (fn: any) => any): void {
+  const rule = ruler.__rules__.find((r) => r.name === name)
+  if (rule) ruler.at(name, wrap(rule.fn))
+}
+
+// The inline parse state, with the paired source computed once per state.
+// The links rule runs at every `[` and `!`, and its label parse re-enters the
+// rules on the same state, so nothing here compares or rescans the source.
+type PairState = { src: string; ampPaired?: string | null; ampInside?: boolean }
+type ParseRule = (state: PairState, silent?: boolean) => boolean
+
+function withPairedSource(rule: ParseRule): ParseRule {
+  return (state, silent) => {
+    if (!ampEscapes || state.ampInside) return rule(state, silent)
+    if (state.ampPaired === undefined) state.ampPaired = pairedSource(state.src)
+    const paired = state.ampPaired
+    if (paired === null) return rule(state, silent)
+    const src = state.src
+    state.src = paired
+    state.ampInside = true
+    try {
+      return rule(state, silent)
+    } finally {
+      state.src = src
+      state.ampInside = false
+    }
+  }
+}
+
+type BlockState = { tokens: Array<{ type: string; content?: string }> }
+
+// Reference definitions are parsed from paragraph content by the core
+// `references` rule; the paragraph keeps whatever is not a definition.
+function withPairedReferences(rule: (state: BlockState) => unknown): (state: BlockState) => unknown {
+  return (state) => {
+    if (!ampEscapes) return rule(state)
+    // Original content of each paired token. A token the rule left as it was
+    // gets its original string back: the restored copy would be a two-byte
+    // string, which makes linkify take its slower path on Latin-1 bodies.
+    const originals = new Map<{ content?: string }, { original: string; paired: string }>()
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !token.content) continue
+      const paired = pairedSource(token.content)
+      if (paired === null) continue
+      originals.set(token, { original: token.content, paired })
+      token.content = paired
+    }
+    try {
+      return rule(state)
+    } finally {
+      for (const [token, { original, paired }] of originals) {
+        token.content = token.content === paired ? original : token.content?.replace(AMP_PAIR_G, '\\&')
+      }
+    }
+  }
+}
+
+// Largest code block that is syntax highlighted (#2097).
+const MAX_HIGHLIGHT_LENGTH = 20_000
+
+const escapeCode = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+interface DestinationToken {
+  type: string
+  src?: string
+  href?: string
+  alt?: string
+  title?: string
+  content?: string
+  children?: DestinationToken[]
+}
+
+// AMP_PAIR back to what the source said, by where it ended up. Only on a
+// render that paired anything (ampEscapes).
+const hrefAmp = (value: string) => value.replace(AMP_PAIR_HREF, '&')
+const literalAmp = (value: string) => value.replace(AMP_PAIR_G, '&')
+const sourceAmp = (value: string) => value.replace(AMP_PAIR_G, '\\&')
+
+function restorePairedAmpersands(token: DestinationToken): void {
+  if (token.content === undefined || !token.content.includes(AMP_PAIR)) return
+  // Inline code and HTML keep the backslash, as the parser leaves it there;
+  // any other token went through the escape rule (`\\&` is `&`).
+  token.content = token.type === 'code' || token.type === 'htmltag' ? sourceAmp(token.content) : literalAmp(token.content)
+}
+
+/**
+ * Decodes the references in a markdown image or link destination once, as
+ * CommonMark does: only a complete one, ending in `;` (#2092). Remarkable leaves `![](?a=1&amp;b=2)`
+ * undecoded and escapes it again, so the URL reached the document as the text
+ * `&amp;b=2`, and the image path had to decode a second time, which broke raw
+ * HTML (`<img src="?x=1&amp;times=2">` was proxied as `?x=1×=2`). Now every
+ * image URL reaches the document decoded exactly once, whichever syntax wrote
+ * it. A decoded `javascript:` is refused downstream by a()'s scheme list and
+ * the output sanitizer, as for any other link.
+ */
+function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
+  for (const block of state.tokens) {
+    if (block.type !== 'inline' || !block.children) continue
+    for (const token of block.children) {
+      // A marked `\\&` becomes a literal `&` after the decode, so it never
+      // starts a reference.
+      if (token.type === 'image' && token.src) token.src = decodeCompleteReferences(token.src)
+      else if (token.type === 'link_open' && token.href) token.href = decodeCompleteReferences(token.href)
+      if (!ampEscapes) continue
+      if (token.src) token.src = hrefAmp(token.src)
+      if (token.href) token.href = hrefAmp(token.href)
+      if (token.alt) token.alt = literalAmp(token.alt)
+      if (token.title) token.title = literalAmp(token.title)
+      restorePairedAmpersands(token)
+    }
+  }
+  return true
+}
+
+// A fence line, optionally inside blockquotes: `(?: {0,3}>)+` then one
+// optional space; each `>` ends its own repetition, so the match is linear.
+const FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/
+const FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/
+const quoteDepth = (prefix: string | undefined): number => {
+  let depth = 0
+  if (prefix) for (const c of prefix) if (c === '>') depth++
+  return depth
+}
+
+/**
+ * Code in the markdown source, as [start, end) ranges in order: fenced blocks
+ * (``` or ~~~ at a line start, inside blockquotes too, to the matching close,
+ * the end of a quoted fence's blockquote, or the end) and inline
+ * code spans (a backtick run to the next run of the same length). Linear: each
+ * line is read once, and each backtick run is paired through a precomputed
+ * "next run of the same length" table rather than a search.
+ */
+function codeRanges(src: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const runs: Array<[number, number]> = [] // [start, length] of backtick runs outside fences
+  let pos = 0
+  while (pos < src.length) {
+    const eol = src.indexOf('\n', pos)
+    const lineEnd = eol === -1 ? src.length : eol
+    // A fence may sit in a blockquote (`> ~~~`): each `>` takes its own
+    // optional indent, so the prefix is read without ambiguity.
+    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd))
+    if (open) {
+      const depth = quoteDepth(open[1])
+      const quoted = depth > 0
+      const fence = open[2]
+      let end = src.length
+      let p = lineEnd + 1
+      while (p < src.length) {
+        const e = src.indexOf('\n', p)
+        const le = e === -1 ? src.length : e
+        const line = src.slice(p, le)
+        // A quoted fence ends with its blockquote: the next line without `>`.
+        if (quoted && !/^ {0,3}>/.test(line)) {
+          end = p - 1
+          break
+        }
+        const close = FENCE_CLOSE.exec(line)
+        // The close sits at the open's own quote depth: a `> ```` line inside
+        // an unquoted fence is code, not its end.
+        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
+          end = le
+          break
+        }
+        p = le + 1
+      }
+      ranges.push([pos, end])
+      pos = end + 1
+      continue
+    }
+    for (let i = pos; i < lineEnd; i++) {
+      if (src.charCodeAt(i) !== 0x60) continue
+      let j = i
+      while (j < lineEnd && src.charCodeAt(j) === 0x60) j++
+      runs.push([i, j - i])
+      i = j - 1
+    }
+    pos = lineEnd + 1
+  }
+  // Inline spans: a run opens a span closed by the next run of the same length.
+  const nextSame: number[] = new Array(runs.length).fill(-1)
+  const lastOfLength = new Map<number, number>()
+  for (let k = runs.length - 1; k >= 0; k--) {
+    nextSame[k] = lastOfLength.get(runs[k][1]) ?? -1
+    lastOfLength.set(runs[k][1], k)
+  }
+  for (let k = 0; k < runs.length; k++) {
+    const close = nextSame[k]
+    if (close === -1) continue
+    ranges.push([runs[k][0], runs[close][0] + runs[close][1]])
+    k = close
+  }
+  return ranges.sort((a, b) => a[0] - b[0])
+}
 
 // Conditionally load lolight for syntax highlighting (Node.js only)
 // Browser builds will gracefully handle missing lolight by using fallback
@@ -146,23 +379,36 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     html: true,
     breaks: true,
     typographer: false,
+    // Returning '' hands the block back to remarkable, which escapes it as
+    // plain code. A raw `str` used to be returned, and token text was written
+    // unescaped, so markup in a string literal (`"<i>hi</i>"`) rendered as
+    // markup inside the code block.
     highlight: function (str: string) {
+      // The highlighter is slow on large input (3.5 s for 60 KB, #2097), and
+      // it runs synchronously on the SSR path: past this size, plain code.
+      if (str.length > MAX_HIGHLIGHT_LENGTH) {
+        return ''
+      }
       const lolightInstance = getLolightInstance()
       if (!lolightInstance) {
-        // Fallback when lolight is not available
-        return str
+        return ''
       }
 
       try {
         const tokens = lolightInstance.tok(str);
         return tokens.map(
-          (token: string[]) => `<span class="ll-${token[0]}">${token[1]}</span>`
+          (token: string[]) => `<span class="ll-${token[0]}">${escapeCode(token[1])}</span>`
         ).join('')
       } catch (err) { console.error(err) }
 
-      return str
+      return ''
     }
   }).use(linkify)
+  // Before linkify, so every link and image token here was written as
+  // markdown (linkify's hrefs come from text, already decoded).
+  md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
+  wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
+  wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'
   ]);
@@ -185,6 +431,8 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   let output = '';
 
+  ampEscapes = input.includes('\\&') && !hasAmpSentinel(input)
+
   // Replace entities with deterministic placeholders to preserve them during rendering
   const entities = input.match(ENTITY_REGEX);
   const entityPlaceholders: string[] = [];
@@ -205,14 +453,29 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     // where the final restore cannot reach, so the app loaded a different image
     // URL than the post names (#2092). One regex pass per segment, linear in
     // its length (a split/join per distinct entity was not).
-    const protect = (text: string) =>
+    //
+    // Code is left out too: a code span or block renders its text verbatim,
+    // and the syntax highlighter split a placeholder across spans, so the
+    // restore missed it and the app showed `0 1b2` for `&amp; &lt;b&gt;`
+    // (#2093). Code renders exactly as on the web.
+    const swap = (text: string) =>
       text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    const protect = (text: string) => {
+      let out = '';
+      let last = 0;
+      for (const m of regexMatches(text, URL_RUN)) {
+        const at = m.index ?? 0;
+        out += swap(text.slice(last, at)) + m[0];
+        last = at + m[0].length;
+      }
+      return out + swap(text.slice(last));
+    };
     let protectedInput = '';
     let last = 0;
-    for (const m of regexMatches(input, URL_RUN)) {
-      const at = m.index ?? 0;
-      protectedInput += protect(input.slice(last, at)) + m[0];
-      last = at + m[0].length;
+    for (const [start, end] of codeRanges(input)) {
+      if (start < last) continue;
+      protectedInput += protect(input.slice(last, start)) + input.slice(start, end);
+      last = end;
     }
     input = protectedInput + protect(input.slice(last));
   }
@@ -225,6 +488,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   try {
     output = md.render(input)
+    if (ampEscapes) output = sourceAmp(output)
 
     // Fix malformed block-level HTML tags that Remarkable wraps in <p> tags
     // This prevents "Opening and ending tag mismatch" errors from DOMParser
@@ -272,7 +536,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves
       // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || md.render(input), untransformed)
+      output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed)
     }
   }
 

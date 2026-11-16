@@ -1,6 +1,6 @@
 import { DOMParser } from './consts'
 import type { Document } from '@xmldom/xmldom'
-import { decodeHTML, decodeHTMLAttribute } from 'entities'
+import { decodeHTML, decodeHTMLAttribute, decodeHTMLStrict } from 'entities'
 
 /**
  * Decode HTML character references in user-authored text.
@@ -60,12 +60,107 @@ export function decodeAttributeEntities(value: string): string {
  * (callers run at SSR time).
  */
 export function decodeImageSrc(src: string): string {
-  const entityDecoded = decodeEntities(src)
+  return decodeDomImageSrc(decodeEntities(src))
+}
+
+/**
+ * A body image URL read from the parsed document (an <img> src, an href, a
+ * text node). The parser, and for markdown the destination decode in
+ * markdown-to-html, have already decoded its entities exactly once (#2092):
+ * only percent-encoding is left. Guarded so a malformed `%` cannot throw.
+ */
+export function decodeDomImageSrc(src: string): string {
   try {
-    return decodeURIComponent(entityDecoded).trim()
+    return decodeURIComponent(src).trim()
   } catch {
-    return entityDecoded.trim()
+    return src.trim()
   }
+}
+
+// A complete reference: one that ends in `;`.
+const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
+
+// An image extension, the set the renderer has always recognised.
+const IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi
+// Prose punctuation that can follow a URL in text without belonging to it.
+const TRAILING_PUNCTUATION = '.,;:!)]}*_~'
+
+/**
+ * Where the image URL in a bare URL token ends, or -1 when the token is not an
+ * image URL. As before, a token holding an image extension is an image taken
+ * whole, suffixes and query included (`ABC.jpg:large`, `i.png/100x100`,
+ * `i.png?name=a.jpg&sig=x`); only prose punctuation at the end of a URL
+ * without a query is left out as text (`i.png,`). An extension does not count when a letter or digit runs on
+ * from it (`.ico` in `.icons/readme`) or when another extension follows it
+ * (`.jpg` in `photo.jpg.html`): those name something other than an image.
+ * Shared by the render (text linkify and a.method's link promotion) and the
+ * LCP preload, so they read a URL the same way. Linear: one pass for the
+ * extensions, one for the punctuation.
+ */
+export function imageUrlEnd(token: string): number {
+  // Trailing punctuation is prose only without a query or fragment, where a
+  // `;` or `)` can belong to the URL.
+  let contentEnd = token.length
+  if (!/[?#]/.test(token)) {
+    while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
+  }
+  IMAGE_EXT_G.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = IMAGE_EXT_G.exec(token)) !== null) {
+    const at = m.index + m[0].length
+    if (at > contentEnd) continue
+    if (at < contentEnd && (/[a-z\d]/i.test(token[at]) || (token[at] === '.' && /[a-z]/i.test(token[at + 1] ?? '')))) continue
+    return contentEnd
+  }
+  return -1
+}
+
+/**
+ * Decodes only complete references, as CommonMark reads a link or image
+ * destination: `?a=1&copy` stays as written, `?a=1&copy;` is `?a=1©`. A legacy
+ * name that merely prefixes the token (`&region;` would read as `®ion;`) is
+ * not a reference and stays too (#2092).
+ */
+export function decodeCompleteReferences(value: string): string {
+  return value.replace(COMPLETE_REFERENCE, (reference) => {
+    // Strict: only an exact, complete name or number decodes, so `&semi;` is
+    // `;` while `&region;` is not `®ion;`.
+    try {
+      return decodeHTMLStrict(guardNumericRefs(reference))
+    } catch {
+      return reference
+    }
+  })
+}
+
+/**
+ * True when the body already holds, in any form, the private-use pair the
+ * render swaps an escaped `&` for while it parses a destination: the render
+ * then leaves escaped ampersands to Remarkable alone, and the LCP preload
+ * reads them the same way.
+ */
+export function hasAmpSentinel(body: string): boolean {
+  return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body)
+}
+
+// Remarkable's backslash escapes (unescapeMd).
+const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
+
+/**
+ * A body image URL taken from the raw post body (the LCP preload's scan),
+ * decoded the way the render reads it, then percent-encoding.
+ * A markdown destination (`destination`) is unescaped as Remarkable does, an
+ * escaped `&` (`\\&`) staying a literal ampersand unless the body turns that
+ * off (hasAmpSentinel), and its complete references are decoded once (#2092).
+ * A bare URL in text: the escape rule already made `\\&` a literal `&`.
+ * Raw HTML differs only for a legacy name without `;` before a
+ * non-alphanumeric character, which an HTML attribute decodes.
+ */
+export function decodeRawBodyImageSrc(src: string, destination = false, ampEscapes = true): string {
+  const unescaped = destination
+    ? src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+    : src.replace(/\\&/g, '&amp;')
+  return decodeDomImageSrc(decodeCompleteReferences(unescaped))
 }
 
 /**

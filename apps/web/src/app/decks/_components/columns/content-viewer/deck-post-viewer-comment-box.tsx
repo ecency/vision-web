@@ -5,7 +5,7 @@ import { useCreateReply } from "@/api/mutations";
 import { createReplyPermlink, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../../../package.json";
 import i18next from "i18next";
-import { Comment } from "@/features/shared/comment";
+import { Comment, type CommentSubmitOptions, type FailedReply } from "@/features/shared/comment";
 import { useActiveAccount } from "@/core/hooks";
 
 interface Props {
@@ -18,7 +18,7 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
   const location = useLocation();
 
   const [isReplying, setIsReplying] = useState(false);
-  const [failedReplyText, setFailedReplyText] = useState<string | null>(null);
+  const [failedReply, setFailedReply] = useState<FailedReply | null>(null);
 
   const { mutateAsync: createReply } = useCreateReply(
     entry,
@@ -27,16 +27,16 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
       // Success
       onReplied();
       setIsReplying(false);
-      setFailedReplyText(null);
+      setFailedReply(null);
     },
-    (text, error) => {
-      // Blockchain failed - restore text and stop loading
-      setFailedReplyText(text);
+    (text, error, submitted) => {
+      // Blockchain failed - restore text and payout choice, stop loading
+      setFailedReply({ text, ...submitted });
       setIsReplying(false);
     }
   );
 
-  const submitReply = async (text: string) => {
+  const submitReply = async (text: string, { declinePayout }: CommentSubmitOptions) => {
     if (!username || !account) {
       return;
     }
@@ -48,7 +48,7 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
 
     setIsReplying(true);
 
-    return createReply({ jsonMeta, text, permlink, point: true });
+    return createReply({ jsonMeta, text, permlink, point: true, declinePayout });
   };
   return (
     <Comment
@@ -56,7 +56,7 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
       entry={entry}
       onSubmit={submitReply}
       inProgress={isReplying}
-      initialText={failedReplyText}
+      failedReply={failedReply}
     />
   );
 };

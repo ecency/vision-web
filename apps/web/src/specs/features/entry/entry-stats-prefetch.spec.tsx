@@ -50,6 +50,11 @@ describe("EntryStatsPrefetch", () => {
     expect(prefetchSpy).not.toHaveBeenCalled();
   });
 
+  it("does not prefetch for the notifications section (#395)", () => {
+    mount("/@author/notifications");
+    expect(prefetchSpy).not.toHaveBeenCalled();
+  });
+
   it("does not prefetch for non-entry routes", () => {
     mount("/trending");
     expect(prefetchSpy).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import React from "react";
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Entry } from "@/entities";
@@ -53,8 +53,9 @@ vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/c
   EntryPageContext: React.createContext({ selection: "", setSelection: vi.fn() })
 }));
 
+const activeAccount = vi.hoisted(() => ({ username: "tester" }));
 vi.mock("@/core/hooks/use-active-account", () => ({
-  useActiveAccount: () => ({ activeUser: { username: "tester" } })
+  useActiveAccount: () => ({ activeUser: { username: activeAccount.username } })
 }));
 
 vi.mock("@ecency/sdk", () => ({
@@ -101,11 +102,14 @@ const entry = {
   json_metadata: {}
 } as unknown as Entry;
 
-function renderComment(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+function renderComment(
+  onSubmit = vi.fn().mockResolvedValue(undefined),
+  props: { isEdit?: boolean } = {}
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" />
+      <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" {...props} />
     </QueryClientProvider>
   );
   return { onSubmit, ...utils };
@@ -136,7 +140,7 @@ describe("Comment composer", () => {
     const body = container.querySelector(".comment-body")!;
     fireEvent.keyDown(body, { key: "Enter", ctrlKey: true });
 
-    expect(onSubmit).toHaveBeenCalledWith("hello world");
+    expect(onSubmit).toHaveBeenCalledWith("hello world", { declinePayout: false });
   });
 
   test("plain Enter does NOT submit (newline behavior preserved)", () => {
@@ -278,5 +282,361 @@ describe("Comment composer", () => {
     fireEvent.keyDown(body, { key: "Enter", metaKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  describe("decline payout", () => {
+    test("offers an unchecked Decline payout option on a new reply", () => {
+      const { getByRole } = renderComment();
+
+      const toggle = getByRole("checkbox", { name: "comment.decline-payout" });
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("submits the reply with declinePayout once it is checked", () => {
+      const { onSubmit, getByRole } = renderComment();
+
+      fireEvent.click(getByRole("checkbox", { name: "comment.decline-payout" }));
+      type(getByRole, "hello world");
+      fireEvent.click(getByRole("button", { name: "Reply" }));
+
+      expect(onSubmit).toHaveBeenCalledWith("hello world", { declinePayout: true });
+    });
+
+    test("toggles from the keyboard", () => {
+      const { getByRole } = renderComment();
+      const toggle = getByRole("checkbox", { name: "comment.decline-payout" });
+
+      fireEvent.keyDown(toggle, { key: " " });
+
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("resets to unchecked once the reply is posted, so the next reply keeps its payout", async () => {
+      const first = renderComment();
+
+      fireEvent.click(first.getByRole("checkbox", { name: "comment.decline-payout" }));
+      type(first.getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(first.getByRole("button", { name: "Reply" }));
+      });
+      first.unmount();
+
+      const next = renderComment();
+      expect(next.getByRole("checkbox", { name: "comment.decline-payout" })).toHaveAttribute(
+        "aria-checked",
+        "false"
+      );
+    });
+
+    // A failed broadcast hands the reply back as { text, declinePayout }: the choice
+    // the reply was SENT with, carried by the failure itself (#333 review).
+    type Failed = { text: string; declinePayout: boolean; username?: string };
+    // `username` is the account that sent the failed reply; the spec's active account by default.
+    function renderFailed(failedReply: Failed | null) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      // Parents hold the failed reply in state, so a rerender passes the same
+      // object: keep one prop object per input, or every rerender re-fires restore.
+      const props = new Map<Failed, Failed & { username: string }>();
+      const prop = (reply: Failed) => {
+        if (!props.has(reply)) props.set(reply, { username: "tester", ...reply });
+        return props.get(reply)!;
+      };
+      const ui = (reply: Failed | null) => (
+        <QueryClientProvider client={queryClient}>
+          <Comment entry={entry} onSubmit={onSubmit} submitText="Reply" failedReply={reply && prop(reply)} />
+        </QueryClientProvider>
+      );
+      const utils = render(ui(failedReply));
+      return { ...utils, onSubmit, rerenderFailed: (r: Failed | null) => utils.rerender(ui(r)) };
+    }
+    const checkbox = (getByRole: (role: string, o: { name: string }) => HTMLElement) =>
+      getByRole("checkbox", { name: "comment.decline-payout" });
+
+    test("comes back checked when a declined reply fails", () => {
+      const { getByRole } = renderFailed({ text: "hello world", declinePayout: true });
+
+      expect(getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("comes back checked even when the failed text is already in the draft", () => {
+      // The curation desk writes the failed text to the draft before reopening the box.
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("hello world"));
+      const { getByRole } = renderFailed({ text: "hello world", declinePayout: true });
+
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("restores the choice the failed reply was sent with, not the box's current state", () => {
+      const { getByRole, rerenderFailed } = renderFailed({ text: "first", declinePayout: true });
+      fireEvent.click(checkbox(getByRole));
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+
+      rerenderFailed({ text: "second", declinePayout: true });
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+
+      rerenderFailed({ text: "third", declinePayout: false });
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("restores a reply that fails a second time unchanged", async () => {
+      const { getByRole, rerenderFailed } = renderFailed({ text: "hello world", declinePayout: true });
+      await act(async () => {
+        fireEvent.click(getByRole("button", { name: "Reply" }));
+      });
+      expect(getByRole("textbox")).toHaveValue("");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+
+      rerenderFailed({ text: "hello world", declinePayout: true });
+      expect(getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("keeps the payout choice out of storage, so it never outlives the form or crosses accounts", async () => {
+      const { getByRole } = renderComment();
+      fireEvent.click(checkbox(getByRole));
+      type(getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(getByRole("button", { name: "Reply" }));
+      });
+
+      const keys = Object.keys(window.localStorage);
+      expect(keys.filter((k) => k.includes("decline"))).toEqual([]);
+      expect(Object.values(window.localStorage).filter((v) => v.includes("hello world"))).toEqual([]);
+    });
+
+    // A failed declined reply stays declined until it is posted: closing and reopening
+    // the form, or reloading, restores the draft text from storage, and the box with it.
+    const declineKeys = () => Object.keys(window.localStorage).filter((k) => k.includes("decline"));
+
+    test("a failed declined reply is still declined after the form is closed and reopened", () => {
+      const failed = renderFailed({ text: "hello world", declinePayout: true });
+      failed.unmount();
+
+      // Reopened without a failedReply (discussion-item clears it on toggle): only the draft comes back.
+      const { getByRole } = renderComment();
+      expect(getByRole("textbox")).toHaveValue("hello world");
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("a failed declined reply is still declined after a reload", () => {
+      renderFailed({ text: "hello world", declinePayout: true }).unmount();
+      const stored = { ...window.localStorage };
+      window.localStorage.clear();
+      Object.entries(stored).forEach(([k, v]) => window.localStorage.setItem(k, v as string));
+
+      const { getByRole } = renderComment();
+      expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("another account on the same browser does not inherit the decline", () => {
+      renderFailed({ text: "hello world", declinePayout: true }).unmount();
+
+      activeAccount.username = "other";
+      try {
+        const { getByRole } = renderComment();
+        expect(checkbox(getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("posting the restored reply leaves no decline keys behind", async () => {
+      const { getByRole } = renderFailed({ text: "hello world", declinePayout: true });
+      expect(declineKeys()).not.toEqual([]);
+
+      await act(async () => {
+        fireEvent.click(getByRole("button", { name: "Reply" }));
+      });
+
+      expect(declineKeys()).toEqual([]);
+      expect(Object.values(window.localStorage).filter((v) => v.includes("hello world"))).toEqual([]);
+    });
+
+    test("unchecking the box forgets the pending decline", () => {
+      const failed = renderFailed({ text: "hello world", declinePayout: true });
+      fireEvent.click(checkbox(failed.getByRole));
+      expect(declineKeys()).toEqual([]);
+      failed.unmount();
+
+      expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("editing the failed text forgets the pending decline", () => {
+      const failed = renderFailed({ text: "hello world", declinePayout: true });
+      type(failed.getByRole, "something else");
+      expect(declineKeys()).toEqual([]);
+      failed.unmount();
+
+      expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("a reply that fails after switching accounts is not restored into the new account's form", () => {
+      const view = renderFailed(null);
+      activeAccount.username = "other";
+      try {
+        view.rerenderFailed(null);
+        view.rerenderFailed({ text: "sent by tester", declinePayout: true, username: "tester" });
+
+        expect(view.getByRole("textbox")).toHaveValue("");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        expect(declineKeys()).toEqual([]);
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("switching accounts with the box checked unchecks it", () => {
+      const view = renderFailed(null);
+      fireEvent.click(checkbox(view.getByRole));
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+
+      activeAccount.username = "other";
+      try {
+        view.rerenderFailed(null);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("switching away and back restores the held failed reply's decline", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("hello world");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // A declined payout cannot be undone on chain: once the writer has unchecked
+    // the box, switching away and back must not check it again.
+    test("switching away and back keeps an unchecked box unchecked", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      fireEvent.click(checkbox(view.getByRole));
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // The draft text is shared between accounts: B replacing it must not let A's
+    // stored decline check the box for B's different text when A comes back.
+    test("switching back after another account replaced the draft does not decline the new text", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        type(view.getByRole, "different text");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("different text");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        expect(declineKeys()).toEqual([]);
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a failure that landed while another account was active is restored on switching back", () => {
+      const view = renderFailed(null);
+      const failed = { text: "sent by tester", declinePayout: true, username: "tester" };
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(null);
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("sent by tester");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a restored failure is not replayed over the writer's edits on switching back", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      type(view.getByRole, "edited");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("edited");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // A form reused for another post must judge that post's stored decline
+    // against that post's draft, never the previous post's text.
+    test("moving the form to another post does not decline that post's different draft", () => {
+      localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-2", JSON.stringify("same words"));
+      localStorage.setItem("ecency_reply_text_alice_post-2", JSON.stringify("unrelated draft"));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const ui = (e: Entry) => (
+        <QueryClientProvider client={queryClient}>
+          <Comment entry={e} onSubmit={vi.fn()} submitText="Reply" />
+        </QueryClientProvider>
+      );
+      const view = render(ui(entry));
+      type(view.getByRole, "same words");
+
+      view.rerender(ui({ ...entry, permlink: "post-2" } as Entry));
+
+      expect(view.getByRole("textbox")).toHaveValue("unrelated draft");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+    });
+
+    test("a failure for the new account landing with the switch is restored checked", () => {
+      const view = renderFailed(null);
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed({ text: "sent by other", declinePayout: true, username: "other" });
+
+        expect(view.getByRole("textbox")).toHaveValue("sent by other");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a failed reply that kept its payout stores nothing", () => {
+      renderFailed({ text: "hello world", declinePayout: false });
+      expect(declineKeys()).toEqual([]);
+    });
+
+    test("is not offered when editing, since comment_options cannot be set again", () => {
+      const { queryByRole } = renderComment(undefined, { isEdit: true });
+
+      expect(queryByRole("checkbox", { name: "comment.decline-payout" })).toBeNull();
+    });
   });
 });

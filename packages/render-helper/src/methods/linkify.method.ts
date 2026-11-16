@@ -1,6 +1,6 @@
-import { IMG_REGEX, SECTION_LIST } from '../consts'
+import { SECTION_LIST } from '../consts'
 import { proxifyImageSrc, getProxyBase } from '../proxify-image-src'
-import { isValidPermlink, isValidUsername, sanitizePermlink } from "../helper";
+import { imageUrlEnd, isValidPermlink, isValidUsername, sanitizePermlink } from "../helper";
 import { createImageHTML } from "./img.method";
 import { RenderOptions } from "../types";
 
@@ -48,6 +48,11 @@ function isLinkableMention(mention: string): boolean {
   const user = mention.substring(1)
   return user.indexOf('/') === -1 && isValidUsername(user)
 }
+
+// A URL token in the text. The text was escaped before linkify, so a `<` or
+// `>` the author wrote arrives as `&lt;`/`&gt;` and ends the token as the raw
+// character would. The alternatives start with different characters: linear.
+const URL_TOKEN_RE = /https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/gi
 
 // Escapes a value for a double-quoted attribute. Tags (`#[-a-z\d]+`) and valid
 // usernames can never hold a quote or an angle bracket, so this changes no
@@ -198,10 +203,18 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
   // the image regex matching URLs inside enhanced author HTML
   let firstImageUsed = false;
 
-  content = content.replace(IMG_REGEX, (imglink) => {
+  // Each URL token whose path ends in an image extension is an image, and what
+  // follows it stays text:
+  // IMG_REGEX's trailing `(.*)` used to go into the image src, so
+  // `https://e.com/i.png & friends` was proxied as that whole string and the
+  // text vanished (#2094). Same reading as the LCP preload's standalone scan
+  // (catch-post-image.ts imageToken), so both compute the same proxy URL.
+  content = content.replace(URL_TOKEN_RE, (token) => {
+    const end = imageUrlEnd(token);
+    if (end === -1) return token;
     const isLCP = !firstImageUsed;
     firstImageUsed = true;
-    return createImageHTML(imglink, isLCP, forApp);
+    return createImageHTML(token.slice(0, end), isLCP, forApp) + token.slice(end);
   });
 
   // Restore author placeholders in one scan. One replace() per placeholder
