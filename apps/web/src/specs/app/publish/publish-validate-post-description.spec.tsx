@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { postBodySummary } from "@ecency/render-helper";
 import { SUBMIT_DESCRIPTION_MAX_LENGTH } from "@/app/submit/_consts";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -147,6 +147,27 @@ describe("publish validation step description", () => {
         "Trip #travel #my-first-post #2026recap #photo-walk #cryptocurrencytradinganalysis"
       )
     );
+    rerender(tree("validation"));
+
+    expect(state.current!.tags).toEqual(["travel", "photo-walk"]);
+  });
+});
+
+// Safari 12 has no String.prototype.matchAll (#1701): body hashtags must still be read.
+describe("publish validation step hashtags without matchAll", () => {
+  const nativeMatchAll = String.prototype.matchAll;
+  beforeEach(() => {
+    // @ts-expect-error simulating an engine without matchAll
+    delete String.prototype.matchAll;
+  });
+  afterEach(() => {
+    String.prototype.matchAll = nativeMatchAll;
+  });
+
+  it("adds the body hashtags", () => {
+    const { state, rerender, tree } = renderComposer();
+    act(() => state.current!.setTags([]));
+    act(() => state.current!.setContent("Trip #travel #photo-walk"));
     rerender(tree("validation"));
 
     expect(state.current!.tags).toEqual(["travel", "photo-walk"]);

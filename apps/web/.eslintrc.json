@@ -66,6 +66,23 @@
         "selector": "CallExpression[callee.type='Identifier'][callee.name='open'][arguments.1.value='_blank']",
         "message": "Use openInNewTab from @/utils/open-in-new-tab: a bare window.open leaves the new tab an opener handle and a copy of sessionStorage. A caller that needs the returned window disables this line and says why."
       }
+    ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "property": "matchAll",
+        "message": "String.prototype.matchAll is ES2020 and throws on Safari 12, where Next's noModule polyfills never run (#1701). Use regexMatches from @/utils/regex-matches, or RegExp.exec."
+      }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/specs/**"
+      ],
+      "rules": {
+        "no-restricted-properties": "off"
+      }
+    }
+  ]
 }

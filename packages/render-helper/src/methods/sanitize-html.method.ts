@@ -5,6 +5,7 @@ import { isStrictTag } from './render-boundary.method'
 import { decodeAttributeEntities, trimTrailingSlash } from '../helper'
 import { authorPixelSize, parsePixelDimension } from './image-dimensions'
 import type { XSSWhiteList } from '../types'
+import { regexMatches } from '../regex-matches'
 
 // data-* attributes whose value is later consumed as an <iframe> src by the
 // client video extensions (dataset.embedSrc / dataset.videoHref). They MUST be
@@ -66,7 +67,7 @@ const escapeAttr = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 const hasQuotedAttr = (attrs: string, wanted: string): boolean => {
-  for (const m of attrs.matchAll(/\s([^\s"'>\/=]+)="[^"]*"/g)) {
+  for (const m of regexMatches(attrs, /\s([^\s"'>\/=]+)="[^"]*"/g)) {
     if (m[1].toLowerCase() === wanted) return true
   }
   return false
