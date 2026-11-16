@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import React from "react";
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Entry } from "@/entities";
@@ -308,6 +308,46 @@ describe("Comment composer", () => {
       fireEvent.keyDown(toggle, { key: " " });
 
       expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("resets to unchecked once the reply is posted, so the next reply keeps its payout", async () => {
+      const first = renderComment();
+
+      fireEvent.click(first.getByRole("checkbox", { name: "comment.decline-payout" }));
+      type(first.getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(first.getByRole("button", { name: "Reply" }));
+      });
+      first.unmount();
+
+      const next = renderComment();
+      expect(next.getByRole("checkbox", { name: "comment.decline-payout" })).toHaveAttribute(
+        "aria-checked",
+        "false"
+      );
+    });
+
+    test("comes back checked when a declined reply fails and its text is restored", async () => {
+      const first = renderComment();
+
+      fireEvent.click(first.getByRole("checkbox", { name: "comment.decline-payout" }));
+      type(first.getByRole, "hello world");
+      await act(async () => {
+        fireEvent.click(first.getByRole("button", { name: "Reply" }));
+      });
+      first.unmount();
+
+      // The caller remounts the form with the failed text, as discussion-item does.
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const { getByRole } = render(
+        <QueryClientProvider client={queryClient}>
+          <Comment entry={entry} onSubmit={vi.fn()} submitText="Reply" initialText="hello world" />
+        </QueryClientProvider>
+      );
+      expect(getByRole("checkbox", { name: "comment.decline-payout" })).toHaveAttribute(
+        "aria-checked",
+        "true"
+      );
     });
 
     test("is not offered when editing, since comment_options cannot be set again", () => {

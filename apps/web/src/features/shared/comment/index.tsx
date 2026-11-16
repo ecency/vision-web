@@ -84,11 +84,18 @@ export function Comment({
     PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
     initialText ?? ""
   );
-  // Stored next to the draft, so a reply whose broadcast fails comes back with the
-  // same choice instead of silently retrying with the payout on.
+  // Stored next to the draft and reset with it once the reply is posted, so the next
+  // reply to this parent keeps its payout unless the user declines it again.
   const [declinePayout, setDeclinePayout] = useLocalStorage(
     PREFIX + `_reply_decline_payout_${entry.author}_${entry.permlink}`,
     false
+  );
+  // The text of the last reply posted with its payout declined. A broadcast that fails
+  // later hands that text back through `initialText`, possibly to a remounted form, and
+  // the box is checked again so the retry does not silently accept the payout.
+  const [declinedText, setDeclinedText] = useLocalStorage<string | null>(
+    PREFIX + `_reply_declined_text_${entry.author}_${entry.permlink}`,
+    null
   );
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -202,6 +209,9 @@ export function Comment({
   useEffect(() => {
     if (initialText !== null && initialText !== text) {
       setText(initialText);
+      if (declinedText !== null && declinedText === initialText) {
+        setDeclinePayout(true);
+      }
     }
   }, [initialText]);
 
@@ -245,9 +255,14 @@ export function Comment({
       }
 
       try {
-        await onSubmit(text!, { declinePayout: !isEdit && !!declinePayout });
+        const declined = !isEdit && !!declinePayout;
+        await onSubmit(text!, { declinePayout: declined });
         if (clearOnSubmit) {
           setText("");
+          if (!isEdit) {
+            setDeclinePayout(false);
+            setDeclinedText(declined ? text! : null);
+          }
         }
       } catch (err: any) {
         const handled = handleAndReportError(err, "comment");
@@ -255,7 +270,16 @@ export function Comment({
           throw err; // ❌ only throw unexpected errors
         }
       }
-    }, [onSubmit, text, clearOnSubmit, setText, isEdit, declinePayout]);
+    }, [
+      onSubmit,
+      text,
+      clearOnSubmit,
+      setText,
+      isEdit,
+      declinePayout,
+      setDeclinePayout,
+      setDeclinedText
+    ]);
 
   const cancel = useCallback(() => {
     if (onCancel) onCancel();
