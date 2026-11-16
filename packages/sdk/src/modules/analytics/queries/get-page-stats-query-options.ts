@@ -8,7 +8,8 @@ import { PageStatsResponse } from "../types";
  * @param url - URL to get stats for
  * @param dimensions - Dimensions to query (default: [])
  * @param metrics - Metrics to query (default: ["visitors", "pageviews", "visit_duration"])
- * @param dateRange - Date range for the query (e.g. "day", "7d", "30d", "all")
+ * @param dateRange - Date range for the query: "day", "7d", "30d", "month", "6mo" or "12mo"
+ *   (the default); /api/stats rejects anything else, "all" included
  */
 export function getPageStatsQueryOptions(
   url: string,

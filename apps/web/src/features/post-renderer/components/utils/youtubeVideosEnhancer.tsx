@@ -1,5 +1,10 @@
 import { createRoot, Root } from "react-dom/client";
 import { YoutubeVideoRenderer } from "../extensions";
+import {
+    attachYoutubeIframeSources,
+    attachYoutubeSource,
+    detachYoutubeIframeSources
+} from "../extensions/youtube-video-extension";
 import { getYoutubeEmbedUrl } from "./getYoutubeEmbedUrl";
 import { setVideoPlaceholderVisible } from "./video-placeholder";
 
@@ -10,7 +15,7 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
     const roots: Root[] = [];
     const elements = Array.from(
         container.querySelectorAll<HTMLElement>(
-            ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube)"
+            ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube):not(iframe)"
         )
     );
 
@@ -30,7 +35,11 @@ export function applyYoutubeVideos(container: HTMLElement): Root[] {
         roots.push(root);
 
         el.appendChild(wrapper);
+        attachYoutubeSource(el);
     });
+
+    // A YouTube <iframe> the author pasted has no placeholder: caption it too.
+    attachYoutubeIframeSources(container);
 
     return roots;
 }
@@ -46,7 +55,14 @@ export function resetYoutubeVideos(container: HTMLElement): void {
         .querySelectorAll<HTMLElement>('.markdown-video-link-youtube[data-enhanced="true"]')
         .forEach((el) => {
             el.querySelectorAll(":scope > .er-youtube-frame").forEach((frame) => frame.remove());
+            const next = el.nextElementSibling;
+            if (next?.classList.contains("er-youtube-source")) next.remove();
             delete el.dataset.enhanced;
             setVideoPlaceholderVisible(el, true);
         });
+    detachYoutubeIframeSources(
+        container.querySelectorAll<HTMLIFrameElement>(
+            'iframe[src*="youtube.com/embed/"][data-enhanced="true"]'
+        )
+    );
 }

@@ -33,7 +33,6 @@ export const ResourceCreditsDelegation = (props: any) => {
   const [amount, setAmount] = useState<any>(amountFromList || "");
   const [inProgress, setInProgress] = useState<boolean>(false);
   const [step, setStep] = useState<any>(1);
-  const [amountError, setAmountError] = useState<string>("");
   const amountErrorId = useId();
   const [toError, setToError] = useState<string>("");
   const [toWarning, setToWarning] = useState<string>("");
@@ -43,47 +42,36 @@ export const ResourceCreditsDelegation = (props: any) => {
   // what is already delegated to each: changing an existing delegation only
   // needs the difference. The existing amount is known for the delegation
   // being edited from the list.
-  const exceedsLimit = (value: string, recipients: string = to) => {
+  const overLimit = (() => {
     if (delegatableRc === undefined) return false;
-    const delegatees = parseDelegatees(recipients);
+    const delegatees = parseDelegatees(to);
     const existing: Record<string, number> = toFromList
       ? { [toFromList]: Number(amountFromList) || 0 }
       : {};
     return (
-      rcDelegationDelta(Number(value), delegatees.length ? delegatees : [""], existing) >
+      rcDelegationDelta(Number(amount), delegatees.length ? delegatees : [""], existing) >
       delegatableRc
     );
-  };
-  const overLimit = exceedsLimit(amount);
-  // The amount error on screen: the minimum below 5B RC, the limit above it.
-  const shownAmountError =
-    amountError && (Number(amount) < 5000000000 || overLimit) ? amountError : "";
+  })();
+  // Derived from the current amount, recipients and balance, so it follows an RC
+  // refresh too (#2088): the minimum below 5B RC, the limit above it.
+  const amountError =
+    amount === "" || amount === "0"
+      ? ""
+      : Number(amount) < 5000000000
+        ? i18next.t("rc-info.minimum-rc-error")
+        : overLimit
+          ? i18next.t("rc-info.insufficient-rc-error")
+          : "";
 
   const toChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
     setInProgress(true);
     setTo(value);
-    // What the amount costs grows with the number of delegatees: recheck it.
-    if (Number(amount) >= 5000000000) {
-      setAmountError(exceedsLimit(amount, value) ? i18next.t("rc-info.insufficient-rc-error") : "");
-    }
   };
 
   const amountChanged = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const { value: amount } = e.target;
-    setAmount(amount);
-    if (
-      amount === "" ||
-      (Number(amount) >= 5000000000 && !exceedsLimit(amount)) ||
-      amount === "0"
-    ) {
-      setAmountError("");
-    } else if (Number(amount) < 5000000000) {
-      setAmountError(i18next.t("rc-info.minimum-rc-error"));
-    } else if (exceedsLimit(amount)) {
-      setAmountError(i18next.t("rc-info.insufficient-rc-error"));
-      return;
-    }
+    setAmount(e.target.value);
   };
 
   const next = () => {
@@ -240,19 +228,19 @@ export const ResourceCreditsDelegation = (props: any) => {
                     value={amount}
                     onChange={amountChanged}
                     // The input's invalid style (red border) keys off aria-invalid.
-                    aria-invalid={shownAmountError !== ""}
-                    aria-describedby={shownAmountError ? amountErrorId : undefined}
+                    aria-invalid={amountError !== ""}
+                    aria-describedby={amountError ? amountErrorId : undefined}
                   />
                 </InputGroup>
               </div>
             </div>
 
-            {shownAmountError && (
+            {amountError && (
               // Same column as the balance line below.
               <div className="grid grid-cols-12">
                 <div className="col-span-12 lg:col-span-10 lg:col-start-3">
                   <small id={amountErrorId} role="alert" className="text-red tr-form-text">
-                    {shownAmountError}
+                    {amountError}
                   </small>
                 </div>
               </div>

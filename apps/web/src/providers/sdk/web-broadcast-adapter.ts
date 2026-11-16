@@ -216,7 +216,8 @@ function broadcastWithKeychainMobileDeepLink(
 
   // Navigate to the deep link - OS will open Keychain/Ecency app.
   // Page navigates away; the tx result arrives via /auth/keychain-sign callback
-  // on a new page load. Same pattern as HiveSigner hot-sign (hs.sendOperations).
+  // on a new page load, so the promise never settles (HiveSigner hot-sign
+  // does the same, from a new tab).
   window.location.href = hiveUri;
   return new Promise(() => {});
 }
@@ -426,10 +427,12 @@ export function createWebBroadcastAdapter(): PlatformAdapter {
       ops: Operation[],
       _keyType: 'posting' | 'active' | 'owner' | 'memo',
     ): Promise<TransactionConfirmation> {
-      // HiveSigner hot signing: redirects the browser to hivesigner.com for the
-      // user to review and sign the operation. The page navigates away, so we
-      // return a never-resolving promise — same pattern as Keychain Mobile deep
-      // links (broadcastWithKeychainMobileDeepLink) and wallet-operations-sign.
+      // HiveSigner hot signing. hivesigner 4 `sendOperations` with a callback
+      // function opens hivesigner.com in a NEW tab (`window.open`); this page
+      // stays. The signed result comes back in that tab, at the callback URL,
+      // so nothing here ever learns it: the promise never settles, as in
+      // wallet-operations-sign. A blocked popup makes `sendOperations` throw
+      // (it focuses a null window), which rejects the promise instead.
       return new Promise(() => {
         hs.sendOperations(
           ops,

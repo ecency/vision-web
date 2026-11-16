@@ -112,10 +112,11 @@ describe("RC delegate from another user's profile", () => {
 
   function renderProfile(name: string) {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return renderWithQueryClient(
+    const view = renderWithQueryClient(
       <ResourceCreditsInfo rcPercent={50} account={mockFullAccount({ name })} />,
       { queryClient }
     );
+    return Object.assign(view, { queryClient });
   }
 
   async function openDelegateOnBobsProfile() {
@@ -423,6 +424,74 @@ describe("RC delegate from another user's profile", () => {
     expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
     fireEvent.change(amountInput, { target: { value: String(most + 1) } });
     expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+  });
+
+  // #2088: the error on screen and the Next button follow the current balance,
+  // not the balance when the amount was typed.
+  describe("when the sender's RC refreshes (#2088)", () => {
+    const B = 1_000_000_000;
+    let aliceRc = 0;
+
+    beforeEach(() => {
+      vi.mocked(useActiveAccount).mockReturnValue({
+        activeUser: { username: "alice" },
+        username: "alice"
+      } as unknown as ActiveAccount);
+      vi.mocked(getAccountRcQueryOptions).mockImplementation(
+        (username: string) =>
+          ({
+            queryKey: ["resource-credits", "account", username],
+            queryFn: async () => rcAccount(username, username === "alice" ? aliceRc : BOB_RC)
+          }) as unknown as ReturnType<typeof getAccountRcQueryOptions>
+      );
+    });
+
+    // Edit carol's 30B delegation (recipient known), and raise it to 40B: 10B more.
+    async function editCarolTo40B() {
+      const view = renderProfile("alice");
+      fireEvent.click(screen.getAllByRole("button")[0]);
+      fireEvent.click(await screen.findByText(/rc-info.delegated/));
+      fireEvent.click(await screen.findByText("edit-carol"));
+      await screen.findByText(`: ${aliceRc - DELEGATE_RC_TX_RESERVE}`);
+      fireEvent.change(screen.getByPlaceholderText("transfer.amount-placeholder"), {
+        target: { value: String(40 * B) }
+      });
+      return view;
+    }
+
+    async function refreshAliceRc(view: { queryClient: QueryClient }, rc: number) {
+      aliceRc = rc;
+      await act(async () => {
+        await view.queryClient.invalidateQueries({
+          queryKey: ["resource-credits", "account", "alice"]
+        });
+      });
+      await screen.findByText(`: ${rc - DELEGATE_RC_TX_RESERVE}`);
+    }
+
+    it("clears the error and enables Next once the balance covers the amount", async () => {
+      aliceRc = 5 * B;
+      const view = await editCarolTo40B();
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+      expect(screen.getByText("g.next").closest("button")).toBeDisabled();
+
+      await refreshAliceRc(view, 25 * B);
+
+      expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+      expect(screen.getByText("g.next").closest("button")).toBeEnabled();
+    });
+
+    it("shows the error and disables Next once the balance drops below the amount", async () => {
+      aliceRc = 25 * B;
+      const view = await editCarolTo40B();
+      expect(screen.queryByText("rc-info.insufficient-rc-error")).not.toBeInTheDocument();
+      expect(screen.getByText("g.next").closest("button")).toBeEnabled();
+
+      await refreshAliceRc(view, 5 * B);
+
+      expect(screen.getByText("rc-info.insufficient-rc-error")).toBeInTheDocument();
+      expect(screen.getByText("g.next").closest("button")).toBeDisabled();
+    });
   });
 
   // #2074

@@ -8,6 +8,102 @@ import { getYoutubeEmbedUrl } from "../utils/getYoutubeEmbedUrl";
 import { unmountRootsLater } from "../utils/unmount-roots-later";
 import { setVideoPlaceholderVisible } from "../utils/video-placeholder";
 
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/;
+const YOUTUBE_EMBED_SRC = /^(?:https?:)?\/\/(?:www\.|m\.)?youtube\.com\/embed\/([^?#/]+)/i;
+// A pasted player's id: exactly a video id. embed/videoseries (a playlist) and
+// embed/live_stream (a channel's stream) are 11 characters too, so they are
+// named: neither gets a watch link.
+const YOUTUBE_VIDEO_ID = /^(?!videoseries$|live_stream$)[A-Za-z0-9_-]{11}$/;
+
+/**
+ * YouTube players the author pasted as an <iframe>: render-helper keeps them
+ * with no placeholder, so they get the caption directly. Players inside a
+ * placeholder (click-to-play, waves' direct embeds) are not these.
+ */
+const PASTED_YOUTUBE_IFRAMES =
+  '.markdown-view:not(.markdown-view-pure) iframe[src*="youtube.com/embed/"]:not([data-enhanced])';
+
+/**
+ * Captions the pasted YouTube players in `container`. Each is marked
+ * (`data-enhanced`, which drops its reserved room) in the same step its caption
+ * is added; an id that is not a YouTube id is marked with no caption. Returns
+ * the marked players for {@link detachYoutubeIframeSources}.
+ */
+export function attachYoutubeIframeSources(container: ParentNode): HTMLIFrameElement[] {
+  const iframes = Array.from(container.querySelectorAll<HTMLIFrameElement>(PASTED_YOUTUBE_IFRAMES)).filter(
+    // The parent's ancestors, not the iframe itself: an author-written
+    // class="markdown-video-link" on the iframe does not make it a placeholder's.
+    (iframe) => !iframe.parentElement?.closest(".markdown-video-link")
+  );
+  for (const iframe of iframes) {
+    iframe.dataset.enhanced = "true";
+    const source = attachYoutubeSource(iframe);
+    // A landscape player sits at the left edge (a Short's is centred).
+    if (source && !iframe.classList.contains("portrait-embed")) {
+      source.classList.add("er-youtube-source-start");
+    }
+  }
+  return iframes;
+}
+
+/** Undoes {@link attachYoutubeIframeSources} for these players. */
+export function detachYoutubeIframeSources(iframes: Iterable<HTMLIFrameElement>): void {
+  for (const iframe of iframes) {
+    const next = iframe.nextElementSibling;
+    if (next?.classList.contains("er-youtube-source")) next.remove();
+    delete iframe.dataset.enhanced;
+  }
+}
+
+/**
+ * The posted video's own URL, rebuilt from the placeholder (render-helper drops
+ * the href): a Short links to its Shorts page, a start time is kept. Null when
+ * the id is not a YouTube video id.
+ */
+export function youtubeSourceUrl(element: HTMLElement): { href: string; label: string } | null {
+  let id: string;
+  let portrait: boolean;
+  let start: string;
+  if (element instanceof HTMLIFrameElement) {
+    // A pasted player: render-helper keeps it as /embed/<id> (query stripped, so
+    // there is no start time to keep) and marks a Short's with portrait-embed.
+    const src = element.getAttribute("src") ?? "";
+    id = YOUTUBE_EMBED_SRC.exec(src)?.[1] ?? "";
+    if (!YOUTUBE_VIDEO_ID.test(id)) return null;
+    portrait = element.classList.contains("portrait-embed");
+    start = "";
+  } else {
+    id = (element.dataset.youtube ?? "").split("?")[0];
+    portrait = element.classList.contains("markdown-video-link-youtube-portrait");
+    start = element.dataset.startTime ?? "";
+  }
+  if (!YOUTUBE_ID.test(id)) return null;
+  const path = portrait ? `shorts/${id}` : `watch?v=${id}`;
+  // Seconds as a number, so a zero-padded "00030" still links to t=30s.
+  const seconds = /^\d{1,7}$/.test(start) ? Number(start) : 0;
+  const time = seconds > 0 ? `${path.includes("?") ? "&" : "?"}t=${seconds}s` : "";
+  const label = `youtube.com/${path}${time}`;
+  return { href: `https://www.${label}`, label };
+}
+
+/**
+ * Puts the video's URL right after the placeholder, outside it so a click opens
+ * the link instead of starting the video (#235). Returns the link to remove on
+ * cleanup, or null when there is no valid id.
+ */
+export function attachYoutubeSource(element: HTMLElement): HTMLAnchorElement | null {
+  const url = youtubeSourceUrl(element);
+  if (!url) return null;
+  const source = document.createElement("a");
+  source.className = "er-youtube-source";
+  source.href = url.href;
+  source.target = "_blank";
+  source.rel = "noopener noreferrer nofollow";
+  source.textContent = url.label;
+  element.after(source);
+  return source;
+}
+
 export function YoutubeVideoRenderer({
    embedSrc,
    container,
@@ -56,17 +152,23 @@ export function YoutubeVideoExtension({
   // React does not own, so cleanup undoes them. Left behind, Strict Mode's
   // setup-cleanup-setup cycle skipped every element on the second setup
   // (`:not(.er-youtube)`) and the placeholders never played (#1939).
-  const enhancedRef = useRef<{ element: HTMLElement; frame: HTMLElement }[]>([]);
+  const enhancedRef = useRef<
+    { element: HTMLElement; frame: HTMLElement; source: HTMLElement | null }[]
+  >([]);
+  const iframesRef = useRef<HTMLIFrameElement[]>([]);
 
   const reset = useCallback(() => {
     unmountRootsLater(rootsRef.current);
     rootsRef.current = [];
-    for (const { element, frame } of enhancedRef.current) {
+    for (const { element, frame, source } of enhancedRef.current) {
       element.classList.remove("er-youtube");
       frame.remove();
+      source?.remove();
       setVideoPlaceholderVisible(element, true);
     }
     enhancedRef.current = [];
+    detachYoutubeIframeSources(iframesRef.current);
+    iframesRef.current = [];
   }, []);
 
   useEffect(() => {
@@ -74,7 +176,7 @@ export function YoutubeVideoExtension({
 
     const elements = Array.from(
       containerRef.current?.querySelectorAll<HTMLElement>(
-        ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube)",
+        ".markdown-view:not(.markdown-view-pure) .markdown-video-link-youtube:not(.er-youtube):not(iframe)",
       ) ?? [],
     );
     elements.forEach((element) => {
@@ -93,7 +195,9 @@ export function YoutubeVideoExtension({
 
         container.classList.add("er-youtube-frame");
         element.classList.add("er-youtube");
-        enhancedRef.current.push({ element, frame: container });
+
+        const source = attachYoutubeSource(element);
+        enhancedRef.current.push({ element, frame: container, source });
 
         // Use createRoot instead of hydrateRoot (no server-rendered content to hydrate)
         const root = createRoot(container);
@@ -108,6 +212,10 @@ export function YoutubeVideoExtension({
         console.warn("Error enhancing YouTube video element:", error);
       }
     });
+
+    if (containerRef.current) {
+      iframesRef.current = attachYoutubeIframeSources(containerRef.current);
+    }
 
     return reset;
   }, [containerRef, reset, html]);

@@ -295,6 +295,27 @@ describe('Helper Functions', () => {
       })
     })
 
+    // YouTube writes durations as XhYmZs in shared links (#2090).
+    describe('hour, minute and second forms', () => {
+      it('should read minutes and seconds', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=1m30s')).toBe('90')
+      })
+
+      it('should read hours, minutes and seconds', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=1h2m3s')).toBe('3723')
+      })
+
+      it('should read a single unit', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=2h')).toBe('7200')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=5m')).toBe('300')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=90s')).toBe('90')
+      })
+
+      it('should accept upper-case units', () => {
+        expect(extractYtStartTime('https://youtu.be/ID?t=1M30S')).toBe('90')
+      })
+    })
+
     describe('edge cases', () => {
       it('should return empty string for missing time parameter', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID')).toBe('')
@@ -312,14 +333,24 @@ describe('Helper Functions', () => {
         expect(extractYtStartTime('https://youtube.com/watch')).toBe('')
       })
 
-      it('should handle negative time values', () => {
-        // parseInt parses negative values as-is
-        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=-123')).toBe('-123')
+      it('should give no start time for a negative value', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=-123')).toBe('')
       })
 
-      it('should handle non-numeric time values in ?t=', () => {
-        // parseInt returns NaN for non-numeric strings, converted to string 'NaN'
-        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=abc')).toBe('NaN')
+      it('should give no start time for a non-numeric ?t=', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=abc')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=1m30x')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=1.5')).toBe('')
+      })
+
+      it('should drop leading zeros from ?start= (?t= was already numeric)', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=00030')).toBe('30')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=0090s')).toBe('90')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=0000000')).toBe('0')
+      })
+
+      it('should give no start time for a non-numeric ?start=', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&start=abc')).toBe('')
       })
 
       it('should handle zero time value', () => {
@@ -328,6 +359,19 @@ describe('Helper Functions', () => {
 
       it('should handle very large time values', () => {
         expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=999999')).toBe('999999')
+      })
+
+      it('should give no start time for an unbounded number', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=99999999999999999999999')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=9999999h')).toBe('')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=2777h46m39s')).toBe('9999999')
+        expect(extractYtStartTime(`https://youtube.com/watch?v=ID&t=${'9'.repeat(400)}`)).toBe('')
+        expect(extractYtStartTime(`https://youtube.com/watch?v=ID&start=${'9'.repeat(400)}`)).toBe('')
+      })
+
+      it('should fall back to a valid ?start= when ?t= is invalid or empty', () => {
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=abc&start=30')).toBe('30')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=&start=30')).toBe('30')
       })
 
       it('should handle URL with hash fragment', () => {
@@ -339,7 +383,7 @@ describe('Helper Functions', () => {
       })
 
       it('should handle empty ?t= parameter', () => {
-        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=')).toBe('0')
+        expect(extractYtStartTime('https://youtube.com/watch?v=ID&t=')).toBe('')
       })
 
       it('should handle empty ?start= parameter', () => {

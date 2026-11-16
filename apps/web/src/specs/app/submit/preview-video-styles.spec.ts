@@ -93,9 +93,11 @@ describe("classic editor preview video styles", () => {
     const selectors = compiledSelectors("features/post-renderer/video-embeds.scss");
     expect(selectors.length).toBeGreaterThan(0);
     for (const sel of selectors) {
-      expect(sel.startsWith(".markdown-view ")).toBe(true);
+      // A view that inserts the YouTube URL caption may be named by its marker.
+      expect(sel).toMatch(/^\.markdown-view(\.er-youtube-source-host)? /);
+      // er-youtube-source: the video URL under a YouTube embed (#235).
       expect(sel).toMatch(
-        /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe/
+        /markdown-video-link|portrait-embed|speak-iframe|markdown-audio-link-speak|speak-audio-iframe|er-youtube-source/
       );
     }
   });
@@ -105,5 +107,70 @@ describe("classic editor preview video styles", () => {
     for (const sel of compiledSelectors("features/post-renderer/video-embeds.scss")) {
       expect(renderer).toContain(sel);
     }
+  });
+
+  // #235: the caption is inserted after hydration, so the placeholder reserves
+  // its room and the caption moves into it; nothing below shifts.
+  it("reserves the YouTube URL caption's room so inserting it shifts nothing", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    const reserve = declarationsFor(
+      file,
+      ".markdown-view.er-youtube-source-host .markdown-video-link-youtube[data-youtube]:not(.er-youtube):not([data-enhanced])"
+    );
+    expect(reserve).toMatch(/margin-bottom:\s*3rem/);
+    // Once enhanced the caption carries the same 3rem itself (0.5 + 1.25 + 1.25),
+    // so dropping the room and adding the caption in one step moves nothing.
+    const caption = declarationsFor(file, ".markdown-view a.er-youtube-source");
+    expect(caption).toMatch(/margin:\s*0\.5rem auto 1\.25rem/);
+    expect(caption).toMatch(/height:\s*1\.25rem/);
+    expect(caption).toMatch(/white-space:\s*nowrap/);
+    expect(caption).toMatch(/width:\s*fit-content/);
+    expect(declarationsFor(file, ".markdown-view a.er-youtube-source::after")).toMatch(
+      /content:\s*none/
+    );
+  });
+
+  // Where no caption comes (waves direct embeds, views rendered without the
+  // enhancer, a rejected id) nothing may reserve room.
+  it("reserves the room only on unenhanced placeholders inside a caption host", () => {
+    for (const file of [
+      "features/post-renderer/video-embeds.scss",
+      "features/post-renderer/ecency-renderer.scss"
+    ]) {
+      const reserving = compiledRules(file)
+        .filter((rule) => /margin-bottom:\s*3rem/.test(rule.body))
+        .flatMap((rule) => rule.selectors)
+        .filter((sel) => sel.includes("markdown-video-link-youtube"));
+      expect(reserving.length).toBeGreaterThan(0);
+      for (const sel of reserving) {
+        expect(sel).toContain(".er-youtube-source-host ");
+        expect(sel).toContain(":not(.er-youtube)");
+        expect(sel).toContain(":not([data-enhanced])");
+      }
+    }
+  });
+
+  // A pasted YouTube <iframe> (no placeholder) reserves the same room until its
+  // caption comes, and only in a caption host (#235 review).
+  it("reserves the room under a pasted YouTube iframe only until it is enhanced", () => {
+    const iframe =
+      '.markdown-view.er-youtube-source-host iframe[src*="youtube.com/embed/"]' +
+      ":not(.markdown-video-link *):not([data-enhanced])";
+    for (const file of [
+      "features/post-renderer/video-embeds.scss",
+      "features/post-renderer/ecency-renderer.scss"
+    ]) {
+      expect(declarationsFor(file, iframe)).toMatch(/margin-bottom:\s*3rem/);
+    }
+  });
+
+  it("lines a landscape iframe's caption up with the player, centred inside <center>", () => {
+    const file = "features/post-renderer/video-embeds.scss";
+    expect(
+      declarationsFor(file, ".markdown-view a.er-youtube-source.er-youtube-source-start")
+    ).toMatch(/margin-left:\s*0/);
+    expect(
+      declarationsFor(file, ".markdown-view center a.er-youtube-source.er-youtube-source-start")
+    ).toMatch(/margin-left:\s*auto/);
   });
 });

@@ -117,6 +117,79 @@
     }
   }
 
+  // The video's own URL under a YouTube placeholder or player (#235): small and
+  // muted so it reads as a caption, centred like a Short above it. It is added
+  // after hydration, so a placeholder that will get one reserves its room up
+  // front in its bottom margin. The enhancer marks the placeholder (er-youtube
+  // or data-enhanced) and inserts the caption in the same step; the mark drops
+  // the reservation and the caption brings the same total with its own margins
+  // (0.5rem gap, line, 1.25rem after), so the content below does not move.
+  // Only views that insert the caption carry er-youtube-source-host. Anywhere
+  // else (pure views, waves' direct embeds, previews rendered without the
+  // enhancer) reserves nothing, and an id the client rejects is marked without
+  // a caption, so its room goes too.
+  $source-gap: 0.5rem; // placeholder to caption, the placeholder's own bottom margin
+  $source-line: 1.25rem; // one caption line
+  // Caption to the content below. At least the 1em bottom margin of the
+  // paragraph around the placeholder at the post body's largest text size
+  // (18px), or that margin wins the collapse and the content moves.
+  $source-after: 1.25rem;
+
+  // Included inside .markdown-view, so `&` is the markdown view itself.
+  &.er-youtube-source-host
+    .markdown-video-link-youtube[data-youtube]:not(.er-youtube):not([data-enhanced]) {
+    margin-bottom: $source-gap + $source-line + $source-after;
+  }
+
+  // A YouTube <iframe> the author pasted has no placeholder; it gets the same
+  // caption and reserves the same room until it does. Players inside a
+  // placeholder (click-to-play, waves' direct embeds) are excluded.
+  &.er-youtube-source-host
+    iframe[src*="youtube.com/embed/"]:not(.markdown-video-link *):not([data-enhanced]) {
+    margin-bottom: $source-gap + $source-line + $source-after;
+  }
+
+  a.er-youtube-source {
+    display: block;
+    // Only the URL is clickable, not the whole row beside it.
+    width: fit-content;
+    max-width: 100%;
+    height: $source-line;
+    margin: $source-gap auto $source-after;
+    text-align: center;
+    font-size: 0.8125rem;
+    line-height: $source-line;
+    // One line, so the reserved room always fits it.
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-decoration: none;
+    // UI caption, not article text: the sans stack in the post body too.
+    @apply font-sans text-gray-600 dark:text-gray-400;
+
+    // No external-link icon (base styles add one to every _blank link).
+    &::after {
+      content: none !important;
+      display: none !important;
+    }
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
+  }
+
+  // Under a pasted landscape <iframe>, which is not centred (fixed width at the
+  // left edge on the post page), the caption starts at the player's left edge.
+  // Inside <center> the player is centred, and so is the caption.
+  a.er-youtube-source.er-youtube-source-start {
+    margin-left: 0;
+  }
+
+  center a.er-youtube-source.er-youtube-source-start {
+    margin-left: auto;
+  }
+
   // Portrait embeds (9:16 aspect ratio)
   // Target iframe.portrait-embed since the class is applied to iframe elements, not anchors
   iframe.portrait-embed {
