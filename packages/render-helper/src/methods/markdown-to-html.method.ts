@@ -22,23 +22,26 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // without backtracking: linear.
 const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
+// What sits right before a markdown link or image destination: `](`, then
+// optional spaces and an optional `<`.
+const DESTINATION_START = /\]\(\s*<?$/
+
 /**
- * A backslash-escaped `&` in a URL is a literal ampersand (CommonMark), so
- * `[x](https://e.com/?q=\\&copy;)` names `?q=&copy;`. Remarkable drops the
- * backslash before decode_destinations runs, which then read `&copy;` as ©.
- * Written as `&amp;` instead, the destination decode turns it back into the
- * literal `&`, and in text it shows as `&`, as the escape did. Only URLs in
- * markdown change: code keeps its backslash, and a URL in a raw HTML attribute
- * (after `=`, `"` or `'`) is left to the attribute's own reading.
+ * A backslash-escaped `&` in a link or image destination is a literal
+ * ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
+ * `?q=&copy;`. Remarkable drops the backslash before decode_destinations runs,
+ * which then read `&copy;` as ©. Written as `&amp;` instead, the destination
+ * decode turns it back into the literal `&`. Only destinations change: any
+ * other text (code, raw HTML, autolinks, plain text) keeps its backslash
+ * exactly as the parser reads it.
  */
-function escapeUrlAmpersands(src: string): string {
-  const inUrls = (text: string) => {
+function escapeDestinationAmpersands(src: string): string {
+  const inDestinations = (text: string) => {
     let out = ''
     let last = 0
     for (const m of regexMatches(text, URL_RUN)) {
       const at = m.index ?? 0
-      const before = at > 0 ? text[at - 1] : ''
-      if (before === '=' || before === '"' || before === "'") continue
+      if (!DESTINATION_START.test(text.slice(Math.max(0, at - 16), at))) continue
       out += text.slice(last, at) + m[0].replace(/\\&/g, '&amp;')
       last = at + m[0].length
     }
@@ -48,10 +51,10 @@ function escapeUrlAmpersands(src: string): string {
   let last = 0
   for (const [start, end] of codeRanges(src)) {
     if (start < last) continue
-    out += inUrls(src.slice(last, start)) + src.slice(start, end)
+    out += inDestinations(src.slice(last, start)) + src.slice(start, end)
     last = end
   }
-  return out + inUrls(src.slice(last))
+  return out + inDestinations(src.slice(last))
 }
 
 // Largest code block that is syntax highlighted (#2097).
@@ -92,6 +95,11 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
 // optional space; each `>` ends its own repetition, so the match is linear.
 const FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/
 const FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/
+const quoteDepth = (prefix: string | undefined): number => {
+  let depth = 0
+  if (prefix) for (const c of prefix) if (c === '>') depth++
+  return depth
+}
 
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks
@@ -112,7 +120,8 @@ function codeRanges(src: string): Array<[number, number]> {
     // optional indent, so the prefix is read without ambiguity.
     const open = FENCE_OPEN.exec(src.slice(pos, lineEnd))
     if (open) {
-      const quoted = open[1] !== undefined
+      const depth = quoteDepth(open[1])
+      const quoted = depth > 0
       const fence = open[2]
       let end = src.length
       let p = lineEnd + 1
@@ -126,7 +135,9 @@ function codeRanges(src: string): Array<[number, number]> {
           break
         }
         const close = FENCE_CLOSE.exec(line)
-        if (close && close[2][0] === fence[0] && close[2].length >= fence.length) {
+        // The close sits at the open's own quote depth: a `> ```` line inside
+        // an unquoted fence is code, not its end.
+        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
           end = le
           break
         }
@@ -339,7 +350,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   let output = '';
 
-  if (input.includes('\\&')) input = escapeUrlAmpersands(input)
+  if (input.includes('\\&')) input = escapeDestinationAmpersands(input)
 
   // Replace entities with deterministic placeholders to preserve them during rendering
   const entities = input.match(ENTITY_REGEX);

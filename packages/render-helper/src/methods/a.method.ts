@@ -33,7 +33,7 @@ import {
 import { getSerializedInnerHTML } from './get-inner-html.method'
 import { proxifyImageSrc } from '../proxify-image-src'
 import { removeChildNodes } from './remove-child-nodes.method'
-import { extractYtStartTime, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
+import { extractYtStartTime, imageUrlEnd, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
 import { createImageHTML } from "./img.method";
 import { RenderOptions, SeoContext } from '../types'
 
@@ -260,6 +260,8 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   // & => &amp; can break equality
   if (
     href.match(IMG_REGEX) &&
+    // Not `.ico` in `.icons/readme` nor `.jpg` in `photo.jpg.html` (imageUrlEnd).
+    imageUrlEnd(href) !== -1 &&
     href.trim().replace(/&amp;/g, '&') ===
     getSerializedInnerHTML(el).trim().replace(/&amp;/g, '&')
   ) {

@@ -49,8 +49,10 @@ function isLinkableMention(mention: string): boolean {
   return user.indexOf('/') === -1 && isValidUsername(user)
 }
 
-// A URL token in the text, a single class run, linear on any input.
-const URL_TOKEN_RE = /https?:\/\/[^\s<>"']+/gi
+// A URL token in the text. The text was escaped before linkify, so a `<` or
+// `>` the author wrote arrives as `&lt;`/`&gt;` and ends the token as the raw
+// character would. The alternatives start with different characters: linear.
+const URL_TOKEN_RE = /https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/gi
 
 // Escapes a value for a double-quoted attribute. Tags (`#[-a-z\d]+`) and valid
 // usernames can never hold a quote or an angle bracket, so this changes no

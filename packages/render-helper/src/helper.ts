@@ -87,30 +87,32 @@ const TRAILING_PUNCTUATION = '.,;:!)]}*_~'
 
 /**
  * Where the image URL in a bare URL token ends, or -1 when the token is not an
- * image URL. An extension counts only at a boundary: the end of the token,
- * before a query or fragment (`?`, `#`, `&`), or before trailing punctuation.
- * So `.ico` in `.icons/readme` and `.jpg` in `photo.jpg.html` are not images.
- * An extension followed by a query keeps the whole token, query included:
- * `i.png?name=a.jpg&sig=x` and `image.php?file=x.jpg` stay whole rather than
- * being cut at an extension inside the query. Before trailing punctuation the
- * URL ends at the extension (`i.png,`), and the punctuation stays text. Shared
- * by the render's text linkify and the LCP preload's bare-URL scan, so both
- * read a token the same way. Linear: one pass for the extensions, one for the
- * punctuation.
+ * image URL. As before, a token holding an image extension is an image taken
+ * whole, suffixes and query included (`ABC.jpg:large`, `i.png/100x100`,
+ * `i.png?name=a.jpg&sig=x`); only prose punctuation at the end of a URL
+ * without a query is left out as text (`i.png,`). An extension does not count when a letter or digit runs on
+ * from it (`.ico` in `.icons/readme`) or when another extension follows it
+ * (`.jpg` in `photo.jpg.html`): those name something other than an image.
+ * Shared by the render (text linkify and a.method's link promotion) and the
+ * LCP preload, so they read a URL the same way. Linear: one pass for the
+ * extensions, one for the punctuation.
  */
 export function imageUrlEnd(token: string): number {
+  // Trailing punctuation is prose only without a query or fragment, where a
+  // `;` or `)` can belong to the URL.
   let contentEnd = token.length
-  while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
-  let end = -1
+  if (!/[?#]/.test(token)) {
+    while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
+  }
   IMAGE_EXT_G.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = IMAGE_EXT_G.exec(token)) !== null) {
     const at = m.index + m[0].length
-    const next = token[at]
-    if (next === '?' || next === '#' || next === '&') return token.length
-    if (at >= contentEnd) end = at
+    if (at > contentEnd) continue
+    if (at < contentEnd && (/[a-z\d]/i.test(token[at]) || (token[at] === '.' && /[a-z]/i.test(token[at + 1] ?? '')))) continue
+    return contentEnd
   }
-  return end
+  return -1
 }
 
 /**

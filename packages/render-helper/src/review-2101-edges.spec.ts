@@ -113,3 +113,75 @@ describe('raw HTML anchor with an image URL as its text', () => {
     expect(proxyOf(getEntryImageRawUrl(body)!)).toBe(img)
   })
 })
+
+// Second review round of #2101.
+describe('a backslash-escaped & is rewritten only in link and image destinations', () => {
+  it.each([
+    ['    curl https://e.com/?a=1\\&b=2', 'curl https://e.com/?a=1\\&amp;b=2'],
+    ['- item\n\n        curl https://e.com/?a=1\\&b=2', 'curl https://e.com/?a=1\\&amp;b=2'],
+    ['<pre>curl https://e.com/?a=1\\&b=2</pre>', 'curl https://e.com/?a=1\\&amp;b=2'],
+    ['<div>\ncurl https://e.com/?a=1\\&b=2\n</div>', 'curl https://e.com/?a=1\\&amp;b=2']
+  ])('%j keeps its backslash', (body, text) => {
+    for (const forApp of [false, true]) expect(strip(render(body, forApp))).toContain(text)
+  })
+
+  it('an autolink is not double escaped', () => {
+    for (const forApp of [false, true]) expect(render('<https://e.com/?a=1\\&b=2>', forApp)).not.toContain('&amp;amp;')
+  })
+})
+
+describe('a text URL with a suffix after its extension', () => {
+  // Develop imaged these whole; they must not turn into plain unlinked text.
+  const SUFFIXED = [
+    'https://pbs.twimg.com/media/ABC.jpg:large',
+    'https://e.com/i.jpg!small',
+    'https://e.com/i.png/100x100',
+    'https://e.com/a.jpg=s1600',
+    'https://e.com/a.jpg@2x',
+    'https://e.com/a.jpg_600x600',
+    'https://e.com/a.jpg-large',
+    'https://e.com/a.jpg/',
+    'https://e.com/a.jpg%3Fx'
+  ]
+  it.each(SUFFIXED)('%s in an HTML block is the whole-URL image, web, app and preload', (url) => {
+    const body = `<div>\n${url}\n</div>`
+    const web = firstImg(render(body, false))
+    expect(web).toBeTruthy()
+    expect(strip(render(body, false)).trim()).toBe('')
+    expect(firstImg(render(body, true))).toBe(web)
+    expect(proxyOf(getEntryImageRawUrl(body)!)).toBe(web)
+  })
+
+  // A paragraph URL goes through the link path (a.method); the preload must agree.
+  it.each(['https://e.com/photo.jpg.html', 'https://e.com/.icons/readme', ...SUFFIXED])(
+    'paragraph %s: render and preload agree',
+    (url) => {
+      const img = firstImg(render(url, false))
+      const pre = getEntryImageRawUrl(url)
+      expect(pre ? proxyOf(pre) : undefined).toBe(img)
+    }
+  )
+
+  it.each(['https://e.com/photo.jpg.html', 'https://e.com/.icons/readme'])('paragraph %s is not an image', (url) => {
+    expect(render(url, false)).not.toContain('<img')
+  })
+})
+
+describe('an unquoted fence is not closed by a quoted fence line', () => {
+  it('app renders the code as the web does', () => {
+    const body = '```\ncode &amp;\n> ```\nmore &lt;b&gt; `x` &amp;\n```'
+    expect(strip(render(body, true))).toBe(strip(render(body, false)))
+  })
+})
+
+describe('escaped angle brackets end a text URL', () => {
+  it.each([false, true])('&lt;URL&gt; proxies the URL alone (forApp %s)', (forApp) => {
+    const html = render('see &lt;https://e.com/i.png&gt; ok', forApp)
+    expect(firstImg(html)).toBe(proxyOf('https://e.com/i.png'))
+    expect(strip(html)).toContain('&gt; ok')
+  })
+
+  it('the preload agrees', () => {
+    expect(getEntryImageRawUrl('see &lt;https://e.com/i.png&gt; ok')).toBe('https://e.com/i.png')
+  })
+})

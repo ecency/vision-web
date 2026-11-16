@@ -344,7 +344,8 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // repeated group before a literal, is polynomial on crafted input. The token
 // pattern itself is one class run, linear on any input. Global, so regexMatches
 // can walk the tokens in source order.
-const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
+// `&lt;`/`&gt;` end a token as `<`/`>` do: the render reads the decoded text.
+const URL_TOKEN_RE = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi
 // A YouTube video id as the renderer's YOUTUBE_REGEX captures it.
 const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
 
@@ -526,7 +527,8 @@ const SAFE_URL_RE = /^https?:\/\//i
 // Eligibility for an avif <source> is then decided separately by
 // isPictureEligibleRawUrl.
 const IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i
-const isImageHref = (href: string): boolean => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href)
+const isImageHref = (href: string): boolean =>
+  SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1
 
 /**
  * Fast-path: extract the first image URL from raw markdown without rendering
