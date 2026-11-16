@@ -77,13 +77,30 @@ export function decodeDomImageSrc(src: string): string {
   }
 }
 
+// A complete reference: one that ends in `;`.
+const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
+
 /**
- * A body image URL taken from the raw post body (the LCP preload's scan): its
- * entities decoded once the way a browser reads an attribute, which is what
- * the render does to the same markup (#2092), then percent-encoding.
+ * Decodes only complete references, as CommonMark reads a link or image
+ * destination: `?a=1&copy` stays as written, `?a=1&copy;` is `?a=1©`. A legacy
+ * name that merely prefixes the token (`&region;` would read as `®ion;`) is
+ * not a reference and stays too (#2092).
+ */
+export function decodeCompleteReferences(value: string): string {
+  return value.replace(COMPLETE_REFERENCE, (reference) => {
+    const decoded = decodeEntities(reference)
+    return decoded.endsWith(';') ? reference : decoded
+  })
+}
+
+/**
+ * A body image URL taken from the raw post body (the LCP preload's scan),
+ * decoded the way the render reads a markdown destination (#2092), then
+ * percent-encoding. Raw HTML differs only for a legacy name without `;` before
+ * a non-alphanumeric character, which an HTML attribute decodes.
  */
 export function decodeRawBodyImageSrc(src: string): string {
-  return decodeDomImageSrc(decodeAttributeEntities(src))
+  return decodeDomImageSrc(decodeCompleteReferences(src))
 }
 
 /**

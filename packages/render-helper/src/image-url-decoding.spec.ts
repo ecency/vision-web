@@ -58,6 +58,26 @@ describe('image URL decoding (#2092)', () => {
     expect(render(body, false)).toContain(`href="${href}"`)
   })
 
+  // A legacy name that only prefixes the `name;` token is not a reference.
+  it.each([
+    ['[x](https://e.com/?a=1&region;b=2)', 'https://e.com/?a=1&amp;region;b=2'],
+    ['[x](https://e.com/?a=1&timestamp;b=2)', 'https://e.com/?a=1&amp;timestamp;b=2'],
+    ['[x](https://e.com/?a=1&copyx;)', 'https://e.com/?a=1&amp;copyx;'],
+    ['[x](https://e.com/?a=1&ampb;c)', 'https://e.com/?a=1&amp;ampb;c']
+  ])('markdown destination %s is not prefix-decoded', (body, href) => {
+    expect(render(body, false)).toContain(`href="${href}"`)
+  })
+
+  // The preload reads a markdown destination the same way the render does.
+  it.each([
+    '![](https://e.com/i.png?a=1&copy)',
+    '![](https://e.com/i.png?a=1&not-b=2)',
+    '![](https://e.com/i.png?a=1&amp)',
+    '![](https://e.com/i.png?a=1&region;b=2)'
+  ])('the LCP preload matches the render for %s', (body) => {
+    expect(proxyOf(getEntryImageRawUrl(body)!)).toBe(firstImg(render(body, false)))
+  })
+
   it('a markdown link with an escaped ampersand points where it says', () => {
     expect(render('[x](https://e.com/p?a=1&amp;b=2)', false)).toContain('href="https://e.com/p?a=1&amp;b=2"')
   })

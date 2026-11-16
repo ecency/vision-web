@@ -2,7 +2,7 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { decodeEntities, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeCompleteReferences, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
@@ -53,12 +53,6 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   }
   return true
 }
-
-// CommonMark reads only a reference that ends in `;` in a destination:
-// `?a=1&copy` stays as written, `?a=1&copy;` is `?a=1©`.
-const COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi
-const decodeCompleteReferences = (value: string): string =>
-  value.replace(COMPLETE_REFERENCE, (reference) => decodeEntities(reference))
 
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks

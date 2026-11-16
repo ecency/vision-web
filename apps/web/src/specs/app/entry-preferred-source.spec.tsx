@@ -19,10 +19,13 @@ describe("EntryPreferredSource (#1495)", () => {
   it("records a Plausible event when the link is clicked", () => {
     const plausible = vi.fn();
     (window as Window & { plausible?: unknown }).plausible = plausible;
-    render(<EntryPreferredSource base="https://ecency.com" />);
-    fireEvent.click(screen.getByRole("link", { name: "entry.preferred-source" }));
-    expect(plausible).toHaveBeenCalledWith("Preferred Source: Click", undefined);
-    delete (window as Window & { plausible?: unknown }).plausible;
+    try {
+      render(<EntryPreferredSource base="https://ecency.com" />);
+      fireEvent.click(screen.getByRole("link", { name: "entry.preferred-source" }));
+      expect(plausible).toHaveBeenCalledWith("Preferred Source: Click", undefined);
+    } finally {
+      delete (window as Window & { plausible?: unknown }).plausible;
+    }
   });
 
   it("renders nothing on any other host", () => {
