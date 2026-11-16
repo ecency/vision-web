@@ -54,5 +54,16 @@ export default tseslint.config(
       "regexp/no-super-linear-backtracking": "off",
       "regexp/no-super-linear-move": "off"
     }
+  },
+  {
+    // String.prototype.matchAll is ES2020 and throws on Safari 12 (#1701).
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.spec.ts", "src/**/*.spec.tsx"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        { property: "matchAll", message: "matchAll throws on Safari 12 (#1701). Use regexMatches from ./regex-matches or RegExp.exec." }
+      ]
+    }
   }
 );

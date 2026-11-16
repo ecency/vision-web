@@ -291,7 +291,7 @@ export const DiscussionItem = memo(function DiscussionItem({
               {isHidden && (
                 <StyledTooltip content={i18next.t("entry.hidden-warning")}>
                   <span
-                    className="size-3.5 ml-3 flex text-warning cursor-help"
+                    className="size-3.5 ml-3 flex text-warning-default cursor-help"
                     role="img"
                     aria-label={i18next.t("entry.hidden-warning")}
                   >

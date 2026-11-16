@@ -35,6 +35,7 @@ import {
   SUPPORT_ECENCY_DEFAULT_PERCENT,
   useSupportEcencySettingsQuery
 } from "@/features/support-ecency";
+import { regexMatches } from "@/utils/regex-matches";
 
 const TEMPLATE_SIMILARITY_THRESHOLD = 0.9;
 
@@ -282,7 +283,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     // Built through `new RegExp` because a unicode-flagged regex literal is not allowed
     // by this project's ES5 compilation target. The pattern itself is unchanged.
     const hashtagRegex = new RegExp("#([\\p{L}\\p{N}\\p{M}_-]+)", "gu");
-    const computedTags = Array.from(content ? content.matchAll(hashtagRegex) : [])
+    const computedTags = (content ? regexMatches(content, hashtagRegex) : [])
       .map(([, tag]) => sanitizeTagInput(tag).trim())
       // A hashtag in the body is not a tag the author vetted, so one the tag rules
       // refuse (#my-first-post, #2026recap, one over the length limit) is left out

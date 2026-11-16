@@ -3,6 +3,7 @@ import { markdown2Html } from './markdown-2-html'
 import { createDoc, makeEntryCacheKey, decodeImageSrc, decodeEntities, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
+import { regexMatches } from './regex-matches'
 
 // No gif branch below, deliberately. Every proxify here used to ask for the
 // ORIGINAL dimensions when the source was a .gif, because the image host handed
@@ -26,10 +27,10 @@ import { Entry } from './types'
 const BACKTICK_FENCE_RE = /```[\s\S]*?```/g
 const TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g
 const INLINE_CODE_RE = /`[^`\n]*`/g
-// HTML regions whose text never reaches the page as an image: <style> (dropped
-// by the sanitizer) and <pre> in block context (the renderer leaves its text
-// alone), plus HTML comments. Verified against the renderer: a URL inside
-// <code> or <script> text IS linkified into an image, so those are not listed.
+// HTML regions whose text never reaches the page as an image: <style> and
+// <script> (dropped with their content), <pre> in block context (the renderer
+// leaves its text alone), plus HTML comments. Verified against the renderer: a
+// URL inside <code> text IS linkified into an image, so that is not listed.
 //
 // Plain index scans rather than regex replaces: the text is only ever searched
 // for image URLs, never emitted, so this is candidate extraction and not
@@ -307,6 +308,8 @@ function stripHiddenRegions(text: string): string {
   // their text from being linkified only inside a markdown HTML block; in a
   // paragraph both are inline content and their text renders as prose.
   spellings = blankSpans(spellings, '<style', '</style', true, null)
+  // <script> is dropped with its content by the renderer (#1919).
+  spellings = blankSpans(spellings, '<script', '</script', true, null)
   spellings = blankSpans(spellings, '<pre', '</pre', true, blockMask)
   spellings = blankSpans(spellings, '<code', '</code', true, blockMask)
   return spellings.text
@@ -339,7 +342,7 @@ const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // token is an image (by extension) or a YouTube link (by host), in code rather
 // than in the pattern: a class followed by a literal it also matches, or a
 // repeated group before a literal, is polynomial on crafted input. The token
-// pattern itself is one class run, linear on any input. Global, so matchAll
+// pattern itself is one class run, linear on any input. Global, so regexMatches
 // can walk the tokens in source order.
 const URL_TOKEN_RE = /https?:\/\/[^\s<>"'()[\]]+/gi
 // An image extension, the same set the renderer's IMG_REGEX uses. Global and
@@ -357,7 +360,7 @@ const YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/
  */
 function imageToken(token: string): string | null {
   let end = -1
-  for (const m of token.matchAll(IMAGE_EXT_G)) {
+  for (const m of regexMatches(token, IMAGE_EXT_G)) {
     end = (m.index ?? 0) + m[0].length
   }
   if (end === -1) return null
@@ -471,7 +474,7 @@ function* standaloneMatches(
   scan: ScanText,
   classify: (token: string) => string | null
 ): Generator<{ url: string; pos: number }> {
-  for (const m of scan.text.matchAll(URL_TOKEN_RE)) {
+  for (const m of regexMatches(scan.text, URL_TOKEN_RE)) {
     const idx = m.index ?? 0
     if (!isStandalone(scan, idx)) continue
     const value = classify(m[0])
@@ -670,7 +673,7 @@ function findFirstVideoPoster(prepared: PreparedBody): ImageCandidate | null {
   }
   // `[url](url)` form: a.method turns a link whose text equals its href into
   // the same poster. Take it only when it comes before the bare form.
-  for (const m of cleaned.matchAll(MD_LINK_RE)) {
+  for (const m of regexMatches(cleaned, MD_LINK_RE)) {
     const idx = m.index ?? 0
     if (idx > 0 && cleaned[idx - 1] === '!') continue
     if (best && idx >= best.pos) break
@@ -746,7 +749,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
     // image (a.method) — href is an image URL and the label text equals it.
     // Skip `![...]()` images (preceding `!`). Take the earliest such link.
     const deAmp = (s: string) => s.trim().replace(/&amp;/g, '&')
-    for (const m of cleaned.matchAll(MD_LINK_RE)) {
+    for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
       const href = m[2]

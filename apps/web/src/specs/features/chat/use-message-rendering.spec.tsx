@@ -73,6 +73,22 @@ describe("useMessageRendering", () => {
     expect(screen.queryByText("@alice")).toBeNull();
   });
 
+  // Safari 12 has no String.prototype.matchAll (#1701).
+  it("enhances a post link on an engine without matchAll", () => {
+    const nativeMatchAll = String.prototype.matchAll;
+    // @ts-expect-error simulating an engine without matchAll
+    delete String.prototype.matchAll;
+    try {
+      const { result } = renderHook(() => useMessageRendering(hookProps));
+      const url = "https://peakd.com/@alice/my-post";
+      render(<div>{result.current.renderMessageContent(`\`${url}\``)}</div>);
+      expect(screen.getByText(url)).toBeTruthy();
+      expect(screen.queryByText("@alice")).toBeNull();
+    } finally {
+      String.prototype.matchAll = nativeMatchAll;
+    }
+  });
+
   // A bare post URL gets auto-linked into an anchor; its @author must stay part
   // of the link, not be peeled off into a clickable chat mention. Covers the
   // existing frontends (peakd) as well as the newly added ones.

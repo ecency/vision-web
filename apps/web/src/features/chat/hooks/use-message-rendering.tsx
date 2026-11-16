@@ -17,6 +17,7 @@ import DOMPurify from "dompurify";
 import htmlParse, { domToReact, type HTMLReactParserOptions } from "html-react-parser";
 import type { Text } from "domhandler";
 import { simpleMarkdownToHTML } from "@ecency/render-helper";
+import { regexMatches } from "@/utils/regex-matches";
 
 const ECENCY_HOSTNAMES = new Set([
   "ecency.com",
@@ -222,7 +223,7 @@ export function useMessageRendering({
     };
 
     const renderTextWithEnhancements = (content: string) => {
-      const matches = Array.from(content.matchAll(ECENCY_POST_LINK_REGEX));
+      const matches = regexMatches(content, ECENCY_POST_LINK_REGEX);
 
       if (!matches.length) {
         return renderTextWithMentions(content);

@@ -308,7 +308,8 @@ describe('iframe() method - Iframe Sanitization', () => {
       iframe(el)
 
       expect(hasChildWithTag(parent, 'iframe')).toBe(true)
-      expect(el.getAttribute('src')).toBe('//www.youtube.com/embed/dQw4w9WgXcQ')
+      // Upgraded to https, the only scheme the embed allow list accepts (#1919).
+      expect(el.getAttribute('src')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ')
     })
   })
 
@@ -1401,8 +1402,9 @@ describe('iframe() method - Iframe Sanitization', () => {
 
       iframe(el)
 
-      // Whitespace is not trimmed, so it's treated as unsupported URL
-      expect(hasChildWithClass(parent, 'unsupported-iframe')).toBe(true)
+      // Trimmed the way a browser reads a URL attribute: no source at all, so
+      // the iframe is removed like one without a src.
+      expect(hasChildWithClass(parent, 'unsupported-iframe')).toBe(false)
       expect(hasChildWithTag(parent, 'iframe')).toBe(false)
     })
 

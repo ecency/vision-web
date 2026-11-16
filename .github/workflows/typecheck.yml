@@ -50,6 +50,12 @@ jobs:
       # poll hand-builds that key for its merge.
       - name: Slim-entry convention audit
         run: node scripts/slim-entries-audit.mjs --fail
+      # Tailwind colour classes (#1742): the config sets `presets: []`, so a
+      # colour utility whose shade is not in it compiles to nothing, silently.
+      - name: Tailwind colour-class audit
+        run: |
+          node scripts/tailwind-color-audit.mjs --self-test
+          node scripts/tailwind-color-audit.mjs --fail
 
       # This repo is PUBLIC and infra/origin holds production vhosts, so the audit keeps
       # thresholds, source addresses, inline allowlists and secret markers out of them, and

@@ -1,3 +1,5 @@
+import { BITCHUTE_REGEX, BRIGHTEON_REGEX } from './regexes.const'
+
 // Authoritative allowlist of hosts the renderer is allowed to embed in an
 // <iframe>. This is the SAME trust boundary that iframe.method.ts and
 // a.method.ts already enforce via per-provider regexes — it is consolidated
@@ -47,8 +49,8 @@ export const ALLOWED_EMBED_HOSTS: ReadonlySet<string> = new Set([
   // LBRY / Odysee
   'lbry.tv',
   'odysee.com',
-  // Skatehive / Skatehype
-  'ipfs.skatehive.app',
+  // Skatehype. (The skatehive IPFS gateway is not an embed host: iframe()
+  // turns those sources into a <video>, so no iframe may point at it.)
   'www.skatehype.com',
   'skatehype.com',
   // archive.org
@@ -71,8 +73,7 @@ const ALLOWED_EMBED_HOST_SUFFIXES: readonly string[] = ['.dapplr.in']
 // frame — could hijack top-navigation). For the providers whose embed URL shape
 // the renderer controls (a.method.ts), require the pathname to match that shape
 // too. Each pattern is permissive enough to pass every value the renderer
-// emits. Hosts absent from this map fall back to host-only (their embed paths
-// vary and they are not consumed by the un-sandboxed client video extensions).
+// emits. Every listed host has one.
 const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
   'www.youtube.com': /^\/embed\//,
   'youtube.com': /^\/embed\//,
@@ -82,7 +83,9 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
   'player.twitch.tv': /^\/$/, // channel/video carried in the query string
   'emb.d.tube': /^\/$/, // dtube carries the ref in the #! fragment
   'play.3speak.tv': /^\/(watch|embed)/,
-  'open.spotify.com': /^\/embed\//,
+  // embed-podcast is Spotify's older episode/show embed route, still emitted
+  // for those (SPOTIFY_EMBED_REGEX) and answered by Spotify.
+  'open.spotify.com': /^\/embed(?:-podcast)?\//,
   'www.loom.com': /^\/embed\//,
   'www.bitchute.com': /^\/embed\//,
   'bitchute.com': /^\/embed\//,
@@ -95,7 +98,26 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
   // form, while Odysee's own share dialog hands out fully-encoded URLs, and
   // `URL.pathname` does not decode either. ODYSEE_REGEX accepts both for the
   // same reason.
-  'odysee.com': /^\/(?:\$|%24)\/embed\//
+  'odysee.com': /^\/(?:\$|%24)\/embed\//,
+  // The rest mirror the iframe.method.ts provider patterns (#1919), so the
+  // sanitizer holds an untransformed iframe to the same shapes iframe() does.
+  'lbry.tv': /^\/(?:\$|%24)\/embed\//,
+  '3speak.tv': /^\/(watch|embed)$/,
+  'audio.3speak.tv': /^\/play$/,
+  'w.soundcloud.com': /^\/player\/$/,
+  'archive.org': /^\/embed\/[^/]+$/,
+  'www.vimm.tv': /^\/[A-Za-z0-9_-]+(?:\/embed)?\/?$/,
+  'brandnewtube.com': /^\/embed\/[a-z0-9]+$/i,
+  'www.skatehype.com': /^\/ifplay\.php$/,
+  'skatehype.com': /^\/ifplay\.php$/,
+  'embed.truvvl.com': /^\/@[\w.\d-]+\//,
+  'aureal-embed.web.app': /^\/\d+$/,
+  'www.aureal-embed.web.app': /^\/\d+$/
+}
+
+// Path shape for the suffix-matched hosts above (DAPPLR_REGEX).
+const EMBED_SUFFIX_PATH_PATTERNS: Record<string, RegExp> = {
+  '.dapplr.in': /^\/file\/dapplr-videos\//
 }
 
 /**
@@ -110,21 +132,72 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
  * a path/query/userinfo/subdomain-suffix segment, and constrains the path so an
  * allowed host can't be aimed at a non-embed route.
  */
+// U+0001-U+0020 only: NUL is not trimmed, because the HTML parser turns it
+// into U+FFFD before any URL parser sees it (a leading NUL would make the
+// browser read the value as a relative URL); the NUL test below rejects it.
+const isTrimmable = (code: number): boolean => code >= 0x01 && code <= 0x20
+
+// Index scan rather than a `[\0- ]+$` regex, which backtracks quadratically.
+function trimC0AndSpace(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && isTrimmable(value.charCodeAt(start))) start++
+  while (end > start && isTrimmable(value.charCodeAt(end - 1))) end--
+  return value.slice(start, end)
+}
+
 export function isAllowedEmbedSrc(value?: string | null): boolean {
   if (!value) return false
+  // Strip only what the URL parser itself strips at the ends (C0 controls
+  // except NUL, and space), then demand a literal `https://` and no NUL. String.trim() also removes
+  // NBSP, BOM, U+2028 and friends, and new URL() accepts `https:/host` and
+  // `https:host`; a browser resolves all of those against the page as
+  // RELATIVE URLs, so what was checked would not be what loads (#1919).
+  const trimmed = trimC0AndSpace(value)
+  if (!/^https:\/\//i.test(trimmed) || trimmed.includes('\u0000')) return false
   let url: URL
   try {
-    url = new URL(value.trim())
+    url = new URL(trimmed)
   } catch {
     return false
   }
   if (url.protocol !== 'https:') return false
   const host = url.hostname.toLowerCase()
-  const hostAllowed =
-    ALLOWED_EMBED_HOSTS.has(host) ||
-    ALLOWED_EMBED_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
-  if (!hostAllowed) return false
-  const pathPattern = EMBED_HOST_PATH_PATTERNS[host]
-  if (pathPattern && !pathPattern.test(url.pathname)) return false
-  return true
+  if (ALLOWED_EMBED_HOSTS.has(host)) {
+    const pathPattern = EMBED_HOST_PATH_PATTERNS[host]
+    return !pathPattern || pathPattern.test(url.pathname)
+  }
+  // A real label must precede the suffix (`.dapplr.in` alone is not a host).
+  const suffix = ALLOWED_EMBED_HOST_SUFFIXES.find(s => host.endsWith(s) && host.length > s.length && !host.startsWith('.'))
+  if (!suffix) return false
+  const suffixPattern = EMBED_SUFFIX_PATH_PATTERNS[suffix]
+  return !suffixPattern || suffixPattern.test(url.pathname)
+}
+
+/**
+ * The spelling iframe() normalises an embed to: http and protocol-relative
+ * become https, m.youtube.com / youtube.com become www.youtube.com, any 3speak
+ * domain becomes play.3speak.tv, YouTube's /EMBED/ is lower-cased and a
+ * /shorts/<11 char id> frames as /embed/<id>, and BitChute /video/<id> and
+ * Brighteon page URLs frame their embed route. The sanitizer applies the same
+ * to a src it would otherwise refuse, so a caller that never ran iframe()
+ * (simpleMarkdownToHTML, chat and the editor) keeps the embeds the full
+ * render keeps (#1919).
+ */
+export function canonicalEmbedSrc(src: string): string {
+  let s = src
+    .trim()
+    .replace(/^(?:https?:)?\/\//i, 'https://')
+    .replace(/^https:\/\/(?:m\.)?youtube\.com\//i, 'https://www.youtube.com/')
+    .replace(/^https:\/\/(?:play\.)?3speak\.[a-z]+\//i, 'https://play.3speak.tv/')
+  if (/^https:\/\/www\.youtube\.com\//i.test(s)) {
+    s = s.replace(/^(https:\/\/www\.youtube\.com)\/embed\//i, '$1/embed/')
+    const shortId = s.match(/^https:\/\/www\.youtube\.com\/shorts\/([A-Za-z0-9_-]{11})\/?(?=[?#]|$)/i)
+    if (shortId) s = `https://www.youtube.com/embed/${shortId[1]}`
+  }
+  const bitchute = s.match(BITCHUTE_REGEX)
+  if (bitchute) s = `https://www.bitchute.com/embed/${bitchute[1]}/`
+  const brighteon = s.match(BRIGHTEON_REGEX)
+  if (brighteon) s = `https://www.brighteon.com/embed/${brighteon[2]}`
+  return s
 }

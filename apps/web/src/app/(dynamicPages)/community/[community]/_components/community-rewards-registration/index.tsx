@@ -43,7 +43,7 @@ export function CommunityRewardsRegistrationDialog({ onHide, community }: Props)
           <LinearProgress />
         ) : done ? (
           <div className="dialog-content">
-            <p className="text-info">
+            <p className="text-info-default">
               {i18next.t("community-rewards-registration.done-body-text")}
             </p>
             <Button size="sm" onClick={onHide}>
@@ -52,7 +52,7 @@ export function CommunityRewardsRegistrationDialog({ onHide, community }: Props)
           </div>
         ) : registered ? (
           <div className="dialog-content">
-            <p className="text-info">
+            <p className="text-info-default">
               {i18next.t("community-rewards-registration.conflict-body-text")}
             </p>
             <Button size="sm" onClick={onHide}>

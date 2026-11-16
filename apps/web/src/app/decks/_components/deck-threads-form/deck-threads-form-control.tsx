@@ -33,7 +33,7 @@ export const DeckThreadsFormControl = ({
 
   // The video markup may not match, in which case there is no thumbnail to show.
   const videoThumbnail = (
-    video?.matchAll(/<center>\[!\[](.*)].*<\/center>/g).next().value?.[1] ?? ""
+    (video ? /<center>\[!\[](.*)].*<\/center>/.exec(video)?.[1] : undefined) ?? ""
   )
     .replace("(", "")
     .replace(")", "");

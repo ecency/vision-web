@@ -1,4 +1,4 @@
-import { ARCH_REGEX, DAPPLR_REGEX, LBRY_REGEX, TRUVVL_REGEX, ODYSEE_REGEX, SKATEHIVE_IPFS_REGEX, SKATEHYPE_EMBED_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, VIMEO_EMBED_REGEX, SPEAK_EMBED_REGEX, SPEAK_AUDIO_EMBED_REGEX, VIMM_EMBED_REGEX, D_TUBE_EMBED_REGEX, SPOTIFY_EMBED_REGEX, SOUNDCLOUD_EMBED_REGEX, TWITCH_EMBED_REGEX, YOUTUBE_EMBED_REGEX, BRAND_NEW_TUBE_REGEX, LOOM_EMBED_REGEX, AUREAL_EMBED_REGEX } from '../consts'
+import { canonicalEmbedSrc, isAllowedEmbedSrc, ARCH_REGEX, DAPPLR_REGEX, LBRY_REGEX, TRUVVL_REGEX, ODYSEE_REGEX, SKATEHIVE_IPFS_REGEX, SKATEHYPE_EMBED_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, VIMEO_EMBED_REGEX, SPEAK_EMBED_REGEX, SPEAK_AUDIO_EMBED_REGEX, VIMM_EMBED_REGEX, D_TUBE_EMBED_REGEX, SPOTIFY_EMBED_REGEX, SOUNDCLOUD_EMBED_REGEX, TWITCH_EMBED_REGEX, YOUTUBE_EMBED_REGEX, BRAND_NEW_TUBE_REGEX, LOOM_EMBED_REGEX, AUREAL_EMBED_REGEX } from '../consts'
 import { stripQueryString } from '../helper'
 import { RenderOptions } from '../types'
 
@@ -6,10 +6,57 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   if (!el || !el.parentNode) {
     return;
   }
-  const src = el.getAttribute('src');
+  // Trimmed of ASCII whitespace the way a browser reads a URL attribute, so
+  // `src=" https://www.youtube.com/embed/ID"` plays instead of failing the
+  // allow list and showing the placeholder.
+  const src = trimAsciiWhitespace(el.getAttribute('src') || '');
   if (!src) {
     el.parentNode.removeChild(el);
     return;
+  }
+
+  const supported = applyProvider(el, src, parentDomain, forApp, renderOptions);
+  // Skatehive swaps the iframe for a <video>; nothing left to check.
+  if (!el.parentNode) {
+    return;
+  }
+  if (supported) {
+    // The final sanitizer drops any iframe src that isAllowedEmbedSrc rejects
+    // (#1919), so hold every provider branch to the same list here and show
+    // the placeholder instead of an empty frame when they disagree.
+    // https, and the host spelling the allow list knows.
+    const finalSrc = canonicalEmbedSrc(el.getAttribute('src') || '');
+    if (isAllowedEmbedSrc(finalSrc)) {
+      el.setAttribute('src', finalSrc);
+      return;
+    }
+  }
+
+  const replaceNode = el.ownerDocument.createElement('div');
+  replaceNode.setAttribute('class', 'unsupported-iframe');
+  replaceNode.textContent = `(Unsupported ${src})`;
+  el.parentNode.insertBefore(replaceNode, el);
+  el.parentNode.removeChild(el);
+}
+
+// Tab, LF, FF, CR and space: what a browser strips from a URL attribute (not
+// String.prototype.trim, which also strips NBSP and others a browser keeps).
+// Index loops rather than a `[...]+$` regex, which is quadratic on a long run
+// of whitespace followed by a non-space.
+const isAsciiWhitespace = (c: number): boolean => c === 0x09 || c === 0x0a || c === 0x0c || c === 0x0d || c === 0x20
+
+function trimAsciiWhitespace(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && isAsciiWhitespace(value.charCodeAt(start))) start++
+  while (end > start && isAsciiWhitespace(value.charCodeAt(end - 1))) end--
+  return value.slice(start, end)
+}
+
+/** Normalises a known provider's iframe in place. False when no provider matched. */
+function applyProvider(el: HTMLElement, src: string, parentDomain: string, forApp: boolean, renderOptions?: RenderOptions): boolean {
+  if (!el.parentNode) {
+    return false;
   }
 
   // Youtube
@@ -22,6 +69,9 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     if (!/^(https?:)?\/\/www\./i.test(stripped)) {
       stripped = stripped.replace(/^(https?:)?\/\/(?:m\.)?youtube\.com/i, 'https://www.youtube.com');
     }
+    // The route is matched case-insensitively above, but the player and the
+    // allow list only know the lower case /embed/.
+    stripped = stripped.replace(/^((?:https?:)?\/\/[^/]+)\/embed\//i, '$1/embed/');
     el.setAttribute('src', stripped);
     if (ytMatch[2].toLowerCase() === 'shorts') {
       // youtube.com/shorts/<id> refuses to be framed (X-Frame-Options), so
@@ -29,16 +79,22 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
       // has no wrapper anchor to carry the Shorts modifier, so mark the iframe
       // itself with the class Truvvl's 9:16 embeds already use.
       const shortId = stripped.match(/\/shorts\/([A-Za-z0-9_-]{11})\/?(?=[?#]|$)/i);
-      if (shortId) {
-        el.setAttribute('src', `https://www.youtube.com/embed/${shortId[1]}`);
-        el.setAttribute('class', 'portrait-embed');
+      if (!shortId) {
+        // Not a video id, and the /shorts/ page itself cannot be framed.
+        return false;
       }
+      el.setAttribute('src', `https://www.youtube.com/embed/${shortId[1]}`);
+      el.setAttribute('class', 'portrait-embed');
     }
-    return;
+    return true;
   }
 
-  if (src.match(BITCHUTE_REGEX)) {
-    return;
+  // BitChute: /video/<id> pages and /embed/<id> share the id; frame the embed
+  // route, the same URL a.method.ts builds for a pasted link.
+  const bcMatch = src.match(BITCHUTE_REGEX);
+  if (bcMatch) {
+    el.setAttribute('src', `https://www.bitchute.com/embed/${bcMatch[1]}/`);
+    return true;
   }
 
   // Vimeo
@@ -46,7 +102,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   if (m && m.length === 2) {
     const s = `https://player.vimeo.com/video/${m[1]}`;
     el.setAttribute('src', s);
-    return;
+    return true;
   }
 
   // Twitch
@@ -63,7 +119,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
       s = `${s}${separator}autoplay=false`;
     }
     el.setAttribute('src', s);
-    return;
+    return true;
   }
 
   // 3Speak
@@ -102,7 +158,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
 
     el.setAttribute('src', s);
     el.setAttribute('class', 'speak-iframe');
-    return;
+    return true;
   }
 
   // 3Speak Audio
@@ -123,7 +179,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('class', 'speak-audio-iframe');
     el.setAttribute('frameborder', '0');
     el.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-    return;
+    return true;
   }
 
   // Spotify
@@ -131,7 +187,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('src', src);
     el.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // Soundcloud
@@ -141,7 +197,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
       const s = `https://w.soundcloud.com/player/?url=${match[1]}&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&visual=true`;
       el.setAttribute('src', s);
     }
-    return; // Always return, even if match fails
+    return true; // Always return, even if match fails
   }
 
   // Dtube
@@ -150,7 +206,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('sandbox', 'allow-scripts allow-same-origin');
     el.setAttribute('frameborder', '0');
     el.setAttribute('allowfullscreen', 'true');
-    return;
+    return true;
   }
 
   // VIMM
@@ -159,7 +215,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
     el.setAttribute('frameborder', '0');
     el.setAttribute('allowfullscreen', 'true');
-    return;
+    return true;
   }
 
   // Dapplr
@@ -168,7 +224,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('sandbox', 'allow-scripts allow-same-origin');
     el.setAttribute('frameborder', '0');
     el.setAttribute('allowfullscreen', 'true');
-    return;
+    return true;
   }
 
   // Truvvl
@@ -178,21 +234,21 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('frameborder', '0');
     el.setAttribute('class', 'portrait-embed');
     el.setAttribute('allowfullscreen', 'true');
-    return;
+    return true;
   }
 
   // LBRY.tv
   if (src.match(LBRY_REGEX)) {
     el.setAttribute('src', src);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // ODYSEE
   if (src.match(ODYSEE_REGEX)) {
     el.setAttribute('src', src);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // IPFS Skatehive
@@ -208,7 +264,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     video.setAttribute('controls', '');
     el.parentNode.insertBefore(video, el);
     el.parentNode.removeChild(el);
-    return;
+    return true;
   }
 
   // Skatehype
@@ -219,41 +275,42 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     el.setAttribute('src', normalizedSrc);
     el.setAttribute('frameborder', '0');
     el.setAttribute('allowfullscreen', 'true');
-    return;
+    return true;
   }
 
   // archive.org
   if (src.match(ARCH_REGEX)) {
     el.setAttribute('src', src);
-    return;
+    return true;
   }
 
   // Rumble
   if (src.match(RUMBLE_REGEX)) {
     el.setAttribute('src', src);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
-  // Brighteon
-  if (src.match(BRIGHTEON_REGEX)) {
-    el.setAttribute('src', src);
+  // Brighteon: a page URL frames as the embed route, as a.method.ts builds it.
+  const bnMatch = src.match(BRIGHTEON_REGEX);
+  if (bnMatch) {
+    el.setAttribute('src', `https://www.brighteon.com/embed/${bnMatch[2]}`);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // Brandnew Tube
   if (src.match(BRAND_NEW_TUBE_REGEX)) {
     el.setAttribute('src', src);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // Loom
   if (src.match(LOOM_EMBED_REGEX)) {
     el.setAttribute('src', src);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
   // Aureal
@@ -262,14 +319,8 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
     const normalizedSrc = src.startsWith('//') ? `https:${src}` : src;
     el.setAttribute('src', normalizedSrc);
     el.setAttribute('frameborder', '0');
-    return;
+    return true;
   }
 
-  const replaceNode = el.ownerDocument.createElement('div');
-  replaceNode.setAttribute('class', 'unsupported-iframe');
-  replaceNode.textContent = `(Unsupported ${src})`;
-  if (el.parentNode) {
-    el.parentNode.insertBefore(replaceNode, el);
-    el.parentNode.removeChild(el);
-  }
+  return false;
 }

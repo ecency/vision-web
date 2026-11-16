@@ -90,6 +90,38 @@ Built and maintained by [Ecency](https://ecency.com), an open-source social plat
 - Event handlers stripped
 - URL schemes validated
 
+**Output boundary** (`src/methods/render-boundary.method.ts`): a full render
+serializes its transformed DOM with a per-render nonce on every element, and
+the final `sanitizeHtml()` pass trusts render-helper's link markers and link
+policy only on tags that carry the nonce in the exact shape xmldom writes.
+Images and video posters must be on the image proxy on every tag.
+
+This relies on how two dependencies read the same HTML: `@xmldom/xmldom`
+0.9.12 serialisation and `xss` 1.0.15 tokenisation. Any bump of either
+(including a lockfile-only one) must re-run the differential fuzz and the
+real-post corpus differential against the previous build before release.
+`src/dependency-pins.spec.ts` fails on any such bump and points here. There is
+no single script for the two differentials yet; run them by hand:
+
+1. **In-repo checks.** `pnpm --filter @ecency/render-helper test` must pass,
+   in particular `src/output-boundary.spec.ts`, `src/sanitizer-pins.spec.ts`
+   and `src/url-oracle.spec.ts`.
+2. **Two builds.** Build the previous release and the candidate side by side:
+   `RENDER_HELPER_DIST_ROOT=/tmp/rh-before pnpm --filter @ecency/render-helper build`
+   on the base commit, and `RENDER_HELPER_DIST_ROOT=/tmp/rh-after ...` on the
+   candidate.
+3. **Corpus differential.** Render a few hundred real post bodies (for example
+   from `bridge.get_ranked_posts`) through `markdown2Html(entry, false)` and
+   `markdown2Html(entry, true)` with both builds, and diff the outputs. Every
+   difference must be explained by the change; anything else blocks the bump.
+4. **Differential fuzz.** Run crafted and random HTML (unclosed tags, quotes
+   and entities in attributes, CDATA, comments, `<script>`/`<style>` text,
+   upper-case and duplicate attributes, render-helper marker classes) through
+   both builds and check the candidate's output: no `on*` attribute, no
+   `javascript:`/`data:`/`vbscript:` URL, every `<img>` and `poster` on the
+   image proxy, every `<iframe>` src allow-listed, and render-helper's link
+   markers and link policy only on elements the render produced.
+
 ### Caching Strategy
 
 - LRU cache v11 (`src/cache.ts`) stores rendered HTML and extracted images

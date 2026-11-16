@@ -331,3 +331,21 @@ describe("token boundaries", () => {
     expect(q.search).toBe("foo bar");
   });
 });
+
+// Safari 12 has no String.prototype.matchAll (#1701).
+describe("Search query without String.prototype.matchAll", () => {
+  it("parses author, type, category and every tag", () => {
+    const nativeMatchAll = String.prototype.matchAll;
+    // @ts-expect-error simulating an engine without matchAll
+    delete String.prototype.matchAll;
+    try {
+      const q = new SearchQuery("hello author:alice type:post category:hive tag:a,b tag:c");
+      expect(q.author).toBe("alice");
+      expect(q.type).toBe(SearchType.POST);
+      expect(q.category).toBe("hive");
+      expect(q.tags).toEqual(["a", "b", "c"]);
+    } finally {
+      String.prototype.matchAll = nativeMatchAll;
+    }
+  });
+});

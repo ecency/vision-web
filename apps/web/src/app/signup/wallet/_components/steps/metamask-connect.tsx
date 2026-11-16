@@ -299,7 +299,7 @@ export function MetamaskConnect({ username, onVerified, onBack }: Props) {
       {/* Step 2: Select chain + verify balance */}
       {evmAddress && (
         <>
-          <div className="bg-green-050 dark:bg-green-900/20 rounded-xl p-4 flex items-center gap-3">
+          <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 flex items-center gap-3">
             <UilCheckCircle className="text-green size-5 flex-shrink-0" />
             <div>
               <div className="text-sm font-medium">

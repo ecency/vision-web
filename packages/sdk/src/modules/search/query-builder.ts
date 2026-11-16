@@ -13,6 +13,20 @@ const tag_re = /(^|\s)tag:([^\s]+)/g;
 // Index of the token value in a match; group 1 is the boundary.
 const VALUE = 2;
 
+// Every match of a global token pattern, in order. An exec loop rather than
+// String.prototype.matchAll, which is ES2020 and throws on Safari 12 (#1701).
+// A fresh global copy per call, so the shared pattern's lastIndex is never
+// touched; the token patterns cannot match empty, so the loop always advances.
+function regexMatches(text: string, re: RegExp): RegExpExecArray[] {
+  const copy = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+  const matches: RegExpExecArray[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = copy.exec(text)) !== null) {
+    matches.push(match);
+  }
+  return matches;
+}
+
 export enum SearchType {
   ALL = "",
   POST = "post",
@@ -157,8 +171,7 @@ export class SearchQuery {
   }
 
   private grab = (re: RegExp): string => {
-    // @ts-ignore
-    const matches = [...this.query.matchAll(re)];
+    const matches = regexMatches(this.query, re);
     if (matches.length > 0) {
       return matches[0][VALUE].trim();
     }
@@ -190,7 +203,7 @@ export class SearchQuery {
     // be shown back as a phantom tag and counted against the same cap.
     const seen = new Set<string>();
 
-    this.tags = [...this.query.matchAll(tag_re)]
+    this.tags = regexMatches(this.query, tag_re)
       .flatMap((match) => match[VALUE].split(","))
       .map((tag) => tag.trim())
       .filter((tag) => {

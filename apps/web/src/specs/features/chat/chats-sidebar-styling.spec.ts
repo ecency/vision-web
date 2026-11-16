@@ -35,9 +35,10 @@ const themeNight = read("styles/theme-night.scss");
 const themeDay = read("styles/theme-day.scss");
 
 describe("chats sidebar styling", () => {
-  // Tailwind keys that do NOT exist in this project's palette (tailwind.config.ts
-  // replaces the default colors and only defines named blue keys like
-  // `blue-dark-sky`). Any of these emit no CSS and must never come back.
+  // The sidebar is drawn in the palette's named blue tokens (`blue-dark-sky`,
+  // `blue-duck-egg`). These generic scale keys used to emit no CSS at all; since
+  // #1742 they build, but they are not this sidebar's design and must not come
+  // back. Dead colour classes anywhere are caught by scripts/tailwind-color-audit.mjs.
   const phantomTailwindKeys = [
     "bg-blue-50",
     "border-blue-500",
@@ -48,7 +49,7 @@ describe("chats sidebar styling", () => {
   ];
 
   it.each(phantomTailwindKeys)(
-    "does not use the non-existent Tailwind key %s",
+    "does not use the generic Tailwind key %s",
     (key) => {
       expect(chatsClient).not.toContain(key);
     }

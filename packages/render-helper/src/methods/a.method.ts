@@ -190,6 +190,19 @@ const addLineBreakBeforePostLink = (el: HTMLElement, forApp: boolean, isInline: 
   }
 }
 
+// Lands on one of the site's own hosts, read the way a browser reads the href:
+// resolved against the site, so a relative path is in-site and `/\evil.example`
+// (a browser reads `\` as `/` and drops tab, LF and CR) is not.
+function isInSiteHref(href: string): boolean {
+  try {
+    return WHITE_LIST.includes(new URL(href.trim(), 'https://ecency.com/').hostname.replace(/^www\./, ''))
+  } catch {
+    return false
+  }
+}
+
+const CHIP_CLASS_TOKENS = new Set(['markdown-author-link', 'markdown-tag-link', 'er-author', 'er-author-link', 'er-tag', 'er-tag-link'])
+
 export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): void {
   if (!el || !el.parentNode) {
     return
@@ -228,11 +241,15 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   // crafted `<a class="er-author" target="_blank" rel="opener">` would otherwise keep
   // its own rel and re-enable window.opener on the landing page. Skipping the rewrite
   // is fine; skipping the link policy is not, so re-assert it here.
-  if (className && (
-    ['markdown-author-link', 'markdown-tag-link'].includes(className) ||
-    className.includes('er-author') ||
-    className.includes('er-tag')
-  )) {
+  //
+  // Whole class tokens only (`er-authority` is not a chip), and only for the
+  // in-site hrefs the chips carry (`/@user`, `/trending/tag`): a chip class on
+  // an external link gets the full external-link treatment below. An author
+  // rel never survives here (`rel="dofollow"` on a fake chip).
+  const classTokens = (className || '').split(/\s+/)
+  const isChip = classTokens.some(token => CHIP_CLASS_TOKENS.has(token))
+  if (isChip && isInSiteHref(href)) {
+    el.removeAttribute('rel')
     if (el.getAttribute('target')) {
       el.setAttribute('rel', getExternalLinkRel(seoContext))
     }
@@ -1024,6 +1041,10 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   }
 
   if (forApp) {
+    // The app opens external links itself from data-href; an author rel or
+    // target has no business on them (rel="opener", target="_top").
+    el.removeAttribute('rel')
+    el.removeAttribute('target')
     el.setAttribute('data-href', href)
     const match = href.match(YOUTUBE_REGEX)
     if (match && match[1]) {
@@ -1045,6 +1066,8 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
     const matchS = href.trim().startsWith('#')
     if(matchS) {
       el.setAttribute('class', 'markdown-internal-link');
+      el.removeAttribute('rel');
+      el.removeAttribute('target');
     } else {
       el.setAttribute('target', '_blank');
       el.setAttribute('rel', getExternalLinkRel(seoContext));

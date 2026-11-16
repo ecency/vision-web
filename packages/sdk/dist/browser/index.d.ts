@@ -4856,7 +4856,8 @@ declare function getDiscoverCurationQueryOptions(duration: CurationDuration): _t
  * @param url - URL to get stats for
  * @param dimensions - Dimensions to query (default: [])
  * @param metrics - Metrics to query (default: ["visitors", "pageviews", "visit_duration"])
- * @param dateRange - Date range for the query (e.g. "day", "7d", "30d", "all")
+ * @param dateRange - Date range for the query: "day", "7d", "30d", "month", "6mo" or "12mo"
+ *   (the default); /api/stats rejects anything else, "all" included
  */
 declare function getPageStatsQueryOptions(url: string, dimensions?: string[], metrics?: string[], dateRange?: string): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<PageStatsResponse, Error, PageStatsResponse, (string | string[] | undefined)[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<PageStatsResponse, (string | string[] | undefined)[], never> | undefined;

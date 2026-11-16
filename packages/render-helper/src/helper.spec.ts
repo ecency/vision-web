@@ -680,8 +680,9 @@ describe('Helper Functions', () => {
     })
 
     it('is case-insensitive on attribute names', () => {
+      // ...and lower-cases the names it keeps (#1919).
       expect(removeDuplicateAttributes('<a HREF="x" href="y">'))
-        .toBe('<a HREF="x">')
+        .toBe('<a href="x">')
     })
 
     it('preserves the self-closing slash and the original attribute formatting', () => {

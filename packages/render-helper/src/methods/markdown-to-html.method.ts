@@ -1,6 +1,9 @@
 import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
+import { stripAuthorMarkers } from './strip-author-markers.method'
+import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
 import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
 import { Remarkable } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
@@ -9,6 +12,11 @@ import * as domSerializerModule from 'dom-serializer'
 import { RenderOptions, SeoContext } from '../types'
 
 const domSerializer = (domSerializerModule as any).default || domSerializerModule
+
+// A URL in the markdown source, in an attribute, a link destination or text:
+// one class run, linear on any input. It ends at whitespace, a quote, an angle
+// bracket or `)`, the delimiters a URL sits between in markdown and HTML.
+const URL_RUN = /https?:\/\/[^\s<>"'`)]+/gi
 
 // Conditionally load lolight for syntax highlighting (Node.js only)
 // Browser builds will gracefully handle missing lolight by using fallback
@@ -105,6 +113,25 @@ function fixBlockLevelTagsInParagraphs(html: string): string {
   return html
 }
 
+/**
+ * Removes the document wrapper the DOM round trip adds (xml declaration,
+ * doctype, html/head/body and the xhtml namespace). Exact tag names only:
+ * `<header>`, `<htmlx>` and `<html-x>` are author content.
+ */
+export function stripDocumentWrapper(html: string): string {
+  return html
+    .replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, '')
+    // Strip full HTML document wrapper (native browser DOMParser wraps in <html><head><body>)
+    .replace(/^<\?xml[^?]*\?>/, '')
+    .replace(/^<!DOCTYPE[^>]*>/i, '')
+    // Exact tag names: `<header>` and `<htmlx>` are author content.
+    .replace(/<\/?html(?=[\s/>])[^>]*>/g, '')
+    .replace(/<head(?=[\s/>])[^>]*>[\s\S]*?<\/head>/g, '')
+    .replace('<body id="root">', '')
+    .replace('</body>', '')
+    .trim()
+}
+
 export function markdownToHTML(input: string, forApp: boolean, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): string {
   // Internalize leofinance.io links
   input = input.replace(new RegExp("https://leofinance.io/threads/view/","g"), "/@");
@@ -163,17 +190,38 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   const entityPlaceholders: string[] = [];
 
   if (entities && forApp) {
-    // Deduplicate entities to avoid duplicate placeholders
-    const uniqueEntities = [...new Set(entities)];
-    uniqueEntities.forEach((entity, index) => {
-      // Use markdown-inert Unicode placeholder (zero-width spaces)
-      const placeholder = `\u200B${index}\u200B`;
-      entityPlaceholders.push(entity);
-      // Replace all occurrences of this entity
-      input = input.split(entity).join(placeholder);
-    })
+    // Deduplicate entities to avoid duplicate placeholders. Each distinct entity
+    // gets a markdown-inert placeholder (zero-width spaces around its index).
+    const indexOf = new Map<string, number>();
+    for (const entity of entities) {
+      if (!indexOf.has(entity)) {
+        indexOf.set(entity, entityPlaceholders.length);
+        entityPlaceholders.push(entity);
+      }
+    }
+    // Replace every occurrence OUTSIDE a URL. The placeholders stand in for
+    // entities in text; inside a URL one reached the transforms instead, and an
+    // image was proxied with the placeholder in its URL, inside the proxy hash
+    // where the final restore cannot reach, so the app loaded a different image
+    // URL than the post names (#2092). One regex pass per segment, linear in
+    // its length (a split/join per distinct entity was not).
+    const protect = (text: string) =>
+      text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    let protectedInput = '';
+    let last = 0;
+    for (const m of regexMatches(input, URL_RUN)) {
+      const at = m.index ?? 0;
+      protectedInput += protect(input.slice(last, at)) + m[0];
+      last = at + m[0].length;
+    }
+    input = protectedInput + protect(input.slice(last));
   }
 
+  // The sanitize-only fallback below skips the DOM transforms, so the
+  // sanitizer applies their safety rules itself (#1919).
+  const untransformed = { ...renderOptions, untransformed: true }
+  // Stamps what the transforms produced; see render-boundary.method.ts.
+  const nonce = createRenderNonce()
 
   try {
     output = md.render(input)
@@ -184,9 +232,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
     const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, 'text/html')
 
-    traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
+    stripAuthorMarkers(doc as unknown as Document)
+    traverse(doc as unknown as Node, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
-    output = serializer.serializeToString(doc)
+    output = serializer.serializeToString(doc, xmldomNodeFilter(nonce))
   } catch (error) {
     // @xmldom/xmldom is stricter than old xmldom and throws ParseError for malformed HTML
     // Instead of returning empty string (bad UX), attempt graceful recovery
@@ -200,7 +249,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // Reuse the markdown output already produced before the failing
       // DOMParser pass — `md.render(input)` is the expensive step and
       // re-running it costs ~100 ms per fallback hit on a 60 KB body.
-      const preSanitized = sanitizeHtml(output, renderOptions)
+      const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true })
 
       // Use htmlparser2 to parse malformed HTML leniently
       const dom = htmlparser2.parseDocument(preSanitized, {
@@ -215,36 +264,44 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // Now parse the well-formed HTML with @xmldom/xmldom
       const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, 'text/html')
 
-      traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
+      stripAuthorMarkers(doc as unknown as Document)
+      traverse(doc as unknown as Node, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
-      output = serializer.serializeToString(doc)
+      output = serializer.serializeToString(doc, xmldomNodeFilter(nonce))
     } catch (fallbackError) {
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves
       // readable HTML content instead of showing escaped tags.
-      output = sanitizeHtml(output || md.render(input), renderOptions)
+      output = sanitizeHtml(output || md.render(input), untransformed)
     }
   }
 
   // Restore original entities from placeholders
+  // in one pass (a split/join per distinct entity was quadratic on a body of
+  // many distinct references).
+  // A zero-width space the author wrote can sit right before a placeholder
+  // (`\u200B2024` then `\u200B0\u200B`): a match whose index is not one of ours
+  // must not consume the placeholder's opening zero-width space, so the scan
+  // resumes one character later. Indices are written without leading zeros, so
+  // `\u200B00\u200B` is the author's text, not placeholder 0.
   if (forApp && output && entityPlaceholders.length > 0) {
-    entityPlaceholders.forEach((entity, index) => {
-      const placeholder = `\u200B${index}\u200B`;
-      // Replace all occurrences of the placeholder
-      output = output.split(placeholder).join(entity);
-    })
+    const placeholderRe = /\u200B(0|[1-9]\d*)\u200B/g;
+    let restored = '';
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = placeholderRe.exec(output)) !== null) {
+      const entity = entityPlaceholders[+match[1]];
+      if (entity === undefined) {
+        placeholderRe.lastIndex = match.index + 1;
+        continue;
+      }
+      restored += output.slice(last, match.index) + entity;
+      last = placeholderRe.lastIndex;
+    }
+    output = restored + output.slice(last);
   }
 
-  output = output
-    .replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, '')
-    // Strip full HTML document wrapper (native browser DOMParser wraps in <html><head><body>)
-    .replace(/^<\?xml[^?]*\?>/, '')
-    .replace(/^<!DOCTYPE[^>]*>/i, '')
-    .replace(/<\/?html[^>]*>/g, '')
-    .replace(/<head[^>]*>[\s\S]*?<\/head>/g, '')
-    .replace('<body id="root">', '')
-    .replace('</body>', '')
-    .trim()
+  output = stripDocumentWrapper(output)
 
-  return sanitizeHtml(output, renderOptions)
+  return sanitizeHtml(output, { ...renderOptions, renderNonce: nonce })
 }

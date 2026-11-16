@@ -487,19 +487,13 @@ describe('catchPostImage fast mode', () => {
     expect(r.fast).toBe(r.full)
   })
 
-  it('reads a URL in <script> text as prose, which the sanitizer unwraps and the renderer linkifies', () => {
-    // `u="https://..."` looks like an attribute value but sits in text, not
-    // inside a tag; the in-tag marks tell the two apart, so a real
-    // <video poster="..."> still does not count while this does. The two
-    // lookups do not agree byte for byte here, and that is the renderer's
-    // doing: its greedy linkifier swallows the closing quote into the image
-    // URL, so the full lookup hands back a thumbnail that cannot load. Fast
-    // mode returns the URL itself. Pinned so a change on either side shows.
+  it('ignores a URL in <script> text, which the renderer drops with the element', () => {
+    // The renderer used to show script text as prose and linkify it; it now
+    // drops <script> with its content (#1919), and fast mode blanks it too.
     const raw = 'https://files.peakd.com/x/shown.png'
     const r = both(`<script>var u="${raw}"</script>\n\nplain text`)
-    expect(r.full).toBeTruthy()
-    expect(r.fast).toBe(proxifyImageSrc(raw, 600, 500, 'match'))
-    expect(r.full).not.toBe(r.fast)
+    expect(r.full).toBeNull()
+    expect(r.fast).toBe(r.full)
   })
 
   it('finds a bare image URL wrapped in emphasis or quotes, as the renderer does', () => {

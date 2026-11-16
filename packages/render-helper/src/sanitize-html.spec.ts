@@ -445,13 +445,15 @@ describe('sanitizeHtml', () => {
 
       it('should strip javascript: in iframe src', () => {
         const input = '<iframe src="javascript:alert(1)"></iframe>'
-        const expected = '<iframe src></iframe>'
+        // An iframe whose src is refused is dropped, not left empty (#1919).
+        const expected = ''
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
       it('should strip data: URLs in iframe', () => {
         const input = '<iframe src="data:text/html,<script>alert(1)</script>"></iframe>'
-        const expected = '<iframe src></iframe>'
+        // An iframe whose src is refused is dropped, not left empty (#1919).
+        const expected = ''
         expect(sanitizeHtml(input)).toBe(expected)
       })
     })
@@ -465,7 +467,8 @@ describe('sanitizeHtml', () => {
 
       it('should prevent base64 in iframe', () => {
         const input = '<iframe src="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="></iframe>'
-        const expected = '<iframe src></iframe>'
+        // An iframe whose src is refused is dropped, not left empty (#1919).
+        const expected = ''
         expect(sanitizeHtml(input)).toBe(expected)
       })
     })
