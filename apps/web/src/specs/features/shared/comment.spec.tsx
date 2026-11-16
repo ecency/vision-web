@@ -93,6 +93,7 @@ vi.mock("@/utils", async () => ({
 }));
 
 import { Comment } from "@/features/shared/comment";
+import { EntryPageContext } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/context";
 
 const entry = {
   author: "alice",
@@ -282,6 +283,25 @@ describe("Comment composer", () => {
     fireEvent.keyDown(body, { key: "Enter", metaKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // react-use's useLocalStorage setter sees the state from when its key was set,
+  // so a functional update (prev => quote + prev) dropped what had been typed since.
+  test("quoting a selection keeps the text typed so far", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (selection: string) => (
+      <QueryClientProvider client={queryClient}>
+        <EntryPageContext.Provider value={{ selection, setSelection: vi.fn() } as never}>
+          <Comment entry={entry} onSubmit={vi.fn()} submitText="Reply" />
+        </EntryPageContext.Provider>
+      </QueryClientProvider>
+    );
+    const view = render(ui(""));
+    type(view.getByRole, "my reply");
+
+    view.rerender(ui("> a quote\n"));
+
+    expect(view.getByRole("textbox")).toHaveValue("> a quote\nmy reply");
   });
 
   describe("decline payout", () => {
@@ -660,6 +680,148 @@ describe("Comment composer", () => {
       window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify(""));
       expect(checkbox(renderComment().getByRole)).toHaveAttribute("aria-checked", "false");
       expect(declineKeys()).toEqual([]);
+    });
+
+    // A reply that failed while its sender was signed out or switched away is kept
+    // for the sender alone, and comes back into a blank form when they return.
+    test("a failure kept for its sender comes back into their blank form, declined", () => {
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("kept for tester"));
+      window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("kept for tester"));
+
+      const view = renderComment();
+      expect(view.getByRole("textbox")).toHaveValue("kept for tester");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      expect(window.localStorage.getItem("ecency_reply_failed_text_tester_alice_post-1")).toBeNull();
+    });
+
+    test("a failure kept for another account never shows in this account's form", () => {
+      window.localStorage.setItem("ecency_reply_failed_text_other_alice_post-1", JSON.stringify("other's reply"));
+      expect(renderComment().getByRole("textbox")).toHaveValue("");
+      expect(window.localStorage.getItem("ecency_reply_failed_text_other_alice_post-1")).toBe(JSON.stringify("other's reply"));
+    });
+
+    test("a newer draft wins over a kept failure, which is dropped", () => {
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("newer draft"));
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("kept for tester"));
+      expect(renderComment().getByRole("textbox")).toHaveValue("newer draft");
+      expect(window.localStorage.getItem("ecency_reply_failed_text_tester_alice_post-1")).toBeNull();
+    });
+
+    test("switching back to the sender with the form open brings a kept failure back", () => {
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("kept for tester"));
+      window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("kept for tester"));
+      activeAccount.username = "other";
+      try {
+        const view = renderFailed(null);
+        expect(view.getByRole("textbox")).toHaveValue("");
+        activeAccount.username = "tester";
+        view.rerenderFailed(null);
+        expect(view.getByRole("textbox")).toHaveValue("kept for tester");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // A held failure of the active account is the same reply as its kept copy: the
+    // kept copy goes, and the decline the restore just stored stays (Fable, #2106).
+    test("switching back with a held failure and its kept copy keeps the stored decline", () => {
+      const failed = { text: "K", declinePayout: true, username: "tester" };
+      activeAccount.username = "other";
+      try {
+        const view = renderFailed(null);
+        type(view.getByRole, "other's draft");
+        window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+        window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("K"));
+        view.rerenderFailed(failed);
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("K");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+        expect(window.localStorage.getItem("ecency_reply_failed_decline_tester_alice_post-1")).toBe(JSON.stringify("K"));
+        expect(window.localStorage.getItem("ecency_reply_failed_text_tester_alice_post-1")).toBeNull();
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // Two different failures of the same account: the held one is restored with
+    // its own choice; the kept one never takes its place under that checked box.
+    test("a kept failure never replaces a held failure's text under its decline", () => {
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify(""));
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K2"));
+      const view = renderFailed({ text: "F", declinePayout: true });
+      expect(view.getByRole("textbox")).toHaveValue("F");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+    });
+
+    test("a kept failure restored under StrictMode keeps its decline", () => {
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+      window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("K"));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const view = render(
+        <React.StrictMode>
+          <QueryClientProvider client={queryClient}>
+            <Comment entry={entry} onSubmit={vi.fn()} submitText="Reply" />
+          </QueryClientProvider>
+        </React.StrictMode>
+      );
+      expect(view.getByRole("textbox")).toHaveValue("K");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      expect(window.localStorage.getItem("ecency_reply_failed_decline_tester_alice_post-1")).toBe(JSON.stringify("K"));
+    });
+
+    // Fable round 3 (#2106): a restored kept reply that another account then
+    // cleared must not come back checked on a blank form when the sender returns.
+    test("a restored kept reply cleared by another account does not re-check a blank form", async () => {
+      window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+      window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("K"));
+      const view = renderFailed(null);
+      expect(view.getByRole("textbox")).toHaveValue("K");
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(null);
+        type(view.getByRole, "");
+        activeAccount.username = "tester";
+        view.rerenderFailed(null);
+
+        expect(view.getByRole("textbox")).toHaveValue("");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+        type(view.getByRole, "a brand new reply");
+        await act(async () => {
+          fireEvent.click(view.getByRole("button", { name: "Reply" }));
+        });
+        expect(view.onSubmit).toHaveBeenCalledWith("a brand new reply", { declinePayout: false });
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // The form already holds the kept text at the switch: nothing has to land, so
+    // the kept copy goes at once, and a posted reply does not come back as a draft.
+    test("a kept reply already in the form is cleared at the switch, not brought back after posting", async () => {
+      activeAccount.username = "other";
+      try {
+        const view = renderFailed(null);
+        type(view.getByRole, "K");
+        window.localStorage.setItem("ecency_reply_failed_text_tester_alice_post-1", JSON.stringify("K"));
+        window.localStorage.setItem("ecency_reply_failed_decline_tester_alice_post-1", JSON.stringify("K"));
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(null);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+        expect(window.localStorage.getItem("ecency_reply_failed_text_tester_alice_post-1")).toBeNull();
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    // The form's first text is a held failure only when it is this account's.
+    test("a held failure of another account does not seed this account's form", () => {
+      const view = renderFailed({ text: "B text", declinePayout: false, username: "other" });
+      expect(view.getByRole("textbox")).toHaveValue("");
     });
 
     test("several edits in a row keep the decline in step with the draft", () => {

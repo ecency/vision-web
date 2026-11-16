@@ -169,8 +169,19 @@ describe("useCreateReply: a failed reply is kept for the post", () => {
     signedIn.username = "carol";
     await failWith(true);
     expect(draft()).toBeNull();
-    // The sender's decline is still kept under the sender, applying only to that text.
+    // Kept for the sender alone, with the decline it was sent with.
+    expect(window.localStorage.getItem("ecency_reply_failed_text_bob_alice_post-1")).toBe(JSON.stringify("a reply"));
     expect(decline()).toBe(JSON.stringify("a reply"));
+  });
+
+  // Two declined replies to the same post fail out of order: the newer draft is
+  // kept, and so must its decline be; the older failure must not replace it.
+  it("leaves the kept draft's decline alone when another failure is dropped", async () => {
+    window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("reply B"));
+    window.localStorage.setItem("ecency_reply_failed_decline_bob_alice_post-1", JSON.stringify("reply B"));
+    await failWith(true, "reply A");
+    expect(draft()).toBe(JSON.stringify("reply B"));
+    expect(decline()).toBe(JSON.stringify("reply B"));
   });
 
   it("puts the text back into the post's reply draft with no box mounted", async () => {
