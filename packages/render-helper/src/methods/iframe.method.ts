@@ -9,7 +9,7 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   // Trimmed of ASCII whitespace the way a browser reads a URL attribute, so
   // `src=" https://www.youtube.com/embed/ID"` plays instead of failing the
   // allow list and showing the placeholder.
-  const src = (el.getAttribute('src') || '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+  const src = trimAsciiWhitespace(el.getAttribute('src') || '');
   if (!src) {
     el.parentNode.removeChild(el);
     return;
@@ -37,6 +37,20 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   replaceNode.textContent = `(Unsupported ${src})`;
   el.parentNode.insertBefore(replaceNode, el);
   el.parentNode.removeChild(el);
+}
+
+// Tab, LF, FF, CR and space: what a browser strips from a URL attribute (not
+// String.prototype.trim, which also strips NBSP and others a browser keeps).
+// Index loops rather than a `[...]+$` regex, which is quadratic on a long run
+// of whitespace followed by a non-space.
+const isAsciiWhitespace = (c: number): boolean => c === 0x09 || c === 0x0a || c === 0x0c || c === 0x0d || c === 0x20
+
+function trimAsciiWhitespace(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && isAsciiWhitespace(value.charCodeAt(start))) start++
+  while (end > start && isAsciiWhitespace(value.charCodeAt(end - 1))) end--
+  return value.slice(start, end)
 }
 
 /** Normalises a known provider's iframe in place. False when no provider matched. */
