@@ -1,69 +1,67 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import i18next from "i18next";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdown";
-import { NotificationFilter, NotificationViewType } from "@/enums";
-import { NotificationList } from "@/features/shared/notifications/notification-list";
-import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { SELF_ONLY_NOTIFICATION_CONTENT_TYPES } from "@/app/decks/_components/consts/content-types";
+import { AccountActivities } from "@/features/shared/account-activities";
 
 interface Props {
   username: string;
 }
 
-const noop = () => {};
+// bridge.account_notifications types, grouped the way the notifications panel
+// labels them. Everything a community emits goes under one group; hivemind's
+// `error` type belongs to no group and shows under All only.
+const FILTERS = {
+  rvotes: ["vote"],
+  replies: ["reply", "reply_comment"],
+  mentions: ["mention"],
+  follows: ["follow"],
+  reblogs: ["reblog"],
+  communities: [
+    "subscribe",
+    "new_community",
+    "set_role",
+    "set_props",
+    "set_label",
+    "mute_post",
+    "unmute_post",
+    "pin_post",
+    "unpin_post",
+    "flag_post"
+  ]
+} as const;
+
+type Filter = keyof typeof FILTERS;
 
 /**
- * The notifications panel's list, for the account this profile belongs to.
- *
- * Rendered client-side only: the list endpoint is signed with the viewer's own
- * code, so there is nothing to prefetch on the server and a signed-out viewer
- * gets the panel's sign-in message. Another account's list is read-only and
- * offers only the filters its public subset can return.
+ * The account's on-chain notifications from Hive (bridge.account_notifications),
+ * the same log a community's activity tab shows. Public, so it reads the same
+ * for every viewer, signed in or not.
  */
 export function ProfileNotifications({ username }: Props) {
-  const { activeUser } = useActiveAccount();
-  const isOwn = activeUser?.username?.toLowerCase() === username.toLowerCase();
-  const [filter, setFilter] = useState<NotificationFilter | null>(null);
-
-  const filters = useMemo(
-    () =>
-      Object.values(NotificationFilter).filter(
-        (f) => isOwn || !SELF_ONLY_NOTIFICATION_CONTENT_TYPES.includes(f)
-      ),
-    [isOwn]
-  );
-  const activeFilter = filter && filters.includes(filter) ? filter : null;
+  const [filter, setFilter] = useState<Filter | null>(null);
 
   return (
-    <div className="notification-list bg-white/80 dark:bg-dark-200/90 glass-box rounded-none sm:rounded-xl w-full overflow-hidden">
-      <div className="list-header">
-        <div className="list-actions [&_svg]:size-5">
-          <Dropdown>
-            <DropdownToggle className="list-filter" withChevron={true}>
-              {i18next.t(`notifications.type-${activeFilter ?? "all"}`)}
-            </DropdownToggle>
-            <DropdownMenu>
-              <DropdownItem onClick={() => setFilter(null)} selected={activeFilter === null}>
-                {i18next.t("notifications.type-all-short")}
+    <div className="bg-white/80 dark:bg-dark-200/90 glass-box rounded-none sm:rounded-xl w-full p-2 sm:p-4">
+      <div className="flex justify-end">
+        <Dropdown>
+          <DropdownToggle withChevron={true}>
+            {i18next.t(`notifications.type-${filter ?? "all"}`)}
+          </DropdownToggle>
+          <DropdownMenu align="right">
+            <DropdownItem onClick={() => setFilter(null)} selected={filter === null}>
+              {i18next.t("notifications.type-all-short")}
+            </DropdownItem>
+            {(Object.keys(FILTERS) as Filter[]).map((f) => (
+              <DropdownItem key={f} onClick={() => setFilter(f)} selected={filter === f}>
+                {i18next.t(`notifications.type-${f}`)}
               </DropdownItem>
-              {filters.map((f) => (
-                <DropdownItem key={f} onClick={() => setFilter(f)} selected={activeFilter === f}>
-                  {i18next.t(`notifications.type-${f}`)}
-                </DropdownItem>
-              ))}
-            </DropdownMenu>
-          </Dropdown>
-        </div>
+            ))}
+          </DropdownMenu>
+        </Dropdown>
       </div>
-      <NotificationList
-        username={username}
-        standalone={true}
-        filter={activeFilter ?? undefined}
-        currentStatus={NotificationViewType.ALL}
-        selectNotification={noop}
-      />
+      <AccountActivities account={username} types={filter ? FILTERS[filter] : undefined} />
     </div>
   );
 }

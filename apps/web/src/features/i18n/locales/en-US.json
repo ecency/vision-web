@@ -2210,6 +2210,7 @@
     "type-mentions": "Mentions",
     "type-follows": "Follows",
     "type-reblogs": "Reblogs",
+    "type-communities": "Communities",
     "type-transfers": "Transfers",
     "type-delegations": "Delegations",
     "type-payouts": "Payouts",

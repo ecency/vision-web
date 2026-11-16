@@ -10,7 +10,6 @@ import i18next from "i18next";
 import { useEffect, useMemo, useRef } from "react";
 import { getAccessToken } from "@/utils";
 import { Button } from "@ui/button";
-import { getProfileNotificationsQueryOptions } from "@/api/queries";
 
 interface Props {
   filter?: NotificationFilter;
@@ -18,10 +17,6 @@ interface Props {
   openLinksInNewTab?: boolean;
   select?: boolean;
   selectNotification: (d: string) => void;
-  /** List this account's notifications instead of the signed-in one's (profile section). */
-  username?: string;
-  /** Rendered on a page rather than inside the notifications panel. */
-  standalone?: boolean;
 }
 
 export function NotificationList({
@@ -29,16 +24,11 @@ export function NotificationList({
   currentStatus,
   openLinksInNewTab,
   select,
-  selectNotification,
-  username,
-  standalone
+  selectNotification
 }: Props) {
   const { activeUser } = useActiveAccount();
   const accessToken = getAccessToken(activeUser?.username ?? "");
   const isQueryEnabled = Boolean(activeUser?.username && accessToken);
-  // Another account's rows are read-only: marking one would mark the viewer's.
-  const readOnly =
-    !!username && username.toLowerCase() !== activeUser?.username?.toLowerCase();
   const {
     data,
     isFetching,
@@ -49,11 +39,7 @@ export function NotificationList({
     isFetchNextPageError,
     isRefetchError,
     refetch
-  } = useInfiniteQuery(
-    username
-      ? getProfileNotificationsQueryOptions(activeUser?.username, accessToken, username, filter)
-      : getNotificationsInfiniteQueryOptions(activeUser?.username, accessToken, filter)
-  );
+  } = useInfiniteQuery(getNotificationsInfiniteQueryOptions(activeUser?.username, accessToken, filter));
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasNextPageRef = useRef(hasNextPage);
@@ -163,8 +149,6 @@ export function NotificationList({
               isSelect={select}
               setSelectedNotifications={selectNotification}
               openLinksInNewTab={openLinksInNewTab}
-              readOnly={readOnly}
-              standalone={standalone}
             />
           </AnimatedNotificationListItemLayout>
         ))}

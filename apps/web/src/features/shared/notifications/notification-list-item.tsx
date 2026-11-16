@@ -42,10 +42,6 @@ interface Props {
   // True when this row is rendered inside a deck column, which is narrow and has
   // no notifications dropdown to toggle.
   isDeck?: boolean;
-  // Another account's row (profile section): no unread state, no mark-as-read.
-  readOnly?: boolean;
-  // Rendered on a page, not inside the notifications panel: a click has no panel to close.
-  standalone?: boolean;
 }
 
 export const NotificationListItem = memo(function NotificationListItem({
@@ -57,9 +53,7 @@ export const NotificationListItem = memo(function NotificationListItem({
   onLinkClick,
   setSelectedNotifications,
   onMounted,
-  isDeck = false,
-  readOnly = false,
-  standalone = false
+  isDeck = false
 }: Props) {
   const toggleUIProp = useGlobalStore((state) => state.toggleUiProp);
 
@@ -86,7 +80,7 @@ export const NotificationListItem = memo(function NotificationListItem({
   }, [isSelect, previousIsSelect]);
 
   const markAsRead = () => {
-    if (!readOnly && notification!.read === 0) {
+    if (notification!.read === 0) {
       markNotifications.mutateAsync({ id: notification!.id });
     }
   };
@@ -95,7 +89,7 @@ export const NotificationListItem = memo(function NotificationListItem({
     // A deck column has no notifications dropdown to close, and opening the
     // navbar one on top of the deck is not what the click asked for. The other
     // deck columns already opt out of this via entry.toggleNotNeeded.
-    if (!isDeck && !standalone && !(entry && (entry as any).toggleNotNeeded)) {
+    if (!isDeck && !(entry && (entry as any).toggleNotNeeded)) {
       toggleUIProp("notifications");
     }
     markAsRead();
@@ -135,7 +129,7 @@ export const NotificationListItem = memo(function NotificationListItem({
       title={notification.timestamp}
       className={classNameObject({
         "list-item": true,
-        "not-read": !readOnly && notification.read === 0,
+        "not-read": notification.read === 0,
         [className ?? ""]: !!className
       })}
       role="button"
@@ -298,7 +292,7 @@ export const NotificationListItem = memo(function NotificationListItem({
           </div>
         ) : (
           <div className={`item-control ${isDeck ? "item-control-deck" : ""}`}>
-            {!readOnly && notification.read === 0 && (
+            {notification.read === 0 && (
               <Tooltip content={i18next.t("notifications.mark-read")}>
                 <span
                   role="button"

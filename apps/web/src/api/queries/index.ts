@@ -4,4 +4,3 @@ export * from "./get-gifs-query";
 export * from "./useClientTheme";
 export * from "./useHydrated";
 export * from "./pending-payouts-query";
-export * from "./get-profile-notifications-query";

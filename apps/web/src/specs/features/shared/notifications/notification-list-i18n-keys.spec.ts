@@ -3,8 +3,7 @@ import { resolve } from "path";
 import { describe, expect, it } from "vitest";
 
 // The notifications list's signed-out message used `notifications.auth-required-desc`,
-// a key that only existed under `decks.`, so the profile notifications section
-// (#395), the first place that state is reachable, showed the raw key.
+// a key that only existed under `decks.`, so a signed-out list showed the raw key.
 describe("notification list i18n keys", () => {
   it("every notifications.* key the list uses exists in en-US", () => {
     const src = readFileSync(resolve(__dirname, "../../../../features/shared/notifications/notification-list.tsx"), "utf8");
