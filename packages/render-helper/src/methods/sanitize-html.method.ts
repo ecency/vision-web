@@ -87,8 +87,10 @@ const RENDER_HELPER_RELS = new Set(['nofollow ugc noopener', 'noopener'])
 // import breaks the ESM build under Node (`Named export 'safeAttrValue' not found`).
 const xssSafeAttrValue = (xss as unknown as { safeAttrValue: SafeAttrValueHandler }).safeAttrValue
 
-// The schemes a() writes on a link (a.method.ts); it prefixes any other with https://.
-const HREF_SCHEMES = new Set(['http', 'https', 'mailto', 'hive', 'steem', 'esteem', 'ecency'])
+// The schemes a() writes on a link (a.method.ts), plus tel: a()'s scheme check
+// accepts it and xss allows it, so the sanitize-only paths (chat, paste, the
+// fallback) keep telephone links as before.
+const HREF_SCHEMES = new Set(['http', 'https', 'mailto', 'tel', 'hive', 'steem', 'esteem', 'ecency'])
 
 export interface SanitizeHtmlOptions {
   /**

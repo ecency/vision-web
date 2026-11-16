@@ -61,6 +61,10 @@ describe('a refused href', () => {
   it('leaves no bare href on a tag that does not allow href', () => {
     expect(sanitizeHtml('<img href="data:image/x" src="https://i.example/a.png">')).not.toMatch(/\shref[\s>=]/)
   })
+  it('keeps a telephone link on the sanitize-only paths', () => {
+    expect(sanitizeHtml('<a href="tel:+15551234567">call</a>')).toBe('<a href="tel:+15551234567">call</a>')
+    expect(simpleMarkdownToHTML('<a href="tel:+15551234567">call</a>')).toContain('href="tel:+15551234567"')
+  })
   it('stays a bare href on a link', () => {
     expect(sanitizeHtml('<a href="data:image/x">x</a>')).toBe('<a href>x</a>')
   })
