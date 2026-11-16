@@ -366,6 +366,49 @@ describe("useDraftAutosave", () => {
     expect(targets).toEqual([undefined, undefined]);
   });
 
+  // The composer still holds the text after a switch: it has to reach the new
+  // account's own draft even when nothing is typed afterwards.
+  it("saves the unchanged composer as the new account's draft after a switch", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : "d2";
+    });
+    const snapshot = { title: "a", content: "the same text" };
+    const { result, rerender } = renderAutosave(snapshot);
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+    expect(result.current.draftId).toBe("d2");
+  });
+
+  // The draft editor route supplies its own draft id: an account switch there must
+  // not save untouched content into that draft on its own (tracked in #2105).
+  it("does not re-save a route draft after an account switch with nothing typed", async () => {
+    const calls: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      calls.push(`${activeUsername.current}:${options?.draftId}`);
+      return undefined;
+    });
+    const snapshot = { title: "a", content: "route draft" };
+    const { rerender } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ draftId: "route-1", enabled: true, snapshot }),
+      { initialProps: { snapshot } }
+    );
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(calls).toEqual(["alice:route-1"]);
+  });
+
   it("switching back does not resume writing into the first account's draft", async () => {
     const targets: (string | undefined)[] = [];
     saveToDraft.mockImplementation(async (options: { draftId?: string }) => {

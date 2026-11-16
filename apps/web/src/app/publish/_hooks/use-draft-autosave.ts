@@ -325,7 +325,16 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // scheduled.
   attemptRef.current = attempt;
 
-  useDebounce(() => attemptRef.current(), AUTOSAVE_DEBOUNCE_MS, [snapshot, enabled, isActiveTab]);
+  // bindingKey too: after a clear or an account switch the composer may hold the
+  // same content, and it still has to reach the new binding's own draft. Not on the
+  // draft editor route, whose id comes from the route: untouched content there must
+  // not be written into that draft under another account on its own (#2105).
+  useDebounce(() => attemptRef.current(), AUTOSAVE_DEBOUNCE_MS, [
+    snapshot,
+    enabled,
+    isActiveTab,
+    draftId ? undefined : bindingKey
+  ]);
 
   useEffect(
     () => () => {
