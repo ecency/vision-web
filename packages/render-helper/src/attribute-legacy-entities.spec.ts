@@ -43,6 +43,14 @@ describe('legacy entity names in raw-HTML attributes (#2085)', () => {
     )
   })
 
+  // xmldom turns a literal tab or newline in an attribute into a space, but keeps
+  // one that arrives as a reference, so a reference must stay a reference.
+  it('keeps tab, line feed and carriage return references as references', () => {
+    expect(removeDuplicateAttributes('<img src="a?b&#10;c&#9;d&#13;&times">')).toBe(
+      '<img src="a?b&#10;c&#9;d&#13;×">'
+    )
+  })
+
   it('rewrites a value only as far as its references go', () => {
     expect(removeDuplicateAttributes('<p class="a b" title="x &amp; y">t</p>')).toBe(
       '<p class="a b" title="x &amp; y">t</p>'

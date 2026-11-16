@@ -15,10 +15,10 @@ const VALUE = 2;
 
 // Every match of a global token pattern, in order. An exec loop rather than
 // String.prototype.matchAll, which is ES2020 and throws on Safari 12 (#1701).
-// A fresh copy per call, so the shared pattern's lastIndex is never touched;
-// the token patterns cannot match empty, so the loop always advances.
+// A fresh global copy per call, so the shared pattern's lastIndex is never
+// touched; the token patterns cannot match empty, so the loop always advances.
 function regexMatches(text: string, re: RegExp): RegExpExecArray[] {
-  const copy = new RegExp(re.source, re.flags);
+  const copy = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
   const matches: RegExpExecArray[] = [];
   let match: RegExpExecArray | null;
   while ((match = copy.exec(text)) !== null) {

@@ -17,7 +17,8 @@ export function regexMatches(text: string, re: RegExp): RegExpExecArray[] {
     matches.push(match);
     if (match[0] === "") {
       const code = text.charCodeAt(copy.lastIndex);
-      const pair = unicode && code >= 0xd800 && code <= 0xdbff && copy.lastIndex + 1 < text.length;
+      const next = text.charCodeAt(copy.lastIndex + 1);
+      const pair = unicode && code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
       copy.lastIndex += pair ? 2 : 1;
     }
   }

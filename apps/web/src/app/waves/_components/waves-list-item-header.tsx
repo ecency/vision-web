@@ -70,7 +70,7 @@ export function WavesListItemHeader({
             </>
           )}
 
-          <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-40">
+          <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
             <TimeLabel created={entry.created} refresh={now} />
           </div>
         </div>

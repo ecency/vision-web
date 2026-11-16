@@ -54,7 +54,7 @@ export function CrossPost({ entry, onSuccess, onHide }: Props) {
   );
 
   if (!isLoading && communities.length === 0) {
-    return <span className="text-info">{i18next.t("cross-post.no-subscription")}</span>;
+    return <span className="text-info-default">{i18next.t("cross-post.no-subscription")}</span>;
   }
 
   return (

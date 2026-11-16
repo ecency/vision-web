@@ -47,7 +47,8 @@ describe('render-helper without String.prototype.matchAll', () => {
     const cases: Array<[string, RegExp]> = [
       ['a.png b.JPG', /\.(?:png|jpe?g)/gi],
       ['abc', /x*/g],
-      ['\u{1F600}a\u{1F600}', /(?:)/gu]
+      ['\u{1F600}a\u{1F600}', /(?:)/gu],
+      ['\uD83Dab', /(?:)/gu]
     ]
     for (const [text, re] of cases) {
       const expected = [...text.matchAll(re)].map((m) => [m.index, ...m])

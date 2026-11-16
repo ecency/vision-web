@@ -60,12 +60,36 @@ for (const file of files) {
   }
 }
 
-const candidates = [...uses.keys()];
-const { css } = await postcss([
-  tailwind({ ...config, content: [{ raw: candidates.join(" "), extension: "html" }], safelist: [] })
-]).process("@tailwind utilities;", { from: undefined });
+// The utilities among `candidates` that Tailwind builds no rule for. A class
+// counts as built only when a rule's selector names it exactly: a substring
+// test let `bg-blue-dark` pass on the strength of `bg-blue-dark-sky`.
+async function deadUtilities(candidates) {
+  const root = await postcss([
+    tailwind({ ...config, content: [{ raw: candidates.join(" "), extension: "html" }], safelist: [] })
+  ]).process("@tailwind utilities;", { from: undefined });
+  const built = new Set();
+  root.root.walkRules((rule) => {
+    for (const m of rule.selector.matchAll(/\.((?:\\.|[A-Za-z0-9_-])+)/g)) built.add(m[1]);
+  });
+  return candidates.filter((utility) => !built.has(escapeClassName(utility))).sort();
+}
 
-const dead = candidates.filter((utility) => !css.includes(`.${escapeClassName(utility)}`)).sort();
+// --self-test: prove the check still tells dead from live, prefix twins included.
+if (process.argv.includes("--self-test")) {
+  const expectDead = ["bg-blue-dark", "text-gray-60", "border-red-5", "text-red-02", "text-amber-650"];
+  const expectLive = ["bg-blue-dark-sky", "text-gray-600", "border-red-500", "text-red-020-50", "text-red", "bg-black/45"];
+  const dead = new Set(await deadUtilities([...expectDead, ...expectLive]));
+  const wrong = [...expectDead.filter((u) => !dead.has(u)), ...expectLive.filter((u) => dead.has(u))];
+  if (wrong.length > 0) {
+    console.error(`self-test FAILED, misclassified: ${wrong.join(", ")}`);
+    process.exit(1);
+  }
+  console.log(`self-test ok (${expectDead.length} dead, ${expectLive.length} live)`);
+  process.exit(0);
+}
+
+const candidates = [...uses.keys()];
+const dead = await deadUtilities(candidates);
 for (const utility of dead) {
   console.log(`${utility}  (${[...uses.get(utility)].sort().join(", ")})`);
 }

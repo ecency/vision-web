@@ -181,7 +181,7 @@ export const SearchListItem = ({
                   if (safeUrl !== "#") router.push(safeUrl);
                 }
               }}
-              className="pointer text-dark"
+              className="pointer text-dark-default"
             >
               <div className="flex items-start flex-grow-1 hot-item-link">{msg}</div>
             </div>

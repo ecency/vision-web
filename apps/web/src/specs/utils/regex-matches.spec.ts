@@ -24,6 +24,8 @@ describe("regexMatches", () => {
     ["no match here", /zzz/g],
     ["abc", /x*/g],
     ["😀a😀", /(?:)/gu],
+    ["\uD83Dab", /(?:)/gu],
+    ["a\uDE00\uD83D", /(?:)/gu],
     ["AbAB", /ab/gi]
   ])("gives what matchAll gives for %s", (text, re) => {
     expect(viaHelper(text, re)).toEqual(viaMatchAll(text, re));

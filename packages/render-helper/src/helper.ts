@@ -83,8 +83,17 @@ export function decodeImageSrc(src: string): string {
  * and killing the container.
  */
 // Escapes a decoded attribute value for a double-quoted attribute.
+// Tab, line feed and carriage return stay references: xmldom turns a literal
+// one in an attribute into a space but keeps one that arrives as a reference.
 function escapeAttrValue(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\t/g, '&#9;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;')
 }
 
 function isSpaceChar(c: number): boolean {
@@ -113,6 +122,10 @@ function isAttrNameChar(c: number): boolean {
 
 export function removeDuplicateAttributes(html: string): string {
   const n = html.length
+  // No tag can close past the last `>`: from there on the input is copied as
+  // is. Without this, a body of `<a b ` repeated with no `>` rescanned the rest
+  // of the input from every `<`, quadratic: 100 KB took 15 s to render.
+  const lastGt = html.lastIndexOf('>')
   let out = ''
   let i = 0
 
@@ -123,6 +136,10 @@ export function removeDuplicateAttributes(html: string): string {
       break
     }
     out += html.slice(i, lt)
+    if (lt > lastGt) {
+      out += html.slice(lt)
+      break
+    }
 
     // Only opening tags that start with an ASCII letter and have at least
     // one whitespace before the attributes are normalised — matches the

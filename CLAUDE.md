@@ -91,6 +91,7 @@ passes locally and fails in CI.
 node scripts/icon-scss-audit.mjs                 # also fails if a retired SCSS rule reappears
 node scripts/icon-tsx-audit.mjs --fail           # icon sizing, see docs/icons.md
 node scripts/slim-entries-audit.mjs --fail       # feed payload invariants
+node scripts/tailwind-color-audit.mjs --self-test # prove it still catches a dead class, THEN enforce
 node scripts/tailwind-color-audit.mjs --fail     # colour classes the Tailwind config cannot build
 node scripts/origin-config-audit.mjs --self-test  # prove the rules still fire, THEN enforce
 node scripts/origin-config-audit.mjs --fail
