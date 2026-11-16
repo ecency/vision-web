@@ -87,8 +87,15 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // bindingKeyRef, which the effect below updates a commit later. Callbacks
   // capture the binding of the render that produced them and compare against
   // this, which is what makes a *retained* callback detectable.
-  const latestBindingKeyRef = useRef(bindingKey);
-  latestBindingKeyRef.current = bindingKey;
+  // Counted, not compared by value: Alice -> Bob -> Alice brings the same key back,
+  // and a flush Alice's first composer handed out must stay stale.
+  const bindingEpochRef = useRef(0);
+  const seenBindingKeyRef = useRef(bindingKey);
+  if (seenBindingKeyRef.current !== bindingKey) {
+    seenBindingKeyRef.current = bindingKey;
+    bindingEpochRef.current += 1;
+  }
+  const bindingEpoch = bindingEpochRef.current;
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -265,7 +272,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
       // generation and sail through the stale-work guard, after which the
       // caller navigates to the previous draft over the new composer state.
       // Rejecting keeps the caller's existing catch effective.
-      if (latestBindingKeyRef.current !== bindingKey) {
+      if (bindingEpochRef.current !== bindingEpoch) {
         throw new Error(STALE_DRAFT_ACTION);
       }
 
@@ -301,7 +308,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
         created: !!id
       };
     },
-    [draftId, enabled, bindingKey, save, snapshot]
+    [draftId, enabled, bindingEpoch, save, snapshot]
   );
 
   // Drop everything tied to the post that was just cleared away. Without this

@@ -481,6 +481,21 @@ describe("useDraftAutosave", () => {
     expect(saveToDraft).not.toHaveBeenCalled();
   });
 
+  // Alice -> Bob -> Alice leaves the binding looking like Alice's again, but the
+  // composer Alice's flush was made for is gone: it must still reject.
+  it("rejects a flush retained across switching away and back", async () => {
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+    const retainedFlush = result.current.flush;
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
+    activeUsername.current = "alice";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
+
+    await expect(retainedFlush()).rejects.toThrow(/belonged to is gone/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
   // The pre-save guard only covers a flush that was already stale when called.
   // A reset landing while the write is on the wire has to reject too: callers
   // navigate on any *fulfilled* flush and do not inspect the payload, so
