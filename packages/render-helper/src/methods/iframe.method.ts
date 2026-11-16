@@ -6,7 +6,10 @@ export function iframe(el: HTMLElement | null, parentDomain: string = 'ecency.co
   if (!el || !el.parentNode) {
     return;
   }
-  const src = el.getAttribute('src');
+  // Trimmed of ASCII whitespace the way a browser reads a URL attribute, so
+  // `src=" https://www.youtube.com/embed/ID"` plays instead of failing the
+  // allow list and showing the placeholder.
+  const src = (el.getAttribute('src') || '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
   if (!src) {
     el.parentNode.removeChild(el);
     return;

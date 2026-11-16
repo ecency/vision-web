@@ -18,6 +18,14 @@ describe('unterminated tags render in linear time', () => {
     expect(performance.now() - started).toBeLessThan(3000)
   })
 
+  // Past the scan budget the rest of the body is left as written; a tag that
+  // closed before the trip point is still normalised.
+  it('leaves the rest as written once the scan budget is spent', () => {
+    const tail = '<a b '.repeat(20000) + 'c=">"'
+    expect(removeDuplicateAttributes(tail)).toBe(tail)
+    expect(removeDuplicateAttributes('<p a="1" a="2">x</p>' + tail)).toBe('<p a="1">x</p>' + tail)
+  })
+
   it('copies what follows the last > as written', () => {
     expect(removeDuplicateAttributes('<p a="1" a="2">x</p><a b c="')).toBe('<p a="1">x</p><a b c="')
   })
