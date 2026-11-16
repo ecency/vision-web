@@ -233,12 +233,15 @@ export function Comment({
   // A form opened without a failure in hand: re-apply a pending decline when the
   // restored draft is still the failed reply's text, and drop it otherwise.
   // A switch of account with the form open resets the choice first: it was the
-  // previous account's.
+  // previous account's. A held failed reply of the now-active account wins over the
+  // reset, whether the switch comes back to it or its failure lands with the switch.
   const lastPendingDeclineKey = useRef(pendingDeclineKey);
   useEffect(() => {
     if (lastPendingDeclineKey.current !== pendingDeclineKey) {
       lastPendingDeclineKey.current = pendingDeclineKey;
-      setDeclinePayout(false);
+      setDeclinePayout(
+        !!failedReply && failedReply.username === activeUser?.username && failedReply.declinePayout
+      );
     }
     if (failedReply || isEdit || !pendingDeclineKey) return;
     const pending = ls.get(pendingDeclineKey);

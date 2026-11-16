@@ -499,6 +499,38 @@ describe("Comment composer", () => {
       }
     });
 
+    test("switching away and back restores the held failed reply's decline", () => {
+      const failed = { text: "hello world", declinePayout: true, username: "tester" };
+      const view = renderFailed(failed);
+      expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed(failed);
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "false");
+
+        activeAccount.username = "tester";
+        view.rerenderFailed(failed);
+        expect(view.getByRole("textbox")).toHaveValue("hello world");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
+    test("a failure for the new account landing with the switch is restored checked", () => {
+      const view = renderFailed(null);
+      try {
+        activeAccount.username = "other";
+        view.rerenderFailed({ text: "sent by other", declinePayout: true, username: "other" });
+
+        expect(view.getByRole("textbox")).toHaveValue("sent by other");
+        expect(checkbox(view.getByRole)).toHaveAttribute("aria-checked", "true");
+      } finally {
+        activeAccount.username = "tester";
+      }
+    });
+
     test("a failed reply that kept its payout stores nothing", () => {
       renderFailed({ text: "hello world", declinePayout: false });
       expect(declineKeys()).toEqual([]);
