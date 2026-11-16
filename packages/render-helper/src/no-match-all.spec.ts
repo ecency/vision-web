@@ -52,7 +52,7 @@ describe('render-helper without String.prototype.matchAll', () => {
     ]
     for (const [text, re] of cases) {
       const expected = [...text.matchAll(re)].map((m) => [m.index, ...m])
-      expect(withoutMatchAll(() => regexMatches(text, re).map((m) => [m.index, ...m]))).toEqual(expected)
+      expect(withoutMatchAll(() => Array.from(regexMatches(text, re), (m) => [m.index, ...m]))).toEqual(expected)
     }
   })
 })

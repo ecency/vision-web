@@ -1,7 +1,7 @@
 import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
-import { createRenderNonce, renderNodeFilter } from './render-boundary.method'
+import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
 import { moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
@@ -232,10 +232,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
     const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, 'text/html')
 
-    stripAuthorMarkers(doc as any)
-    traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
+    stripAuthorMarkers(doc as unknown as Document)
+    traverse(doc as unknown as Node, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
-    output = serializer.serializeToString(doc, renderNodeFilter(nonce) as any)
+    output = serializer.serializeToString(doc, xmldomNodeFilter(nonce))
   } catch (error) {
     // @xmldom/xmldom is stricter than old xmldom and throws ParseError for malformed HTML
     // Instead of returning empty string (bad UX), attempt graceful recovery
@@ -264,10 +264,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       // Now parse the well-formed HTML with @xmldom/xmldom
       const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, 'text/html')
 
-      stripAuthorMarkers(doc as any)
-      traverse(doc as any, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
+      stripAuthorMarkers(doc as unknown as Document)
+      traverse(doc as unknown as Node, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions)
 
-      output = serializer.serializeToString(doc, renderNodeFilter(nonce) as any)
+      output = serializer.serializeToString(doc, xmldomNodeFilter(nonce))
     } catch (fallbackError) {
       // If DOM parsing fails, sanitize the Remarkable HTML output directly.
       // This skips the traverse() image proxy/link rewriting but preserves

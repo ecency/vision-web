@@ -290,7 +290,11 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (tag === 'a' && (name === 'target' || name === 'rel')) return '';
         // No a() pass ran on this link, so give an external href the policy
         // a() would have (the author's own rel/target were dropped above).
-        if (tag === 'a' && name === 'href' && /^(?:https?:)?\/\//i.test(decoded)) {
+        // Read the way a browser reads it: leading spaces and controls dropped,
+        // tab/LF/CR removed anywhere, `\` as `/` (`/\evil.example` is off-site).
+        if (tag === 'a' && name === 'href' && /^(?:https?:)?\/\//i.test(
+          decoded.replace(/^[\u0000- ]+/, '').replace(/[\t\n\r]/g, '').replace(/\\/g, '/')
+        )) {
           return `href="${escapeAttr(decoded)}" rel="nofollow ugc noopener"`;
         }
         if (RENDER_HELPER_DATA_ATTRIBUTES.has(name)) return '';
@@ -335,9 +339,20 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   // tag: an unclosed one must not swallow the content after it. xss writes
   // every kept attribute as name="value", so walk those rather than search
   // the raw text, where `src=` could sit inside another attribute's value.
-  const withoutBareIframe = beforeTransform ? withoutBareSource : withoutBareSource.replace(
-    /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
-    (t, attrs: string) => (hasQuotedAttr(attrs, 'src') ? t : '')
-  );
+  //
+  // Repeated until nothing more is removed, so dropping one tag can never join
+  // its neighbours into a new `<iframe`. On xss output a stray `<` is always
+  // escaped, so in practice the second pass finds nothing.
+  let withoutBareIframe = withoutBareSource;
+  if (!beforeTransform) {
+    let previous: string;
+    do {
+      previous = withoutBareIframe;
+      withoutBareIframe = withoutBareIframe.replace(
+        /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
+        (t, attrs: string) => (hasQuotedAttr(attrs, 'src') ? t : '')
+      );
+    } while (withoutBareIframe !== previous);
+  }
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
 }

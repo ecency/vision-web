@@ -1,4 +1,4 @@
-import { decodeImageSrc, trimTrailingSlash } from '../helper'
+import { trimTrailingSlash } from '../helper'
 import { getProxyBase, proxifyImageSrc } from '../proxify-image-src'
 
 /**
@@ -12,7 +12,15 @@ export function video(el: HTMLElement): void {
   if (poster === null) {
     return
   }
-  const decoded = decodeImageSrc(poster)
+  // A poster only ever comes from raw HTML, which the parser has already
+  // entity-decoded; decoding entities again turned `?x=1&amp;times=2` into
+  // `?x=1×=2`. Only percent-encoding is left, as the image path decodes it.
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(poster).trim()
+  } catch {
+    decoded = poster.trim()
+  }
   if (decoded.startsWith(`${trimTrailingSlash(getProxyBase())}/`)) {
     return
   }

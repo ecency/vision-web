@@ -1,3 +1,5 @@
+import type { Node as XmlNode } from '@xmldom/xmldom'
+
 /**
  * Output boundary for full renders (#1919).
  *
@@ -52,7 +54,9 @@ export function isHiddenElement(node: Node): boolean {
 }
 
 export function createRenderNonce(): string {
-  const cryptoApi = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined
+  const cryptoApi = typeof globalThis !== 'undefined'
+    ? (globalThis as { crypto?: { getRandomValues?: (array: Uint32Array) => Uint32Array } }).crypto
+    : undefined
   const words = new Uint32Array(4)
   if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
     cryptoApi.getRandomValues(words)
@@ -77,6 +81,16 @@ const escapeText = (text: string): string =>
  * (xmldom rebuilds child lists on every removal, which made a body of
  * thousands of comments quadratic). A string return is written verbatim.
  */
+/**
+ * renderNodeFilter as xmldom's `serializeToString` types its filter. xmldom
+ * writes a string return verbatim at runtime (the boundary relies on it), but
+ * its typings declare only `Node | null | undefined`, so this is the one place
+ * the two signatures are reconciled.
+ */
+export function xmldomNodeFilter(nonce: string): (node: XmlNode) => XmlNode | null | undefined {
+  return renderNodeFilter(nonce) as unknown as (node: XmlNode) => XmlNode | null | undefined
+}
+
 export function renderNodeFilter(nonce: string): (node: Node) => Node | string {
   return (node: Node) => {
     switch (node.nodeType) {

@@ -20,9 +20,12 @@
  * class error boundary and NO Suspense, renderToPipeableStream calls
  * onShellError and the whole document is lost. Next's own production server
  * agrees (15.5.28, 2026-11-16): a server or client component throwing on the
- * initial render under a segment WITH an `error.tsx` still answers HTTP 500
- * with the `__next_error__` document; the segment boundary only renders on a
- * client-side (RSC) navigation. Those routes deliberately have
+ * initial render, before the response has started to stream, under a segment
+ * WITH an `error.tsx` still answers HTTP 500 with the `__next_error__`
+ * document; the segment boundary only renders on a client-side (RSC)
+ * navigation. (A segment that streams first, under a `loading.tsx`, has already
+ * sent status 200 by the time it throws; these routes have none, see below.)
+ * Those routes deliberately have
  * no Suspense boundary above their content - that is what removed the hidden
  * segment and the late $RC swap, what moved /trending's LCP from 11.08s to
  * 8.70s - so an `error.tsx` there would be a client chunk on the hot path that

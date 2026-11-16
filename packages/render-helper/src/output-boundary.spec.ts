@@ -3,7 +3,7 @@ import { markdown2Html } from './markdown-2-html'
 import { sanitizeHtml } from './methods/sanitize-html.method'
 import { simpleMarkdownToHTML } from './methods/simple-markdown-to-html.method'
 import { getProxyBase } from './proxify-image-src'
-import { renderNodeFilter } from './methods/render-boundary.method'
+import { xmldomNodeFilter } from './methods/render-boundary.method'
 import { stripAuthorMarkers } from './methods/strip-author-markers.method'
 import { stripDocumentWrapper } from './methods/markdown-to-html.method'
 import { DOMParser, XMLSerializer } from './consts'
@@ -226,7 +226,7 @@ describe('output boundary (#1919 review r10)', () => {
 
     it('in the serializer filter', () => {
       const doc = DOMParser.parseFromString('<body id="root"><div><![CDATA[<b>x</b> & y]]></div></body>', 'text/html')
-      const html = new XMLSerializer().serializeToString(doc as any, renderNodeFilter('N') as any)
+      const html = new XMLSerializer().serializeToString(doc, xmldomNodeFilter('N'))
       expect(html).toContain('&lt;b&gt;x&lt;/b&gt; &amp; y')
     })
   })
@@ -335,17 +335,17 @@ describe('output boundary (#1919 review r10)', () => {
   describe('each upstream attribute-name guard on its own (review r19)', () => {
     const parse = () =>
       DOMParser.parseFromString('<body id="root"><a cléass="markdown-post-link" title="t">x</a></body>', 'text/html')
-    const attrNames = (el: any) => Array.from({ length: el.attributes.length }, (_, i) => el.attributes[i].name)
+    const attrNames = (el: { attributes: ArrayLike<{ name: string }> }) => Array.from(el.attributes, (a) => a.name)
 
     it('stripAuthorMarkers drops an attribute xss would rename', () => {
       const doc = parse()
-      stripAuthorMarkers(doc as any)
+      stripAuthorMarkers(doc as unknown as Document)
       expect(attrNames(doc.getElementsByTagName('a')[0])).toEqual(['title'])
     })
 
     it('the serializer filter drops it before stamping', () => {
       const doc = parse()
-      const html = new XMLSerializer().serializeToString(doc as any, renderNodeFilter('N') as any)
+      const html = new XMLSerializer().serializeToString(doc, xmldomNodeFilter('N'))
       expect(html).toContain('<a title="t" data-rh="N">x</a>')
     })
   })

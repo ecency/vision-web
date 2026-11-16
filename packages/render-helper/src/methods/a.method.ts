@@ -190,12 +190,12 @@ const addLineBreakBeforePostLink = (el: HTMLElement, forApp: boolean, isInline: 
   }
 }
 
-// Relative (not protocol-relative) or on one of the site's own hosts.
+// Lands on one of the site's own hosts, read the way a browser reads the href:
+// resolved against the site, so a relative path is in-site and `/\evil.example`
+// (a browser reads `\` as `/` and drops tab, LF and CR) is not.
 function isInSiteHref(href: string): boolean {
-  const trimmed = href.trim()
-  if (/^\/(?!\/)/.test(trimmed)) return true
   try {
-    return WHITE_LIST.includes(new URL(trimmed).hostname.replace(/^www\./, ''))
+    return WHITE_LIST.includes(new URL(href.trim(), 'https://ecency.com/').hostname.replace(/^www\./, ''))
   } catch {
     return false
   }

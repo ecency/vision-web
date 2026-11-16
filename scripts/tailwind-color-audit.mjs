@@ -8,8 +8,11 @@
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+// fileURLToPath, not `.pathname`: a checkout path with a space keeps `%20` in
+// `.pathname`, and on Windows it gains a leading `/` before the drive letter.
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WEB = join(ROOT, "apps/web");
 const require = createRequire(join(WEB, "package.json"));
 const postcss = require("postcss");

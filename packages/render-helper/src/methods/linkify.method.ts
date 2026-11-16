@@ -49,6 +49,12 @@ function isLinkableMention(mention: string): boolean {
   return user.indexOf('/') === -1 && isValidUsername(user)
 }
 
+// Escapes a value for a double-quoted attribute. Tags (`#[-a-z\d]+`) and valid
+// usernames can never hold a quote or an angle bracket, so this changes no
+// output today; it keeps the attribute safe if either pattern ever widens.
+const attr = (value: string): string =>
+  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 export function linkify(content: string, forApp: boolean, renderOptions?: RenderOptions): string {
   // User mentions - use placeholders for enhanced HTML to prevent image regex
   // from matching URLs inside the avatar <img src="..."> attribute
@@ -60,9 +66,9 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
       // No tag route to land on -> inert span rather than a dead, crawlable /trending link.
       return renderOptions?.inertAuthorAndTagChips
         ? `<span class="er-tag er-tag-link">${tag}</span>`
-        : `<a class="er-tag er-tag-link" href="/trending/${tagLower}">${tag}</a>`
+        : `<a class="er-tag er-tag-link" href="/trending/${attr(tagLower)}">${tag}</a>`
     }
-    return `<a class="markdown-tag-link" data-tag="${tagLower}">${tag}</a>`
+    return `<a class="markdown-tag-link" data-tag="${attr(tagLower)}">${tag}</a>`
   }
 
   // `before` is the text ahead of the mention; it travels inside the
@@ -76,13 +82,13 @@ export function linkify(content: string, forApp: boolean, renderOptions?: Render
     let html: string
     if (!forApp) {
       const avatarSrc = `${getProxyBase()}/u/${userLower}/avatar/small`
-      const inner = `<img class="er-author-link-image" src="${avatarSrc}" alt="${userLower}"/>@${userLower}`
+      const inner = `<img class="er-author-link-image" src="${attr(avatarSrc)}" alt="${attr(userLower)}"/>@${userLower}`
       // No profile route to land on -> inert span rather than a dead, crawlable /@user link.
       html = renderOptions?.inertAuthorAndTagChips
         ? `${before}<span class="er-author er-author-link">${inner}</span>`
-        : `${before}<a class="er-author er-author-link" href="/@${userLower}">${inner}</a>`
+        : `${before}<a class="er-author er-author-link" href="/@${attr(userLower)}">${inner}</a>`
     } else {
-      html = `${before}<a class="markdown-author-link" data-author="${userLower}">@${user}</a>`
+      html = `${before}<a class="markdown-author-link" data-author="${attr(userLower)}">@${user}</a>`
       if (!placeholder) return html
     }
     const token = `\u200C${authorPlaceholders.length}\u200C`
