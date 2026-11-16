@@ -42,13 +42,17 @@ let ampEscapes = false
 // The source with each escaped `&` (an odd run of backslashes before it) as
 // AMP_PAIR, or null when it has none.
 function pairedSource(src: string): string | null {
-  const paired = src.replace(ESCAPED_AMP_RUN, (run) => (run.length % 2 === 0 ? run.slice(0, -2) + AMP_PAIR : run))
+  const paired = src.replace(BACKSLASH_RUN, (run) =>
+    run.endsWith('&') && run.length % 2 === 0 ? run.slice(0, -2) + AMP_PAIR : run
+  )
   return paired.includes(AMP_PAIR) ? paired : null
 }
 
-// An escaped `&`: an odd run of backslashes before it. Each run is matched
-// from its first backslash only, so a long run is read once: linear.
-const ESCAPED_AMP_RUN = /(?<!\\)\\+&/g
+// Every whole run of backslashes, with the `&` after it if there is one; an
+// escaped `&` is an odd run (even length with the `&`). The match is greedy and
+// the next search starts after it, so each run is read once: linear. No
+// lookbehind: Safari before 16.4 cannot parse one (no-regex-lookbehind.spec).
+const BACKSLASH_RUN = /\\+&?/g
 
 type RuleList = { __rules__: Array<{ name: string; fn: any }>; at: (name: string, fn: any) => void }
 function wrapRule(ruler: RuleList, name: string, wrap: (fn: any) => any): void {
@@ -87,14 +91,22 @@ type BlockState = { tokens: Array<{ type: string; content?: string }> }
 function withPairedReferences(rule: (state: BlockState) => unknown): (state: BlockState) => unknown {
   return (state) => {
     if (!ampEscapes) return rule(state)
+    // Original content of each paired token. A token the rule left as it was
+    // gets its original string back: the restored copy would be a two-byte
+    // string, which makes linkify take its slower path on Latin-1 bodies.
+    const originals = new Map<{ content?: string }, { original: string; paired: string }>()
     for (const token of state.tokens) {
-      if (token.type === 'inline' && token.content) token.content = pairedSource(token.content) ?? token.content
+      if (token.type !== 'inline' || !token.content) continue
+      const paired = pairedSource(token.content)
+      if (paired === null) continue
+      originals.set(token, { original: token.content, paired })
+      token.content = paired
     }
     try {
       return rule(state)
     } finally {
-      for (const token of state.tokens) {
-        if (token.type === 'inline' && token.content) token.content = token.content.replace(AMP_PAIR_G, '\\&')
+      for (const [token, { original, paired }] of originals) {
+        token.content = token.content === paired ? original : token.content?.replace(AMP_PAIR_G, '\\&')
       }
     }
   }
