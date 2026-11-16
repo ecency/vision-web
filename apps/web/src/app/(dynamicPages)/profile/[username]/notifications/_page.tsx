@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import i18next from "i18next";
+import { Button } from "@ui/button";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdown";
+import { menuDownSvg } from "@ui/svg";
 import { AccountActivities } from "@/features/shared/account-activities";
 
 interface Props {
@@ -46,8 +48,15 @@ export function ProfileNotifications({ username }: Props) {
     <div className="bg-white/80 dark:bg-dark-200/90 glass-box rounded-none sm:rounded-xl w-full p-2 sm:p-4">
       <div className="flex justify-end">
         <Dropdown>
-          <DropdownToggle withChevron={true} className="gap-1 [&_svg]:size-5">
-            {i18next.t(`notifications.type-${filter ?? "all"}`)}
+          <DropdownToggle>
+            <Button
+              size="sm"
+              appearance="gray-link"
+              icon={menuDownSvg}
+              className="[&_svg]:size-5"
+            >
+              {i18next.t(`notifications.type-${filter ?? "all"}`)}
+            </Button>
           </DropdownToggle>
           <DropdownMenu align="right">
             <DropdownItem onClick={() => setFilter(null)} selected={filter === null}>

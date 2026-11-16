@@ -200,6 +200,23 @@ describe("profile notifications section (#395)", () => {
     expect(await screen.findByText("g.empty-list")).toBeInTheDocument();
   });
 
+  it("filter opens from a focusable button and picks a type from the keyboard", async () => {
+    renderWithQueryClient(<ProfileNotifications username="bob" />);
+    await screen.findByText("@carol");
+
+    // A native button is focusable and turns Enter/Space into a click.
+    const toggle = screen.getByRole("button", { name: /notifications\.type-all/ });
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    fireEvent.click(toggle);
+
+    const item = await screen.findByRole("menuitem", { name: "notifications.type-replies" });
+    fireEvent.keyDown(item, { key: "Enter" });
+
+    expect(await screen.findByText("@dave")).toBeInTheDocument();
+    expect(screen.queryByText("@carol")).toBeNull();
+  });
+
   it("shows a retry instead of an empty list when the request fails", async () => {
     api.bridge.mockRejectedValue(new Error("rpc down"));
     renderWithQueryClient(<ProfileNotifications username="bob" />);

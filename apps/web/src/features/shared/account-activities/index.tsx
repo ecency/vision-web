@@ -1,7 +1,6 @@
 "use client";
 
 import React, { Fragment, useEffect, useMemo } from "react";
-import "./_index.scss";
 import { Button } from "@ui/button";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { AccountNotification, getAccountNotificationsInfiniteQueryOptions } from "@ecency/sdk";
