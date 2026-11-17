@@ -8,7 +8,6 @@ import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { invalidateWalletQueries } from "@/features/wallet/utils/invalidate-wallet-queries";
-import { encryptMemo } from "@/utils/memo-crypto";
 import { getLoginType } from "@/utils/user-token";
 import {
   useTransferMutation,
@@ -96,6 +95,8 @@ export function useSignTransfer(mode: TransferMode, asset: TransferAsset) {
       let processedMemo = memo;
       if (memoSupported && memo.startsWith("#") && to && activeUser) {
         const loginType = getLoginType(activeUser.username);
+        // Loaded on demand: it carries the AES code (#1434).
+        const { encryptMemo } = await import("@/utils/memo-crypto");
         processedMemo = await encryptMemo(
           loginType,
           activeUser.username,

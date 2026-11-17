@@ -5,7 +5,6 @@ import { Button } from "@ui/button";
 import i18next from "i18next";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { getLoginType } from "@/utils/user-token";
-import { decryptMemo } from "@/utils/memo-crypto";
 import { error } from "@/features/shared";
 
 interface Props {
@@ -47,6 +46,9 @@ export function MemoDisplay({ memo }: Props) {
     setIsDecrypting(true);
     try {
       const loginType = getLoginType(activeUser.username);
+      // Loaded on demand: it carries the AES code, which pages showing a memo
+      // should not pay for until one is decrypted (#1434).
+      const { decryptMemo } = await import("@/utils/memo-crypto");
       const result = await decryptMemo(loginType, activeUser.username, memo);
       setDecryptedText(result);
     } catch (e) {

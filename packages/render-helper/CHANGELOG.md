@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.49
+
+### Patch Changes
+
+- Tree-shakeable render-helper browser build, memo crypto loaded on demand (#2114)
+
 ## 2.5.48
 
 ### Patch Changes
