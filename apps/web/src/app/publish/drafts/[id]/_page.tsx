@@ -102,7 +102,7 @@ export default function PublishPage() {
     setStep("loading");
     clearAll();
     router.replace("/publish");
-  });
+  }, isDraftLoaded);
 
   // autosave is keyed on step, so "loading" keeps it off until the draft lands.
   const { lastSaved, isActiveTab, flush } = useAutoSavePublishDraft(step, draftId);

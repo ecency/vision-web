@@ -13,15 +13,22 @@ const { useLeaveDraftOnAccountSwitch } = await import(
   "@/app/publish/_hooks/use-leave-draft-on-account-switch"
 );
 
-function setup(initial: string | undefined) {
+function setup(initial: string | undefined, loaded = true) {
   activeUsername.current = initial;
   const onLeave = vi.fn();
-  const view = renderHook(() => useLeaveDraftOnAccountSwitch(onLeave));
+  const view = renderHook(({ active }: { active: boolean }) => useLeaveDraftOnAccountSwitch(onLeave, active), {
+    initialProps: { active: loaded }
+  });
+  let active = loaded;
   const switchTo = (next: string | undefined) => {
     activeUsername.current = next;
-    act(() => view.rerender());
+    act(() => view.rerender({ active }));
   };
-  return { onLeave, switchTo };
+  const load = () => {
+    active = true;
+    act(() => view.rerender({ active }));
+  };
+  return { onLeave, switchTo, load };
 }
 
 describe("useLeaveDraftOnAccountSwitch", () => {
@@ -60,6 +67,20 @@ describe("useLeaveDraftOnAccountSwitch", () => {
     const { onLeave, switchTo } = setup("alice");
     switchTo(undefined);
     switchTo("bob");
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  // Fable (#2105 review): a draft that did not load for the first account (it
+  // belongs to another one) is reloaded by the page for the next account. Only
+  // a loaded draft has an owner to leave.
+  it("does not leave while the draft has not loaded, and owns it to the account it loads for", () => {
+    const { onLeave, switchTo, load } = setup("alice", false);
+    switchTo("bob");
+    expect(onLeave).not.toHaveBeenCalled();
+    load();
+    switchTo("bob");
+    expect(onLeave).not.toHaveBeenCalled();
+    switchTo("alice");
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
 

@@ -9,6 +9,7 @@ import { mockEntry } from "@/specs/test-utils";
 // in the browser; the columns that loaded render at once from the server data.
 const answers = vi.hoisted(() => new Map<string, unknown>());
 const calls = vi.hoisted(() => [] as string[]);
+const similarInputs = vi.hoisted(() => [] as unknown[]);
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("@ecency/sdk");
@@ -23,7 +24,10 @@ vi.mock("@ecency/sdk", async () => {
     ...actual,
     getPostsRankedQueryOptions: (sort: string, tag: string) => answer("ranked", sort, tag),
     getAccountPostsQueryOptions: (username: string) => answer("account", username),
-    getSimilarEntriesQueryOptions: () => answer("similar")
+    getSimilarEntriesQueryOptions: (input: unknown) => {
+      similarInputs.push(input);
+      return answer("similar");
+    }
   };
 });
 vi.mock("next/link", () => ({
@@ -34,6 +38,14 @@ vi.mock("next/image", () => ({
 }));
 
 import { EntryRelatedFooterRefill } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-related-footer-refill";
+
+const item = (author: string, permlink: string) => ({
+  author,
+  permlink,
+  title: `T ${permlink}`,
+  category: "photography",
+  created: "2026-11-16T00:00:00"
+});
 
 const row = (author: string, permlink: string) =>
   mockEntry({ author, permlink, title: `T ${permlink}`, category: "photography", json_metadata: { tags: ["photography"] } });
@@ -46,8 +58,9 @@ function renderRefill(props: Partial<React.ComponentProps<typeof EntryRelatedFoo
         author="alice"
         permlink="the-post"
         source={{ tag: "photography", section: "#photography" }}
+        titles={{ similar: "Read next", author: "From @alice", community: "In #photography" }}
         failed={{ similar: false, author: false, community: false }}
-        initial={{ similar: [], authorPosts: [], communityPosts: [] }}
+        initial={{ similar: [], author: [], community: [] }}
         {...props}
       />
     </QueryClientProvider>
@@ -58,13 +71,18 @@ describe("EntryRelatedFooterRefill", () => {
   beforeEach(() => {
     answers.clear();
     calls.length = 0;
+    similarInputs.length = 0;
   });
 
   it("shows the server's columns at once and fetches only the failed one", async () => {
     answers.set("account", [row("alice", "a1"), row("alice", "a2")]);
     renderRefill({
       failed: { similar: false, author: true, community: false },
-      initial: { similar: [], authorPosts: [], communityPosts: [row("bob", "c1"), row("carol", "c2")] }
+      initial: {
+        similar: [],
+        author: [],
+        community: [item("bob", "c1"), item("carol", "c2")]
+      }
     });
 
     expect(screen.getByText("T c1")).toBeInTheDocument();
@@ -85,5 +103,12 @@ describe("EntryRelatedFooterRefill", () => {
 
     expect(await screen.findByText("Similar one")).toBeInTheDocument();
     expect(calls).toEqual(["similar"]);
+    expect(similarInputs.at(-1)).toMatchObject({
+      author: "alice",
+      permlink: "the-post",
+      title: "The post",
+      body: "words",
+      json_metadata: { tags: ["photography"] }
+    });
   });
 });

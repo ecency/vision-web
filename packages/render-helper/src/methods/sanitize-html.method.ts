@@ -220,7 +220,9 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         );
         // A bare `href`, as xss writes a refused one: the link keeps its look, goes nowhere.
         if (scheme && !isHrefScheme(scheme[1])) return isWhiteAttr ? 'href' : '';
-        hrefSchemeAllowed = !!scheme;
+        // http(s) still goes through xss below: it wants `//`, and a slash-less
+        // `http:host` would otherwise ship live with none of the link rel policy.
+        hrefSchemeAllowed = !!scheme && !/^https?$/i.test(scheme[1]);
       }
       // Positive-whitelist: only http(s) is accepted. Any other scheme
       // (javascript:, data:, vbscript:, file:, etc.) is rejected by the
@@ -349,8 +351,8 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // with control characters turned into spaces (`.\n.` validated as `..`
       // and loaded as `.%20.`). Always emit exactly the string that was
       // validated.
-      // An href with an allowed scheme is kept as checked above. One without a
-      // scheme passes xss's own link rule too (it refuses `java script:`,
+      // An href with an allowed non-http scheme is kept as checked above. Any
+      // other passes xss's own link rule too (it refuses `java script:`,
       // `%6a...:` and other non-links). xss's rule is case-sensitive and knows
       // neither web+ nor the hive schemes, so it is not the judge of a scheme
       // already checked (#2107: `TEL:` and `web+foo:` came out as a bare href).

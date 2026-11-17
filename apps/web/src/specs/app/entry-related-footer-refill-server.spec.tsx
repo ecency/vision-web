@@ -76,8 +76,15 @@ describe("related footer when a feed fails", () => {
 
     expect(el.type).toBe(EntryRelatedFooterRefill);
     expect(el.props.failed).toEqual({ similar: true, author: false, community: false });
-    expect(el.props.initial.authorPosts.map((e: { permlink: string }) => e.permlink)).toEqual(["a1", "a2"]);
-    expect(el.props.initial.communityPosts.map((e: { permlink: string }) => e.permlink)).toEqual(["c1", "c2"]);
+    expect(el.props.initial.author.map((e: { permlink: string }) => e.permlink)).toEqual(["a1", "a2"]);
+    expect(el.props.initial.community.map((e: { permlink: string }) => e.permlink)).toEqual(["c1", "c2"]);
+    // Only what a row shows crosses to the browser, never whole entries.
+    expect(Object.keys(el.props.initial.author[0]).sort()).toEqual(
+      ["author", "category", "created", "image", "permlink", "title"].filter((k) => k in el.props.initial.author[0]).sort()
+    );
+    expect(el.props.initial.author[0]).not.toHaveProperty("body");
+    expect(el.props.initial.author[0]).not.toHaveProperty("json_metadata");
+    expect(el.props.titles.community).toBeDefined();
     // What the browser needs to ask again, and no more of the body than that.
     expect(el.props.similarInput.title).toBe("The post");
     expect(el.props.similarInput.body.length).toBeLessThanOrEqual(6000);

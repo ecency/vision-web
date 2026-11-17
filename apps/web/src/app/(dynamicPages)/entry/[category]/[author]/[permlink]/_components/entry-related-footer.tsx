@@ -9,7 +9,14 @@ import {
 import { initI18next } from "@/features/i18n";
 import { SimilarRow } from "./entry-related-item";
 import { resolveRelatedSource } from "./entry-related-source";
-import { RELATED_FETCH_LIMIT, buildRelatedColumns } from "./entry-related-columns";
+import {
+  RELATED_FETCH_LIMIT,
+  authorItems,
+  communityItems,
+  relatedTitles,
+  selectFooterColumns,
+  similarItems
+} from "./entry-related-columns";
 import { EntryRelatedFooterView } from "./entry-related-footer-view";
 import { EntryRelatedFooterRefill } from "./entry-related-footer-refill";
 
@@ -78,11 +85,13 @@ export async function EntryRelatedFooter({ entry }: Props) {
   ]);
 
   // SDK/web Entry split is deliberately deferred — cross the boundary once here.
-  // fetchQuery answers undefined only when the feed failed or timed out.
-  const feeds = {
-    similar: (similarRaw as SimilarRow[] | undefined) ?? [],
-    authorPosts: (authorRaw as unknown as Entry[] | undefined) ?? [],
-    communityPosts: (communityRaw as unknown as Entry[] | undefined) ?? []
+  // fetchQuery answers undefined only when the feed failed or timed out. Rows
+  // are reduced to the six fields a link needs before anything reaches the
+  // browser refill.
+  const items = {
+    similar: similarItems((similarRaw as SimilarRow[] | undefined) ?? []),
+    author: authorItems(entry, (authorRaw as unknown as Entry[] | undefined) ?? []),
+    community: communityItems(entry, (communityRaw as unknown as Entry[] | undefined) ?? [])
   };
   const failed = {
     similar: similarRaw === undefined,
@@ -91,6 +100,7 @@ export async function EntryRelatedFooter({ entry }: Props) {
   };
 
   await i18nReady;
+  const titles = relatedTitles(entry, source);
 
   if (failed.similar || failed.author || failed.community) {
     const tags = entry.json_metadata?.tags;
@@ -99,8 +109,9 @@ export async function EntryRelatedFooter({ entry }: Props) {
         author={entry.author}
         permlink={entry.permlink}
         source={source}
+        titles={titles}
         failed={failed}
-        initial={feeds}
+        initial={items}
         similarInput={
           failed.similar
             ? {
@@ -114,5 +125,5 @@ export async function EntryRelatedFooter({ entry }: Props) {
     );
   }
 
-  return <EntryRelatedFooterView columns={buildRelatedColumns(entry, source, feeds)} />;
+  return <EntryRelatedFooterView columns={selectFooterColumns(entry, titles, items)} />;
 }

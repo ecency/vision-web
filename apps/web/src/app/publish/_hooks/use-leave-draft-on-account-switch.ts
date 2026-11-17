@@ -9,10 +9,12 @@ import { useActiveUsername } from "@/core/hooks/use-active-username";
  * can drop the composer and send the new account to a fresh one instead of
  * saving its edits into the previous account's draft (#2105).
  *
- * The owner is the first signed-in account seen. Signing out and back in as the
- * same account is not a switch.
+ * `active` is whether the draft has loaded. Until it has there is nothing to
+ * leave: a draft that belongs to another account shows "no draft", and the page
+ * loads it once that account signs in. The owner is the signed-in account when
+ * the draft loads. Signing out and back in as the same account is not a switch.
  */
-export function useLeaveDraftOnAccountSwitch(onLeave: () => void) {
+export function useLeaveDraftOnAccountSwitch(onLeave: () => void, active: boolean) {
   const username = useActiveUsername();
   const ownerRef = useRef<string | undefined>(undefined);
   const leftRef = useRef(false);
@@ -20,6 +22,10 @@ export function useLeaveDraftOnAccountSwitch(onLeave: () => void) {
   onLeaveRef.current = onLeave;
 
   useEffect(() => {
+    if (!active) {
+      ownerRef.current = undefined;
+      return;
+    }
     if (!username || leftRef.current) return;
     if (ownerRef.current === undefined) {
       ownerRef.current = username;
@@ -29,5 +35,5 @@ export function useLeaveDraftOnAccountSwitch(onLeave: () => void) {
       leftRef.current = true;
       onLeaveRef.current();
     }
-  }, [username]);
+  }, [username, active]);
 }
