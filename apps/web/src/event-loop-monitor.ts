@@ -336,8 +336,9 @@ export function initEventLoopMonitor(): void {
 
   setInterval(() => {
     // Near the heap cap, name the renders in flight before a possible abort
-    // takes the log with it (#2043). At most one line a minute, and only on a
-    // new high-water mark until the heap drops back under the threshold.
+    // takes the log with it (#2043). At most one line a minute: on a new
+    // high-water mark, or every ten minutes while the heap stays high. The mark
+    // clears once the heap drops under 85% (nextHeapMark).
     const heap = v8.getHeapStatistics();
     const heapRatio = heap.heap_size_limit > 0 ? heap.used_heap_size / heap.heap_size_limit : 0;
     lastHeapPressureRatio = nextHeapMark(heapRatio, lastHeapPressureRatio);

@@ -10,9 +10,10 @@
  *
  * Some replicas sit near their cap even at quiet hours, and `used_heap_size`
  * includes garbage not yet collected. So after a line, the heap has to climb
- * HEAP_PRESSURE_STEP more before the next one: a high-water mark, reset by the
- * caller once the heap drops back under the threshold. A replica parked high
- * stays quiet, and the lines that do appear lead up to an abort.
+ * HEAP_PRESSURE_STEP more before the next one: a high-water mark, which the
+ * caller clears once the heap drops under HEAP_PRESSURE_RESET (nextHeapMark).
+ * While it stays high, a line is written again every HEAP_PRESSURE_REARM_MS
+ * anyway, so a re-climb that ends in an abort is still on record.
  */
 
 export const HEAP_PRESSURE_RATIO = 0.9;
@@ -24,6 +25,7 @@ export const HEAP_PRESSURE_RATIO = 0.9;
 export const HEAP_PRESSURE_RESET = 0.85;
 export const HEAP_PRESSURE_STEP = 0.02;
 export const HEAP_PRESSURE_INTERVAL_MS = 60_000;
+export const HEAP_PRESSURE_REARM_MS = 10 * 60_000;
 const MAX_ACTIVE = 20;
 
 const MB = 1024 * 1024;
@@ -50,7 +52,9 @@ export function heapPressureLine(input: {
   const ratio = usedBytes / limitBytes;
   if (ratio < HEAP_PRESSURE_RATIO) return null;
   // The epsilon keeps 0.93 + 0.02 from landing a hair above 0.95 in floating point.
-  if (lastRatio > 0 && ratio + 1e-9 < lastRatio + HEAP_PRESSURE_STEP) return null;
+  if (lastRatio > 0 && ratio + 1e-9 < lastRatio + HEAP_PRESSURE_STEP && now - lastAt < HEAP_PRESSURE_REARM_MS) {
+    return null;
+  }
   if (lastAt > 0 && now - lastAt < HEAP_PRESSURE_INTERVAL_MS) return null;
 
   const all = Array.from(input.active).map((r) => ({

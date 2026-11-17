@@ -115,4 +115,11 @@ describe("purge-cache.sh --post", () => {
     const dry = run("--dry-run", "https://ecency.com/@alice/bad-post#comments");
     expect(urls(dry.stdout)).toEqual(["https://ecency.com/@alice/bad-post"]);
   });
+
+  it("skips an argument that is only a fragment instead of purging an empty URL", () => {
+    const r = run("--dry-run", "#comments", "https://ecency.com/@alice");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Dry run: 1 URL(s)");
+    expect(r.stdout).not.toMatch(/^$\n/m);
+  });
 });

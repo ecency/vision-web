@@ -116,7 +116,14 @@ while [[ $# -gt 0 ]]; do
       echo "Error: unknown option $1" >&2
       exit 1 ;;
     # A fragment never reaches a server or a cache key.
-    *) urls+=("${1%%#*}"); shift ;;
+    *)
+      url="${1%%#*}"
+      if [[ -z $url ]]; then
+        echo "Skipping $1: nothing left once the fragment is removed" >&2
+      else
+        urls+=("$url")
+      fi
+      shift ;;
   esac
 done
 

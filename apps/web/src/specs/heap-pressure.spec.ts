@@ -67,4 +67,10 @@ describe("heapPressureLine", () => {
     expect(nextHeapMark(0.87, 0.93)).toBe(0.93);
     expect(nextHeapMark(0.84, 0.93)).toBe(0);
   });
+
+  it("speaks again after ten minutes while still high, so the climb before an abort is on record", () => {
+    const high = { ...base, usedBytes: 0.96 * 3072 * MB, active: active(1, base.now), lastRatio: 0.97 };
+    expect(heapPressureLine({ ...high, lastAt: base.now - 5 * 60_000 })).toBeNull();
+    expect(heapPressureLine({ ...high, lastAt: base.now - 10 * 60_000 })).not.toBeNull();
+  });
 });
