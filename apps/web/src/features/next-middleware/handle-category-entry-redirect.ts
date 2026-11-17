@@ -9,8 +9,9 @@ import { NextRequest, NextResponse } from "next/server";
  * makes a long edge TTL safe even though the entry page it points at is
  * cached far more conservatively.
  *
- * s-maxage matches the `entry-ancient` tier (30d) so the redirect and the
- * page it lands on age out on a comparable schedule. max-age is kept short
+ * s-maxage is 30d. The post tiers it once matched are now 2d (#1505), but
+ * that cut is about cached HTML pinning an old JS build, and a redirect holds
+ * no build, so the long edge TTL stays. max-age is kept short
  * (1h) because a browser-cached permanent redirect is effectively impossible
  * to revoke, and we want an escape hatch if the canonical form ever changes.
  */

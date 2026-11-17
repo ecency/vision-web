@@ -96,7 +96,7 @@ worker suffixes its cache key with the auth-class (anon | loggedin), giving
 every unrelated cookie (analytics, locale, experiments) and destroy hit ratio.
 
 **Post pages use age-based TTLs.** Fresh posts (< 1 day) cache for 1 minute;
-posts older than 60 days cache for 30 days. On a cache miss the middleware
+posts older than 30 days cache for 2 days. On a cache miss the middleware
 applies a conservative 60s `entry-unknown` tier, then refines once the post's
 `created` date is known. The lookup is L1 in-memory first, then Redis with a
 short timeout; a never-seen post triggers a background refresh via
@@ -175,8 +175,8 @@ lives in the infra repo. Behaviour is documented here in `docs/cache/`. The rule
 | `entry-fresh` | 1m | 5m | posts < 1 day old |
 | `entry-week` | 1h | 1d | posts 1-7 days old |
 | `entry-month` | 1d | 7d | posts 7-30 days old |
-| `entry-archive` | 30d | 7d | posts 30-60 days old |
-| `entry-ancient` | 30d | 60d | posts > 60 days old |
+| `entry-archive` | 2d | 7d | posts 30-60 days old |
+| `entry-ancient` | 2d | 60d | posts > 60 days old |
 | `no-cache` | 0 | 0 | `/publish`, `/auth`, `/signup`, `/submit`, `/draft`, `/onboard-friend`, `/purchase`, `/market`, `/wallet`, plus profile sections `wallet`/`settings`/`permissions`/`referrals`/`insights` |
 
 

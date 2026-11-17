@@ -17,7 +17,7 @@ This directory documents the edge caching system for ecency.com.
          ↓
 ┌─────────────────┐
 │     Nginx       │ ← URL-keyed proxy cache, respects origin Cache-Control
-│  (proxy cache)  │   (32G LRU, 2h inactive, per-host)
+│  (proxy cache)  │   (32G LRU, per-host)
 └────────┬────────┘
          ↓
 ┌─────────────────┐
@@ -64,8 +64,8 @@ content).
 | `entry-fresh` | 1m | 5m | posts < 1 day old | yes |
 | `entry-week` | 1h | 1d | posts 1-7 days old | yes |
 | `entry-month` | 1d | 7d | posts 7-30 days old | yes |
-| `entry-archive` | 30d | 7d | posts 30-60 days old | yes |
-| `entry-ancient` | 30d | 60d | posts > 60 days old | yes |
+| `entry-archive` | 2d | 7d | posts 30-60 days old | yes |
+| `entry-ancient` | 2d | 60d | posts > 60 days old | yes |
 | `no-cache` | 0 | 0 | `/publish`, `/auth/*`, `/signup`, `/submit`, `/draft`, `/onboard-friend`, `/purchase`, `/market`, `/wallet`, `/@author/{wallet,settings,permissions,referrals,insights}` | no |
 
 **Empirical basis (2026-05-08):** SSR was tested across 26 page types with
@@ -114,7 +114,7 @@ was sent.
 
 ## Layer-specific configuration
 
-- [Nginx](./nginx.md) — proxy cache (32G LRU, 2h inactive)
+- [Nginx](./nginx.md) — proxy cache (32G LRU)
 - [Cloudflare Worker](./cloudflare-worker.md) — auth-class cache key,
   Smart-Tiered-Cache subfetches, per-post-age TTL via origin
 
@@ -122,13 +122,44 @@ was sent.
 
 See [purge script](../../scripts/purge-cache.sh).
 
-**Workflow:**
-1. Update `apps/web/public/dmca/dmca-*.json`, commit, deploy
-2. Run `./scripts/purge-cache.sh <affected-urls>` to drop pre-DMCA HTML
-   from the CF edge cache
+**What the lists do** (`apps/web/src/core/dmca-lists.ts`, #1870):
+- `dmca-posts.json` removes a post: its page, `.md`, `.json`, oEmbed and import
+  are censored.
+- `dmca-accounts.json` only empties the account's own profile lists. Its posts
+  still open from a direct link and still appear in ranked, tag and community
+  feeds and in search. To remove a post by a listed account, list that post in
+  `dmca-posts.json` too.
 
-Without step 2, CF serves the pre-DMCA HTML until `s-maxage` expires
-(up to 1h for post pages, 7d for static pages).
+**Workflow** for each removed post:
+1. Update `apps/web/public/dmca/dmca-*.json`, commit, deploy. The lists are
+   built into the app, so nothing changes before the deploy.
+2. On each origin host, delete the files listed by
+   `./scripts/purge-cache.sh --origin-files --post <[category/]@author/permlink>`.
+   The origin SSR cache honours `s-maxage` and has no purge of its own, so
+   without this the edge refills from the pre-takedown copy. The list covers
+   the browser and crawler copies of each URL.
+3. Run `./scripts/purge-cache.sh --post <[category/]@author/permlink>` to purge
+   the Cloudflare cache by URL. `--post` expands to the page, `.md`, `.json`,
+   `.discussion.json` and the oEmbed URL, plus the category URL and its oEmbed
+   when the category is given. Add `--dry-run` to see the list first.
+4. Check the page with a fresh request and look at `x-edge-cache`. The worker
+   stores pages under a synthetic key (see
+   [cloudflare-worker.md](./cloudflare-worker.md)), which a purge by public URL
+   may not reach. Such a copy expires with its `s-maxage`, capped at 7 days by
+   the worker.
+
+Without steps 2 and 3, a post page older than 30 days can be served for its
+2-day `s-maxage` at the origin, and then for up to its `s-maxage` again at the
+edge from a copy taken just before the origin's expired, so about 4 days, plus
+a stale answer while it re-renders (#1505). Newer posts expire sooner. That is
+the case when re-renders succeed. The origin serves an expired copy while a
+refresh fails (`proxy_cache_use_stale`), so if renders of the page keep failing
+it can be served for longer: do steps 2 and 3, and do not count on expiry. The
+machine-readable forms and oEmbed expire within about a day, and the sitemap
+within about a day plus its regeneration. `--post` does not cover the sitemap,
+RSS, other pages that list the post (profiles, feeds), or a copy cached under
+a query string, such as an RSC navigation payload (`?_rsc=`) or a tracking
+parameter; those expire with their own `s-maxage`.
 
 ## Per-post-age TTL refinement
 

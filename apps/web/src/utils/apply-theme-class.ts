@@ -21,7 +21,7 @@ export function applyThemeClass(theme: Theme | string | undefined): void {
 
   // Only `night` is dark. `system` is resolved to a concrete day/night by the
   // caller before it gets here; if an unresolved value ever arrives, treating it
-  // as light matches what the server rendered from the theme cookie, so the two
+  // as light matches what the pre-paint script set from the theme cookie, so the two
   // stay consistent rather than flashing apart.
   const isNight = theme === Theme.night;
 

@@ -12,16 +12,17 @@ does NOT need to gate on `active_user` cookie itself** — origin's
 proxy_cache_path /var/cache/nginx/ssr levels=1:2
                  keys_zone=ssrcache:200m
                  max_size=32g
-                 inactive=2h;
+                 inactive=<host value>;
 ```
 
 - `keys_zone=200m` — supports ~1.6M keys (~125 bytes each)
 - `max_size=32g` — total disk; LRU evicts beyond this
-- `inactive=2h` — entries not accessed in 2 hours are evicted regardless of
-  s-maxage. Picked as a compromise between honoring the policy intent (some
-  tiers want 30d) and bounding edit-staleness for long-tail content. A
-  separate `last_update`-based invalidation system would be required to
-  honor full s-maxage safely.
+- `inactive` — entries not read within this window are evicted regardless of
+  s-maxage. The live value is in the host's `nginx.conf`, which is not tracked,
+  and it was raised from the 2h this page used to show. It does not bound how
+  long a page that keeps being read stays cached. Its s-maxage is how long it is
+  fresh; after that, `proxy_cache_use_stale` can still serve it while a refresh
+  runs or when the app errors, so an expired page can outlive its s-maxage.
 
 ## Per-host config
 

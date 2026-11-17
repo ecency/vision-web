@@ -323,8 +323,13 @@ const DAY_MS = 86400_000;
  *   < 1d     : 60s / 300s     (active editing, voting)
  *   1-7d     : 1h  / 1d        (in payout window)
  *   7-30d    : 1d  / 7d        (paid out, comments still active)
- *   30-60d   : 30d / 7d        (stable archive)
- *   > 60d    : 30d / 60d       (ancient — softer cap than 1y for bounded staleness)
+ *   30-60d   : 2d  / 7d        (stable archive)
+ *   > 60d    : 2d  / 60d       (ancient)
+ *
+ * The two oldest tiers were 30d until #1505. Cached HTML names the JS build it
+ * was rendered with, so a front-end fix stayed invisible on an old post for up
+ * to a month after deploy. At 2d a fix reaches it within days, and the long
+ * stale-while-revalidate still answers from cache while the page re-renders.
  */
 export function getEntryTierForAge(ageMs: number): CachePolicy {
   if (ageMs < 0) {
@@ -342,9 +347,9 @@ export function getEntryTierForAge(ageMs: number): CachePolicy {
     return { tier: "entry-month", sMaxAge: 86400, staleWhileRevalidate: 604800 };
   }
   if (ageDays < 60) {
-    return { tier: "entry-archive", sMaxAge: 2592000, staleWhileRevalidate: 604800 };
+    return { tier: "entry-archive", sMaxAge: 172800, staleWhileRevalidate: 604800 };
   }
-  return { tier: "entry-ancient", sMaxAge: 2592000, staleWhileRevalidate: 5184000 };
+  return { tier: "entry-ancient", sMaxAge: 172800, staleWhileRevalidate: 5184000 };
 }
 
 /**

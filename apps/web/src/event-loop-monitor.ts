@@ -47,7 +47,9 @@ import diagnosticsChannel from "node:diagnostics_channel";
 import fs from "node:fs";
 import os from "node:os";
 import { monitorEventLoopDelay } from "node:perf_hooks";
+import v8 from "node:v8";
 import { Worker } from "node:worker_threads";
+import { heapPressureLine, nextHeapMark } from "./heap-pressure";
 
 type ActiveRequest = {
   id: number;
@@ -329,7 +331,32 @@ export function initEventLoopMonitor(): void {
   const histogram = monitorEventLoopDelay({ resolution: 20 });
   histogram.enable();
 
+  let lastHeapPressureAt = 0;
+  let lastHeapPressureRatio = 0;
+
   setInterval(() => {
+    // Near the heap cap, name the renders in flight before a possible abort
+    // takes the log with it (#2043). At most one line a minute: on a new
+    // high-water mark, or every ten minutes while the heap stays high. The mark
+    // clears once the heap drops under 85% (nextHeapMark).
+    const heap = v8.getHeapStatistics();
+    const heapRatio = heap.heap_size_limit > 0 ? heap.used_heap_size / heap.heap_size_limit : 0;
+    lastHeapPressureRatio = nextHeapMark(heapRatio, lastHeapPressureRatio);
+    const heapLine = heapPressureLine({
+      usedBytes: heap.used_heap_size,
+      limitBytes: heap.heap_size_limit,
+      active: activeRequests.values(),
+      containerTag,
+      now: Date.now(),
+      lastAt: lastHeapPressureAt,
+      lastRatio: lastHeapPressureRatio
+    });
+    if (heapLine) {
+      lastHeapPressureAt = Date.now();
+      lastHeapPressureRatio = heapRatio;
+      writeStderrSync(heapLine);
+    }
+
     const maxMs = histogram.max / 1e6;
     if (maxMs >= lagThresholdMs) {
       const now = Date.now();

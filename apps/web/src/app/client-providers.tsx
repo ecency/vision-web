@@ -3,6 +3,7 @@
 import "@/polyfills";
 import "@/core/sdk-init";
 import { ClientInit } from "@/app/client-init";
+import { Theme } from "@/features/shared/theme";
 import { EntryStatsPrefetch } from "@/app/entry-stats-prefetch";
 import { EcencyConfigManager } from "@/config";
 import { getQueryClient } from "@/core/react-query";
@@ -71,6 +72,11 @@ export function ClientProviders(props: PropsWithChildren) {
       >
         <UIManager>
           <ClientInit />
+          {/* Keeps the dark class on <html> and <body> on every page. The
+              layout no longer renders it (#1262): a pre-paint script sets it,
+              and a client render of the root resets both singletons to their
+              props, which this puts right on mount. */}
+          <Theme />
           {/* Restores the reader's last feed/sidebar cache and keeps it
               written. Outside DeferredRender on purpose: a restore that lands
               after the first paint has missed the paint it exists for. */}
