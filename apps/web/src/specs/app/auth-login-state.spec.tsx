@@ -124,6 +124,14 @@ describe("AuthPage", () => {
     expect(h.toggle).not.toHaveBeenCalled();
   });
 
+  it("completes a login started in another tab after a second one began", async () => {
+    const first = stateOf(getAuthUrl("ecency.app", "https://ecency.com/auth"))!;
+    getAuthUrl("ecency.app", "https://ecency.com/auth");
+    h.params = new URLSearchParams({ code: "c5", state: first });
+    render(<AuthPage />);
+    await waitFor(() => expect(h.renew).toHaveBeenCalledWith({ code: "c5" }));
+  });
+
   it("uses a state only once", async () => {
     const state = stateOf(getAuthUrl("ecency.app", "https://ecency.com/auth"))!;
     h.params = new URLSearchParams({ code: "c", state });

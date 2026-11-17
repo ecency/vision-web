@@ -26,6 +26,14 @@ describe('paymentTransfers', () => {
     expect(paymentTransfers(ops as never, 'abc', 'pay').map((p) => p.key)).toEqual(['abc']);
   });
 
+  it('keeps the bare trx id for the first HBD payment when a HIVE transfer comes first', () => {
+    // Before #2128 the HIVE transfer was ignored without a row and the HBD one
+    // was recorded under the bare id; a replay must find that row.
+    const hive = ['transfer', { from: 'payer', to: 'pay', amount: '1.000 HIVE', memo: 'x' }];
+    const keys = paymentTransfers([hive, t('pay', 'a')] as any, 'trx', 'pay').map((p) => p.key);
+    expect(keys).toEqual(['trx:0', 'trx']);
+  });
+
   it('ignores transfers to other accounts', () => {
     expect(paymentTransfers([t('other', 'blog:x')] as never, 'abc', 'pay')).toEqual([]);
   });

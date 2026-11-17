@@ -10,43 +10,65 @@ export { decodeToken };
 const HS_LOGIN_STATE_KEY = "hs_login_state";
 
 const HS_LOGIN_STATE_TTL_MS = 30 * 60 * 1000;
+const HS_LOGIN_STATE_MAX = 5;
+
+type PendingLogin = { state: string; at: number };
+
+function readPending(): PendingLogin[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(HS_LOGIN_STATE_KEY) ?? "[]");
+    const now = Date.now();
+    return Array.isArray(value)
+      ? value.filter(
+          (p): p is PendingLogin =>
+            typeof p?.state === "string" && typeof p?.at === "number" && now - p.at <= HS_LOGIN_STATE_TTL_MS
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePending(pending: PendingLogin[]) {
+  try {
+    if (pending.length) {
+      localStorage.setItem(HS_LOGIN_STATE_KEY, JSON.stringify(pending));
+    } else {
+      localStorage.removeItem(HS_LOGIN_STATE_KEY);
+    }
+  } catch {
+    // No storage: the callback then refuses, and the user signs in again.
+  }
+}
 
 /**
  * A one-time value for a login this browser started, which the /auth callback
  * must bring back. Kept in localStorage, not per tab, so a login that HiveSigner
- * finishes in another tab or window of this site still completes.
+ * finishes in another tab or window of this site still completes; a few may be
+ * pending at once (logins started in several tabs), each for 30 minutes.
  */
 function issueHsLoginState(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const state = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  try {
-    localStorage.setItem(HS_LOGIN_STATE_KEY, JSON.stringify({ state, at: Date.now() }));
-  } catch {
-    // No storage: the callback then refuses, and the user signs in again.
-  }
+  writePending([...readPending(), { state, at: Date.now() }].slice(-HS_LOGIN_STATE_MAX));
   return state;
 }
 
 /**
- * True when `state` is the pending value this browser issued (and not older
- * than 30 minutes). A match uses it up; anything else leaves a pending login
- * as it is.
+ * True when `state` is a pending value this browser issued in the last 30
+ * minutes. A match uses it up; anything else leaves pending logins as they are.
  */
 export function consumeHsLoginState(state: string | null | undefined): boolean {
   if (!state) {
     return false;
   }
-  try {
-    const pending = JSON.parse(localStorage.getItem(HS_LOGIN_STATE_KEY) ?? "null");
-    if (!pending || pending.state !== state) {
-      return false;
-    }
-    localStorage.removeItem(HS_LOGIN_STATE_KEY);
-    return typeof pending.at === "number" && Date.now() - pending.at <= HS_LOGIN_STATE_TTL_MS;
-  } catch {
-    return false;
+  const pending = readPending();
+  const match = pending.some((p) => p.state === state);
+  if (match) {
+    writePending(pending.filter((p) => p.state !== state));
   }
+  return match;
 }
 
 export function getAuthUrl(app: string, redir: string = `${window.location.origin}/auth`) {

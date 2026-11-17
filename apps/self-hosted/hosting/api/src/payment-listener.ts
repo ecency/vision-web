@@ -22,8 +22,9 @@ import { isReservedTenantName } from './utils/reserved-tenant-names';
 // value. Empty, non-numeric, zero, and negative all fall back to 7. Exported for unit testing.
 /**
  * The transfers to the payment account in one transaction, each with the key
- * its payment row is de-duplicated by (#2128). The first keeps the bare trx id,
- * as every row written before this did, so a replayed block still finds those;
+ * its payment row is de-duplicated by (#2128). The first HBD one keeps the bare
+ * trx id, as every row written before this did, so a replayed block still finds
+ * those;
  * a later one in the same transaction gets `<trx id>:<op index>`, so it is
  * processed and recorded instead of being taken for the first.
  */
@@ -33,9 +34,15 @@ export function paymentTransfers(
   paymentAccount: string
 ): Array<{ key: string; transfer: { from: string; to: string; amount: string; memo: string } }> {
   const found: Array<{ key: string; transfer: { from: string; to: string; amount: string; memo: string } }> = [];
+  let bareTaken = false;
   operations.forEach((op, opIndex) => {
     if (op[0] !== 'transfer' || op[1]?.to !== paymentAccount) return;
-    found.push({ key: found.length === 0 ? trxId : `${trxId}:${opIndex}`, transfer: op[1] });
+    // Only an HBD transfer was ever recorded under the bare id (others were
+    // ignored without a row), so the first HBD one keeps it.
+    const hbd = String(op[1]?.amount ?? '').trim().endsWith(' HBD');
+    const key = hbd && !bareTaken ? trxId : `${trxId}:${opIndex}`;
+    if (hbd) bareTaken = true;
+    found.push({ key, transfer: op[1] });
   });
   return found;
 }
