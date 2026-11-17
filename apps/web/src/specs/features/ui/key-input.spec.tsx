@@ -134,7 +134,9 @@ describe("KeyInput.handleSign contract", () => {
     });
 
     expect(result).toEqual({ privateKey: fakeKey, raw: "5JvalidWifKey" });
-    expect(h.setSigningKey).toHaveBeenCalledWith("5JvalidWifKey");
+    // The store keeps the derived key, never the text typed (a master password
+    // or a seed must not stay in memory).
+    expect(h.setSigningKey).toHaveBeenCalledWith("PVT_FAKE");
     expect(h.errorSpy).not.toHaveBeenCalled();
   });
 

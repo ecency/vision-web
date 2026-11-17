@@ -92,7 +92,9 @@ export function Transfer(props: Props) {
   const [step, setStep] = useState(1);
   const [to, setTo] = useState(props.to ?? "");
   const [mode, setMode] = useState(props.mode);
-  const [amount, setAmount] = useState(props.amount ?? "0.000");
+  // The smallest amount a transfer takes, unless the caller passes one (a tip
+  // default); an existing delegation fills it in delegate mode (#2123).
+  const [amount, setAmount] = useState(props.amount ?? "0.001");
   const [exchangeWarning, setExchangeWarning] = useState("");
   const [inProgress, setInProgress] = useState(false);
   const [asset, setAsset] = useState(props.asset);
@@ -126,7 +128,7 @@ export function Transfer(props: Props) {
           setStep(1);
           setMemo(props.memo ?? "");
           setTo(props.to ?? "");
-          setAmount(props.amount ?? "");
+          setAmount(props.amount ?? "0.001");
           setMode(props.mode);
         }, [props.amount, props.memo, props.mode, props.to])
       }}

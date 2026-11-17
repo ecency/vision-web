@@ -124,7 +124,9 @@ export const KeyInput = forwardRef<
         return null;
       }
 
-      setSigningKey(key);
+      // The derived key, never the text typed: a master password or seed must
+      // not stay in the store (the key itself is dropped after an idle window).
+      setSigningKey(privateKey.toString());
 
       onSign?.(privateKey);
 

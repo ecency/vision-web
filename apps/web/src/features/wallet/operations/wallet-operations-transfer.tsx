@@ -6,7 +6,7 @@ import {
   getAccountWalletAssetInfoQueryOptions,
 } from "@ecency/sdk";
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
-import { getDynamicPropsQueryOptions } from "@ecency/sdk";
+import { getDynamicPropsQueryOptions, getHiveEngineBalancesWithUsdQueryOptions } from "@ecency/sdk";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { useQuery } from "@tanstack/react-query";
 import { UilArrowRight } from "@tooni/iconscout-unicons-react";
@@ -19,6 +19,10 @@ import { WalletOperationAmountForm } from "./wallet-operation-amount-form";
 import { formatNumber } from "@/utils";
 import { callRPC } from "@ecency/sdk";
 import { hpToVests } from "@/features/shared/transfer/hp-to-vests";
+import { amountStep, operationAssetPrecision, truncateAmount } from "./operation-amount";
+import { isKeyInMemo, prepareOperationMemo } from "./operation-memo";
+import { error as showError } from "@/features/shared";
+import { formatError } from "@/api/format-error";
 
 interface Props {
   to?: string;
@@ -85,6 +89,17 @@ export function WalletOperationsTransfer({
   }, [data?.to, operation, shouldDefaultToSelf, toProp, username]);
 
   const isEngineToken = accountWallet?.layer === "ENGINE";
+  // A Hive Engine token has its own precision (up to 8 decimals); everything
+  // else here uses 3 (#2127).
+  const { data: engineBalances } = useQuery({
+    ...getHiveEngineBalancesWithUsdQueryOptions(username, dynamicProps),
+    enabled: isEngineToken && !!username
+  });
+  const precision = useMemo(
+    () => operationAssetPrecision(isEngineToken, engineBalances, asset),
+    [asset, engineBalances, isEngineToken]
+  );
+  const step = amountStep(precision);
   const liquidBalance = useMemo(() => {
     const balance = accountWallet?.parts?.find((part) =>
       ["current", "liquid"].includes(part.name)
@@ -266,11 +281,11 @@ export function WalletOperationsTransfer({
     stakedBalance,
   ]);
 
-  const validationMax = maxAmount || 0.001;
+  const validationMax = maxAmount || step;
 
   const minAmount = useMemo(
-    () => (asset === "HP" && operation === AssetOperation.Delegate ? 0 : 0.001),
-    [asset, operation]
+    () => (asset === "HP" && operation === AssetOperation.Delegate ? 0 : step),
+    [asset, operation, step]
   );
 
   const recipientBalance = useMemo(() => {
@@ -324,7 +339,10 @@ export function WalletOperationsTransfer({
           .required(i18next.t("validation.required"))
           .min(minAmount)
           .max(validationMax),
-        memo: yup.string()
+        // A private key must never go out as a memo: memos are public on chain.
+        memo: yup
+          .string()
+          .test("not-a-key", i18next.t("transfer.memo-error"), (value) => !isKeyInMemo(value ?? ""))
       })
     ),
     defaultValues: {
@@ -382,7 +400,7 @@ export function WalletOperationsTransfer({
           onBalanceClick={() =>
             methods.setValue(
               "amount",
-              +formatNumber(displayBalance ?? 0, 3) || 0
+              +truncateAmount(displayBalance ?? 0, precision) || 0
             )
           }
         />
@@ -399,7 +417,7 @@ export function WalletOperationsTransfer({
           onBalanceClick={() =>
             methods.setValue(
               "amount",
-              +formatNumber(recipientBalance ?? displayBalance ?? 0, 3) || 0
+              +truncateAmount(recipientBalance ?? displayBalance ?? 0, precision) || 0
             )
           }
         />
@@ -408,14 +426,24 @@ export function WalletOperationsTransfer({
       <FormProvider {...methods}>
         <form
           className="block"
-          onSubmit={methods.handleSubmit((data) => {
+          onSubmit={methods.handleSubmit(async (data) => {
+            // A memo starting with # goes out encrypted for the recipient, as
+            // in the shared Transfer dialog.
+            let memo = data.memo ?? "";
+            try {
+              memo = await prepareOperationMemo(memo, username, sanitizedTo);
+            } catch (e) {
+              showError(...formatError(e));
+              return;
+            }
             const amountString =
               asset === "HP" && operation === AssetOperation.Delegate
                 ? hpToVests(Number(data.amount), hivePerMVests)
-                : `${formatNumber(data.amount, 3)} ${asset}`;
+                : `${truncateAmount(Number(data.amount), precision)} ${asset}`;
 
             onSubmit({
               ...data,
+              memo,
               amount: amountString,
               from: username,
               to: sanitizedTo,
@@ -423,7 +451,7 @@ export function WalletOperationsTransfer({
           })}
         >
           <div className="border-y border-[--border-color] flex flex-col py-4 gap-4 font-mono">
-            <WalletOperationAmountForm readonly={!showSubmit} showMemo={showMemo} />
+            <WalletOperationAmountForm readonly={!showSubmit} showMemo={showMemo} step={step} />
           </div>
 
           <div className="flex justify-between items-center p-4">

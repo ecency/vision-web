@@ -13,7 +13,7 @@ import {
 import { useDebounce } from "react-use";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
-import { formattedNumber, parseAsset, vestsToHp } from "@/utils";
+import { parseAsset, vestsToHp } from "@/utils";
 
 export function useDebounceTransferAccountData() {
   const { activeUser, account } = useActiveAccount();
@@ -49,22 +49,21 @@ export function useDebounceTransferAccountData() {
       vestingDelegations!.find(
         (item) => (item as any).delegatee === to && (item as any).delegator === activeUser?.username
       );
+    // A plain number rounded to the 3 decimals HP has, never a display string:
+    // formattedNumber writes "5,000.000", which Number() reads as NaN (#2120).
     const delegatedAmount = delegateAccount
       ? Number(
-          formattedNumber(
-            vestsToHp(
-              Number(parseAsset(delegateAccount!.vesting_shares).amount),
-              (dynamicProps ?? DEFAULT_DYNAMIC_PROPS).hivePerMVests
-            )
-          )
+          vestsToHp(
+            Number(parseAsset(delegateAccount!.vesting_shares).amount),
+            (dynamicProps ?? DEFAULT_DYNAMIC_PROPS).hivePerMVests
+          ).toFixed(3)
         )
       : 0;
 
-    return [
-      delegatedAmount,
-      delegatedAmount ? delegatedAmount.toString() : "0.001",
-      delegateAccount
-    ];
+    // Only an existing delegation fills the amount (delegate_vesting_shares sets
+    // an absolute value). Nothing else does: the caller's amount and what the
+    // user typed before Back stay as they are (#2123).
+    return [delegatedAmount, delegatedAmount > 0 ? delegatedAmount.toString() : null, delegateAccount];
   }, [activeUser?.username, dynamicProps, to, vestingDelegations]);
 
   const externalWallets = useMemo(() => {
@@ -101,8 +100,10 @@ export function useDebounceTransferAccountData() {
   );
 
   useEffect(() => {
-    setAmount(amount);
-  }, [amount, setAmount]);
+    if (mode === "delegate" && amount !== null) {
+      setAmount(amount);
+    }
+  }, [amount, mode, setAmount]);
 
   useEffect(() => {
     if (activeUser && activeUser.username && mode === "delegate") {

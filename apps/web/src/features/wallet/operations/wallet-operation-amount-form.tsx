@@ -5,9 +5,11 @@ import { useFormContext } from "react-hook-form";
 interface Props {
   readonly: boolean;
   showMemo: boolean;
+  /** The asset's smallest amount (0.001, or 1e-8 for an 8-decimal engine token). */
+  step?: number;
 }
 
-export function WalletOperationAmountForm({ readonly, showMemo }: Props) {
+export function WalletOperationAmountForm({ readonly, showMemo, step = 0.001 }: Props) {
   const methods = useFormContext();
 
   const amountError = methods.formState.errors.amount?.message?.toString();
@@ -23,7 +25,7 @@ export function WalletOperationAmountForm({ readonly, showMemo }: Props) {
         <FormControl
           {...methods.register("amount")}
           type="number"
-          step={0.001}
+          step={step}
           readOnly={readonly}
           placeholder="0.01"
           aria-invalid={!!amountError}
