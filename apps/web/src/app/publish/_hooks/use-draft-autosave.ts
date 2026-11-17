@@ -344,12 +344,23 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // same content, and it still has to reach the new binding's own draft. Not on the
   // draft editor route, whose id comes from the route: untouched content there must
   // not be written into that draft under another account on its own (#2105).
-  useDebounce(() => attemptRef.current(), AUTOSAVE_DEBOUNCE_MS, [
-    snapshot,
-    enabled,
-    isActiveTab,
-    draftId ? undefined : bindingKey
-  ]);
+  // A debounce armed under the previous binding does not fire into the next one:
+  // on the route an edit typed just before an account switch would otherwise be
+  // written into the route's draft under the next account (#2105).
+  const debounceDeps = [snapshot, enabled, isActiveTab, draftId ? undefined : bindingKey];
+  const armedEpochRef = useRef(bindingEpoch);
+  useEffect(() => {
+    armedEpochRef.current = bindingEpoch;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, debounceDeps);
+  useDebounce(
+    () => {
+      if (armedEpochRef.current !== bindingEpochRef.current) return;
+      attemptRef.current();
+    },
+    AUTOSAVE_DEBOUNCE_MS,
+    debounceDeps
+  );
 
   useEffect(
     () => () => {

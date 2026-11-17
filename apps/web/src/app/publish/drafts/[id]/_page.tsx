@@ -20,6 +20,7 @@ import { PublishSuccessState } from "../../_components/publish-success-state";
 import { PublishDraftsNoDraft } from "./_components";
 import { clearAutosavePointer } from "@/app/publish/_utils/autosave-pointer";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useLeaveDraftOnAccountSwitch } from "@/app/publish/_hooks/use-leave-draft-on-account-switch";
 
 export default function PublishPage() {
   const params = useParams();
@@ -92,6 +93,16 @@ export default function PublishPage() {
       setStep("no-draft");
     }
   }, [isDraftLoadError, isDraftLoaded]);
+
+  // This draft belongs to the account that opened it. After an account switch the
+  // next account starts a fresh post on /publish rather than editing, and
+  // autosaving into, the previous account's draft. The layout keeps the composer
+  // state across that navigation, so it is cleared first (#2105).
+  useLeaveDraftOnAccountSwitch(() => {
+    setStep("loading");
+    clearAll();
+    router.replace("/publish");
+  });
 
   // autosave is keyed on step, so "loading" keeps it off until the draft lands.
   const { lastSaved, isActiveTab, flush } = useAutoSavePublishDraft(step, draftId);
