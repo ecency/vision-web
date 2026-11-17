@@ -234,20 +234,39 @@ function readContainers(line: string): { containers: number[]; at: number } {
 
 // Where a line's content starts inside `containers`, or -1 when the line is
 // outside them: a blockquote needs its `>`, a list item its content indent
-// (a blank line stays in the item).
+// (a blank line stays in the item). A tab indents to the next multiple of
+// four columns, as the parser counts it.
 function insideContainers(line: string, containers: number[], blank: boolean): number {
   let at = 0
+  let column = 0
   for (const container of containers) {
     if (container === QUOTE) {
       let indent = 0
       while (indent < 4 && isSpace(line, at + indent)) indent++
       if (indent > 3 || line[at + indent] !== '>') return -1
       at += indent + 1
-      if (isSpace(line, at)) at++
+      column += indent + 1
+      if (isSpace(line, at)) {
+        at++
+        column++
+      }
     } else {
       if (blank) return line.length
-      for (let k = 0; k < container; k++) if (!isSpace(line, at + k)) return -1
-      at += container
+      let needed = container
+      while (needed > 0) {
+        if (isSpace(line, at)) {
+          at++
+          column++
+          needed--
+        } else if (line[at] === '\t') {
+          const width = 4 - (column % 4)
+          at++
+          column += width
+          needed -= width
+        } else {
+          return -1
+        }
+      }
     }
   }
   return at
@@ -293,7 +312,8 @@ function codeRanges(src: string): Array<[number, number]> {
     if (read.containers.length > 0) {
       containers = read.containers
       open = fenceAt(line, read.at)
-      if (containers.some((c) => c !== QUOTE)) item = containers
+      // A quote line outside the item ends it.
+      item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {
       if (item) {
         const at = insideContainers(line, item, false)

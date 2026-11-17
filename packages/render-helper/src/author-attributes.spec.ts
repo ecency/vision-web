@@ -31,7 +31,8 @@ describe('author class attributes', () => {
     'pull-left',
     'pull-right',
     'phishy',
-    'videoWrapper'
+    'videoWrapper',
+    'ecency-text-color-dc2626'
   ])('keeps the post formatting class %s', (cls) => {
     expect(classesOf(render(`<div class="${cls} fixed">text</div>`))).toEqual(expect.arrayContaining([cls]))
     expect(classesOf(render(`<div class="${cls} fixed">text</div>`))).not.toContain('fixed')

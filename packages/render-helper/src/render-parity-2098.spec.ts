@@ -28,19 +28,36 @@ describe('fenced code inside list items, app render', () => {
     // No close: the fence ends with its list item, and the text after it is
     // prose again, where the app keeps its entity handling.
     '- ~~~\n  &amp;\n\nafter &amp; text',
-    '- ~~~\n  &amp;\n~~~\n\n&copy; text'
+    '- ~~~\n  &amp;\n~~~\n\n&copy; text',
+    // A tab-indented code line inside a list item's fence (Makefiles, Go).
+    '1. Makefile:\n   ```make\n\tgcc a.c &amp;&amp; ./a.out\n   ```',
+    '- item\n\n  ```go\n\tif a &amp;&amp; b {}\n  ```',
+    // A quote line ends the list item: the fence after it is top-level.
+    '1. step\n> tip\n\n   ```\nx &lt; y\n   ```'
   ])('renders %j as the web does', (body) => {
     const app = render(body, true)
     expect(app).not.toContain('\u200B')
     expect(strip(app)).toBe(strip(render(body, false)))
   })
 
+  it('keeps the app entity handling for prose after a fence that follows a quote', () => {
+    // In prose the app keeps an entity as written (its placeholder pass); a
+    // fence range running past its close would take that away.
+    const app = render('1. step\n> tip\n\n   ```\nx &lt; y\n   ```\n\nafter &copy;', true)
+    expect(app).toContain('after &copy;')
+  })
+
   it('stays linear on a long line of list markers', () => {
-    const body = '- '.repeat(5000) + '~~~\n&amp;\n'
-    const started = performance.now()
-    render(body, true)
-    // A backtracking pattern hung here; a linear scan takes milliseconds.
-    expect(performance.now() - started).toBeLessThan(5000)
+    // A backtracking pattern hung here. Growth, not wall-clock time: four
+    // times the markers costs about four times as long on a linear scan.
+    const time = (markers: number) => {
+      const body = '- '.repeat(markers) + `~~~\n&amp; ${markers}\n`
+      const started = performance.now()
+      render(body, true)
+      return Math.max(performance.now() - started, 1)
+    }
+    time(500)
+    expect(time(20000) / time(5000)).toBeLessThan(10)
   })
 })
 
@@ -79,6 +96,18 @@ describe('the LCP preload names the image the render shows, or none', () => {
     'x https://e.com/a.png?x=1&copy; y',
     'x https://e.com/a.png?x=1&copy;. y',
     '[r]: https://e.com/a.png?x=1&copy;\n\n![][r]',
+    // Only a whole entity name decodes in HTML text, as the render reads it.
+    '<div>https://e.com/i.png?w=1&region=eu</div>',
+    '<div>https://e.com/i.png?w=1&notify=1&section=2&ampx=1</div>',
+    '<div>https://e.com/i.png?w=1&para=1&reg</div>',
+    // Lowercasing must not move offsets (Turkish dotted I).
+    'İyi günler\n\nhttps://e.com/i.png',
+    'İyi\n\n<center>https://e.com/i.png?w=1&times=2</center>',
+    // The autolinker keeps a `.` before `)`; a raw anchor's text is not autolinked.
+    '(see https://e.com/a.png?w=600.)',
+    '<a href="https://e.com/i.png?x=1.">https://e.com/i.png?x=1.</a>',
+    // An HTML tag inside a fenced code block opens no HTML block.
+    '```\n<div>\n```\nhttps://e.com/i.png?a=1&copy',
     // Kept as before.
     'https://e.com/i.png?a=1&copy',
     'x https://e.com/a.png y'
@@ -99,9 +128,7 @@ describe('the LCP preload names the image the render shows, or none', () => {
 
   it('does not preload a destination that decodes to a control character', () => {
     // The render reads `&Tab;` its own way; a guess would be a wasted download.
-    const body = '![](https://e.com/i.png?a=1&Tab;b)'
-    const preload = preloadOf(body)
-    expect(preload === null || preload === firstImg(render(body, false))).toBe(true)
+    expect(preloadOf('![](https://e.com/i.png?a=1&Tab;b)')).toBeNull()
   })
 
   it('still promotes a [url](url) image link with an escaped ampersand', () => {

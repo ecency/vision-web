@@ -1,6 +1,6 @@
 import React from "react";
 import { act, fireEvent, render } from "@testing-library/react";
-import { renderPostBody } from "@ecency/render-helper";
+import { proxifyImageSrc, renderPostBody } from "@ecency/render-helper";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Imported by file path on purpose: setup-any-spec stubs the "@/features/post-renderer"
 // barrel to a null component for every other spec.
@@ -239,8 +239,9 @@ describe("post renderer video click-to-play survives re-renders (#2082)", () => 
     rerender(<EcencyRenderer value="body" images={["https://images.3speak.tv/abc123.png"]} />);
     await flush();
 
+    // Through the image proxy, like every other image in a post.
     expect(link.querySelector(".video-thumbnail")?.getAttribute("src")).toBe(
-      "https://images.3speak.tv/abc123.png"
+      proxifyImageSrc("https://images.3speak.tv/abc123.png", 0, 0, "match")
     );
   });
 

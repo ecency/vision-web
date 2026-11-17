@@ -116,6 +116,9 @@ export function stripMarkdownClasses(value: string): string {
 const AUTHOR_CLASSES: ReadonlySet<string> = new Set([
   'pull-right', 'pull-left', 'text-justify', 'text-rtl', 'text-center', 'text-right', 'videoWrapper', 'phishy'
 ])
+// The editor's text colour (web publish, TEXT_COLOR_CLASS_PREFIX): one class
+// per palette colour, styled by the app's renderer stylesheet.
+const AUTHOR_CLASS_RE = /^ecency-text-color-[0-9a-f]{6}$/
 // What the markdown stage writes before the DOM pass sees the body, so it
 // reaches the author-class filter too: footnotes, code highlighting (ll-*) and
 // a fenced block's language.
@@ -134,7 +137,10 @@ export function authorClasses(value: string): string {
   const kept = tokens.filter(
     (token) =>
       !/markdown-/i.test(token) &&
-      (AUTHOR_CLASSES.has(token) || MARKDOWN_STAGE_CLASSES.has(token) || MARKDOWN_STAGE_CLASS_RE.test(token))
+      (AUTHOR_CLASSES.has(token) ||
+        AUTHOR_CLASS_RE.test(token) ||
+        MARKDOWN_STAGE_CLASSES.has(token) ||
+        MARKDOWN_STAGE_CLASS_RE.test(token))
   )
   return kept.length === tokens.length && !/[\u0000-\u001f\u007f]/.test(value) ? value : kept.join(' ')
 }

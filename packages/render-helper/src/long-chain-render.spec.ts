@@ -42,7 +42,9 @@ function growth(make: (n: number) => string, n: number, forApp = false): { html:
   return { html: big.html, ratio: big.ms / small.ms }
 }
 
-describe('long tag and mention chains (#1920)', () => {
+// Each growth check renders a body several times; a runner five times slower
+// than a workstation needs more than vitest's 5 s default.
+describe('long tag and mention chains (#1920)', { timeout: 60_000 }, () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})

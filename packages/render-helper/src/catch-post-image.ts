@@ -4,6 +4,7 @@ import { createDoc, hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageS
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
+import { decodeHTMLStrict } from 'entities'
 
 // No gif branch below, deliberately. Every proxify here used to ask for the
 // ORIGINAL dimensions when the source was a .gif, because the image host handed
@@ -573,7 +574,10 @@ const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/
  * parser reads the reference before the autolinker sees the text, and a URL
  * in a reference definition or a raw anchor's text is not autolinked at all.
  */
-function withoutTrailingPunctuation(url: string): string {
+function withoutTrailingPunctuation(url: string, after: string): string {
+  // `URL.)`: the autolinker drops the unmatched `)` and keeps the `.`. A raw
+  // anchor's text is not autolinked at all.
+  if (after.startsWith(')') || /^<\/a[\s>]/i.test(after)) return url
   let end = url.length
   while (end > 0) {
     const c = url[end - 1]
@@ -589,6 +593,23 @@ function withoutTrailingPunctuation(url: string): string {
 const HTML_TEXT_URL_RE = /^https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/i
 
 /**
+ * HTML text as the render's DOM decodes it: a reference only when its whole
+ * name is one (`&times=2` is `×=2`, `&reg` is `®`), never a name that merely
+ * starts with one (`&region=eu`, `&notify=1` stay as written).
+ */
+function decodeHtmlText(text: string): string {
+  return text.replace(/&(?:#\d{1,7};?|#[xX][\da-fA-F]{1,6};?|([A-Za-z][A-Za-z\d]{0,31});?)/g, (ref, name?: string) => {
+    if (name === undefined) return decodeEntities(ref)
+    const whole = decodeHTMLStrict(`&${name};`)
+    return whole === `&${name};` ? ref : whole
+  })
+}
+
+// Lower-case ASCII only: the line model needs tag names, and every offset must
+// stay where it is (`İ`.toLowerCase() is two characters).
+const asciiLower = (text: string): string => text.replace(/[A-Z]+/g, (run) => run.toLowerCase())
+
+/**
  * The image URL a bare URL at `pos` inside an HTML block renders as: the DOM
  * decodes the text with HTML text rules (`&times=2` is `×=2`, `\&copy;` is
  * `\©`), then linkify reads its token from the decoded text (parentheses
@@ -597,7 +618,7 @@ const HTML_TEXT_URL_RE = /^https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/i
 function htmlTextImageUrl(body: string, pos: number): string | null {
   let end = pos
   while (end < body.length && !/[\s<]/.test(body[end])) end++
-  const token = HTML_TEXT_URL_RE.exec(decodeEntities(body.slice(pos, end)))?.[0]
+  const token = HTML_TEXT_URL_RE.exec(decodeHtmlText(body.slice(pos, end)))?.[0]
   if (!token) return null
   const urlEnd = imageUrlEnd(token)
   return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd))
@@ -607,7 +628,8 @@ function htmlTextImageUrl(body: string, pos: number): string | null {
 // from, an HTML attribute, a markdown destination, HTML block text or markdown
 // text (#2092, #2098). Null rather than a guess where the render differs.
 function firstBodyImageRawUrl(body: string): string | null {
-  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate
+  const prepared = prepareBody(body)
+  const candidate = findFirstImageCandidate(prepared, true).candidate
   if (!candidate) return null
   if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url))
   const ampEscapes = !hasAmpSentinel(body)
@@ -615,13 +637,11 @@ function firstBodyImageRawUrl(body: string): string | null {
     const url = decodeRawBodyImageSrc(candidate.url, true, ampEscapes)
     return CONTROL_CHAR_RE.test(url) ? null : url
   }
-  // A bare URL: raw text of an HTML block, or markdown text. The line model
-  // reads the lowercased body; a body whose lowercase changes length (a few
-  // non-ASCII letters) has no reliable offsets, so it gets no preload.
-  const lower = body.toLowerCase()
-  if (lower.length !== body.length) return null
-  if (markLines(lower).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
-  const url = withoutTrailingPunctuation(candidate.url)
+  // A bare URL: raw text of an HTML block, or markdown text. Lines are read
+  // with code already blanked (a `<div>` inside a fence opens no block); the
+  // blanking keeps every offset.
+  if (markLines(asciiLower(prepared.cleaned)).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
+  const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4))
   return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
 }
 
