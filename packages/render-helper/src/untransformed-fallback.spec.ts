@@ -47,6 +47,13 @@ describe('untransformed sanitize-only fallback output', () => {
     expect(out).toContain('src="https://www.youtube.com/embed/dQw4w9WgXcQ"')
   })
 
+  it.each([false, true])('prefixes an author id exactly once (forApp %s)', (forApp) => {
+    const out = render('<h2 id="sec">S</h2>\n\n[go](#sec)', forApp)
+    expect(out).toContain('id="user-content-sec"')
+    expect(out).toMatch(/(?:data-)?href="#user-content-sec"/)
+    expect(out).not.toContain('user-content-user-content-')
+  })
+
   it('strips author markers', () => {
     const out = render(
       '<a class="markdown-post-link text-center" data-author="victim" data-permlink="fake" href="https://ecency.com/">c</a>',

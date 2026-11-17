@@ -374,14 +374,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (!ID_WHITELIST.test(decoded)) return '';
         // render-helper writes no id of its own: every one is the author's (or
         // the markdown stage's footnotes), namespaced away from the page's.
-        // Not in the pass before the transforms: the final pass always follows
-        // it, and the prefix must be applied exactly once.
-        if (isWhiteAttr && !beforeTransform) return `id="${escapeAttr(namespacedId(decoded))}"`;
+        // Not in the pass before the transforms nor in the sanitize-only
+        // fallback: the final pass always follows both, and the prefix must be
+        // applied exactly once.
+        if (isWhiteAttr && !beforeTransform && !untransformed) return `id="${escapeAttr(namespacedId(decoded))}"`;
       }
       // A same-document link follows the namespaced id it points at (the
       // app render carries it as data-href), matched as a browser matches a
       // fragment: as written, or percent-decoded.
-      if (isWhiteAttr && !beforeTransform && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#')) {
+      if (isWhiteAttr && !beforeTransform && !untransformed && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#')) {
         const target = declaredFragment(decoded.slice(1));
         if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
