@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getSimilarEntriesQueryOptions,
   SIMILAR_ENTRIES_MIN_RENDER,
+  similarEntriesExcerpt,
 } from "./get-similar-entries-query-options";
 import type { SearchResponse } from "../types/search-response";
 import { similar } from "../requests";
@@ -164,6 +165,27 @@ describe("getSimilarEntriesQueryOptions", () => {
     expect(payload.body).not.toContain("images.hive.blog");
     expect(payload.body).not.toContain("http");
     expect(payload.body).toContain("Real prose about nature and hiking");
+  });
+
+  it("exposes the excerpt it sends, so a caller can pass it on instead of the whole body", async () => {
+    fetchMock.mockResolvedValueOnce(response(searchResponse([])));
+    const body = "![pic](https://images.hive.blog/x.png) ".repeat(200) + "Prose after the images " + "y".repeat(5000);
+    const excerpt = similarEntriesExcerpt(body);
+
+    expect(excerpt.startsWith("Prose after the images")).toBe(true);
+    expect(excerpt.length).toBe(3000);
+    // The excerpt is a fixed point: handing it back builds the same request and key.
+    expect(similarEntriesExcerpt(excerpt)).toBe(excerpt);
+    const e = { author: "a", permlink: "p", title: "t", json_metadata: { tags: ["x"] } };
+    expect(getSimilarEntriesQueryOptions({ ...e, body: excerpt }).queryKey).toEqual(
+      getSimilarEntriesQueryOptions({ ...e, body }).queryKey
+    );
+    // A cut that lands on a space must not leave one for the next pass to trim.
+    const words = similarEntriesExcerpt("word ".repeat(2000));
+    expect(similarEntriesExcerpt(words)).toBe(words);
+    await (getSimilarEntriesQueryOptions({ ...e, body: excerpt }).queryFn as QueryFn)({ signal: undefined });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string).body).toBe(excerpt);
   });
 
   it("excludes the source post and nsfw, dedupes by author, caps at 4", async () => {

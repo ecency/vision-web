@@ -1038,7 +1038,9 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   // Case-insensitive: schemes are case-insensitive per RFC 3986, so a
   // mixed-case `Https://` must not be treated as scheme-less (which would
   // double-prepend and yield `https://Https://...`).
-  if (!(/^((#)|(mailto:)|(\/(?!\/))|(((steem|hive|esteem|ecency|https?):)?\/\/))/i.test(href))) {
+  // tel: and web+ schemes pass isSafeScheme above, so keep them as written like
+  // mailto: instead of turning them into a dead `https://tel:...` (#2107).
+  if (!(/^((#)|(mailto:)|(tel:)|(web\+[a-z0-9.+-]+:)|(\/(?!\/))|(((steem|hive|esteem|ecency|https?):)?\/\/))/i.test(href))) {
     href = `https://${href}`
   }
 

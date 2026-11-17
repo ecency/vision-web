@@ -455,6 +455,32 @@ describe("useDraftAutosave", () => {
     expect(calls).toEqual(["alice:route-1"]);
   });
 
+  // #2105: an edit made inside the debounce window before a switch arms a
+  // debounce under the previous account. It must not fire into the route's
+  // draft under the next one.
+  it("drops a debounce armed under the previous account on a route draft", async () => {
+    const calls: string[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      calls.push(`${activeUsername.current}:${options?.draftId}`);
+      return undefined;
+    });
+    const { rerender } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ draftId: "route-1", enabled: true, snapshot }),
+      { initialProps: { snapshot: { title: "a", content: "one" } } }
+    );
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    const edited = { title: "a", content: "two" };
+    rerender({ snapshot: edited });
+    await advance(3_000);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: edited });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(calls).toEqual(["alice:route-1"]);
+  });
+
   it("switching back does not resume writing into the first account's draft", async () => {
     const targets: (string | undefined)[] = [];
     saveToDraft.mockImplementation(async (options: { draftId?: string }) => {

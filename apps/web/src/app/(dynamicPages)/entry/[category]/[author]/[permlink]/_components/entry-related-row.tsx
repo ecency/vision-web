@@ -36,7 +36,7 @@ export function EntryRelatedRow({ item }: { item: RelatedItem }) {
         </span>
         <span className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 truncate">
           {item.author} &middot;{" "}
-          <time dateTime={item.created}>{dateToFullRelative(item.created)}</time>
+          <time dateTime={item.created} suppressHydrationWarning>{dateToFullRelative(item.created)}</time>
         </span>
       </span>
     </Link>

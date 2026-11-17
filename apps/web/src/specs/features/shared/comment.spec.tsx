@@ -134,6 +134,22 @@ describe("Comment composer", () => {
     vi.clearAllMocks();
   });
 
+  test("a refused submit keeps the text and its stored draft (#2109)", async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error("Missing active user or entry"));
+    const { getByRole, getByText } = renderComment(onSubmit);
+    type(getByRole, "a reply worth keeping");
+
+    await act(async () => {
+      fireEvent.click(getByText("Reply"));
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(getByRole("textbox")).toHaveValue("a reply worth keeping");
+    expect(JSON.parse(localStorage.getItem("ecency_reply_text_alice_post-1") ?? "null")).toBe(
+      "a reply worth keeping"
+    );
+  });
+
   test("Cmd/Ctrl+Enter submits the typed comment", async () => {
     const { onSubmit, getByRole, container } = renderComment();
 

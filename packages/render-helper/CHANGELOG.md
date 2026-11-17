@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.48
+
+### Patch Changes
+
+- Tel and web+ links, deck reply refusal, draft editor account switch, related footer refill for degraded post pages (#2110)
+
 ## 2.5.47
 
 ### Patch Changes

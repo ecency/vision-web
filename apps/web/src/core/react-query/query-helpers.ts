@@ -228,10 +228,13 @@ export async function prefetchInfiniteQuery<
  * On timeout, returns undefined instead of hanging.
  */
 export async function fetchQuery<T, TKey extends QueryKey = QueryKey>(
-  options: FetchQueryOptions<T, Error, T, TKey>
+  options: FetchQueryOptions<T, Error, T, TKey>,
+  // `mark: false` for an optional section streamed after the head, which a
+  // degraded mark can no longer change (the post page's related footer, #1881).
+  { mark = true }: { mark?: boolean } = {}
 ): Promise<T | undefined> {
   const qc = getQueryClient();
-  return withSsrTimeout(qc.fetchQuery(options), options.queryKey);
+  return withSsrTimeout(qc.fetchQuery(options), options.queryKey, mark);
 }
 
 /**

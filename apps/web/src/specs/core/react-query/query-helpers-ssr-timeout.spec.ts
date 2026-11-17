@@ -57,6 +57,22 @@ describe("SSR prefetch timeout and failure", () => {
     expect(mark).toHaveBeenCalledTimes(1);
   });
 
+  // #1881: an optional section streamed after the head (the post page's related
+  // footer) cannot change a response that is already on the wire. It opts out,
+  // so the log's `late` count names only renders that really lost page data.
+  it("does not mark a fetchQuery that opted out, on timeout or on failure", async () => {
+    const timedOut = fetchQuery({ queryKey: ["similar"], queryFn: vi.fn() }, { mark: false });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(timedOut).resolves.toBeUndefined();
+
+    client.fetchQuery.mockReturnValueOnce(Promise.reject(new Error("search 503")));
+    await expect(
+      fetchQuery({ queryKey: ["similar", 2], queryFn: vi.fn() }, { mark: false })
+    ).resolves.toBeUndefined();
+
+    expect(mark).not.toHaveBeenCalled();
+  });
+
   it("does not mark a prefetch that finishes in time", async () => {
     client.prefetchQuery.mockResolvedValue(undefined);
     client.getQueryData.mockReturnValue({ name: "someone" });

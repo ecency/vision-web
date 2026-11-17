@@ -48,7 +48,18 @@ function toMltExcerpt(body: string, limit: number): string {
     .replace(/https?:\/\/\S+/g, " ") // bare URLs
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, limit);
+    .slice(0, limit)
+    .trimEnd(); // a cut on a space keeps the excerpt a fixed point of this function
+}
+
+/**
+ * The body excerpt the similar query sends. A caller that hands the post to
+ * another context (the web footer's browser refill) can pass this instead of
+ * the whole body: the query builds the same request and cache key from it,
+ * except when markup nested inside link text strips further on the second pass.
+ */
+export function similarEntriesExcerpt(body: string): string {
+  return toMltExcerpt(body, SIMILAR_ENTRIES_BODY_LIMIT);
 }
 
 // Compact deterministic fingerprint (djb2) of the MLT inputs. Folded into the

@@ -1063,6 +1063,10 @@ var isUrlAttribute = (tag, name) => name === "src" && tag !== "a" || name === "s
 var RENDER_HELPER_RELS = /* @__PURE__ */ new Set(["nofollow ugc noopener", "noopener"]);
 var xssSafeAttrValue = xss__default.default.safeAttrValue;
 var HREF_SCHEMES = /* @__PURE__ */ new Set(["http", "https", "mailto", "tel", "hive", "steem", "esteem", "ecency"]);
+var isHrefScheme = (scheme) => {
+  const lower = scheme.toLowerCase();
+  return HREF_SCHEMES.has(lower) || /^web\+[a-z0-9.+-]+$/.test(lower);
+};
 var QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g;
 function enforceImageDimensionPair(html) {
   return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
@@ -1109,11 +1113,13 @@ function sanitizeHtml(html, options) {
       const decoded = decodeAttributeEntities(value.trim());
       const decodedLower = decoded.toLowerCase();
       if (name.startsWith("on")) return "";
+      let hrefSchemeAllowed = false;
       if (name === "href") {
         const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(
           decoded.replace(/^[\s\u0000-\u0020\ufffd]+/, "").replace(/[\t\n\r]/g, "")
         );
-        if (scheme && !HREF_SCHEMES.has(scheme[1].toLowerCase())) return isWhiteAttr ? "href" : "";
+        if (scheme && !isHrefScheme(scheme[1])) return isWhiteAttr ? "href" : "";
+        hrefSchemeAllowed = !!scheme && /^(?:tel|mailto|web\+[a-z0-9.+-]+)$/i.test(scheme[1]);
       }
       if (tag === "img" && name === "src" && !/^https?:\/\//.test(decodedLower)) return "";
       if ((tag === "img" || tag === "source") && name === "srcset" && !beforeTransform && !isWellFormedSrcset(decoded)) return "";
@@ -1177,7 +1183,7 @@ function sanitizeHtml(html, options) {
         if (!ID_WHITELIST.test(decoded)) return "";
       }
       if (isWhiteAttr && name === "href") {
-        return xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
+        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
         return `${name}="${escapeAttr(decoded)}"`;
@@ -2018,7 +2024,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     }
   }
   el.setAttribute("class", "markdown-external-link");
-  if (!/^((#)|(mailto:)|(\/(?!\/))|(((steem|hive|esteem|ecency|https?):)?\/\/))/i.test(href)) {
+  if (!/^((#)|(mailto:)|(tel:)|(web\+[a-z0-9.+-]+:)|(\/(?!\/))|(((steem|hive|esteem|ecency|https?):)?\/\/))/i.test(href)) {
     href = `https://${href}`;
   }
   if (forApp) {
