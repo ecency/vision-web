@@ -428,6 +428,8 @@ async function signViaKeychainLike(
   return signBufferViaKeychain(account, message, authType, instance);
 }
 
+const BROADCAST_AFTER_PING_DEADLINE_MS = 10 * 60 * 1000;
+
 async function broadcastViaKeychainLike(
   instance: HiveKeychain,
   account: string,
@@ -435,7 +437,10 @@ async function broadcastViaKeychainLike(
   authType: AuthorityType,
 ): Promise<KeychainResponse> {
   await pingKeychain(instance);
-  return broadcastViaKeychain(account, operations, authType, instance);
+  // The extension answered the ping, so it is alive: wait for the wallet's own
+  // answer, however long the user takes in the popup. The long deadline only
+  // covers an extension that dies mid-request (#2125).
+  return broadcastViaKeychain(account, operations, authType, instance, BROADCAST_AFTER_PING_DEADLINE_MS);
 }
 
 async function signBufferViaPeakVault(
