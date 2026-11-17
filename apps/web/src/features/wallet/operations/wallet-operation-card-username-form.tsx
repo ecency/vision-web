@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as yup from "yup";
 import { getBadActorsQueryOptions, lookupAccountsQueryOptions } from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { accountExists, isValidAccountName } from "@/utils/hive-account-name";
+import { accountExists, isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
 import { error as showError } from "@/features/shared";
 import { formatError } from "@/api/format-error";
 
@@ -79,7 +79,8 @@ export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
       showError(...formatError(e));
       return;
     }
-    onUsernameSubmit?.(username);
+    // The name as checked: trimmed and lowercased.
+    onUsernameSubmit?.(normalizeAccountName(username));
   });
 
   const handleSuggestionSelect = (name: string) => {

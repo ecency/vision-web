@@ -53,6 +53,14 @@ describe("WalletOperationCardUsernameForm", () => {
     await waitFor(() => expect(onUsernameSubmit).toHaveBeenCalledWith("ecency"));
   });
 
+  it("submits the name as checked: trimmed and lowercased", async () => {
+    h.exists.mockResolvedValue(true);
+    const { onUsernameSubmit, input } = setup();
+    fireEvent.change(input, { target: { value: " Ecency " } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(onUsernameSubmit).toHaveBeenCalledWith("ecency"));
+  });
+
   it("does not submit a name Hive would not accept", async () => {
     const { onUsernameSubmit, input } = setup();
     fireEvent.change(input, { target: { value: "-bad-" } });

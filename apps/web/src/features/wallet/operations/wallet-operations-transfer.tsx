@@ -88,7 +88,8 @@ export function WalletOperationsTransfer({
     }
   }, [data?.to, operation, shouldDefaultToSelf, toProp, username]);
 
-  const isEngineToken = accountWallet?.layer === "ENGINE";
+  // The portfolio declares "engine"; compare without case either way.
+  const isEngineToken = accountWallet?.layer?.toLowerCase() === "engine";
   // A Hive Engine token has its own precision (up to 8 decimals); everything
   // else here uses 3 (#2127).
   const { data: engineBalances } = useQuery({

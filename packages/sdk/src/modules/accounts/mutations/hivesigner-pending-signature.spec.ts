@@ -62,6 +62,19 @@ describe("revoke posting through HiveSigner", () => {
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(h.setQueryData).toHaveBeenCalledTimes(1);
   });
+
+  it("passes every argument on and returns the caller's result", async () => {
+    const done = Promise.resolve("awaited");
+    const onSuccess = vi.fn(() => done);
+    const options = useAccountRevokePosting("alice", { onSuccess }) as unknown as {
+      mutationFn: (p: any) => Promise<unknown>;
+      onSuccess: (...args: unknown[]) => unknown;
+    };
+    const payload = { accountName: "ecency.app", type: "key", key: {} };
+    const result = await options.mutationFn(payload);
+    expect(options.onSuccess(result, payload, "ctx", "fnContext")).toBe(done);
+    expect(onSuccess).toHaveBeenCalledWith(result, payload, "ctx", "fnContext");
+  });
 });
 
 describe("change recovery account through HiveSigner", () => {

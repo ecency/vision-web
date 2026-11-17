@@ -105,14 +105,16 @@ export function useAccountUpdateRecovery(
       }
     },
     onError: options.onError,
-    onSuccess: (resp, payload, ctx) => {
+    onSuccess: (resp, payload, ...rest) => {
       // HiveSigner's page is open, nothing is signed: not a success yet.
       if (isPendingExternalSignature(resp)) {
         return;
       }
-      (options.onSuccess as
-        | ((data: unknown, variables: CommonPayload, context: unknown) => unknown)
-        | undefined)?.(resp, payload, ctx);
+      // Every argument React Query passes, and the callback's result (it may
+      // be a promise React Query waits for).
+      return (options.onSuccess as
+        | ((data: unknown, variables: CommonPayload, ...rest: unknown[]) => unknown)
+        | undefined)?.(resp, payload, ...rest);
     },
   });
 }
