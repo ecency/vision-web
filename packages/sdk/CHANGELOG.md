@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.3
+
+### Patch Changes
+
+- Tel and web+ links, deck reply refusal, draft editor account switch, related footer refill for degraded post pages (#2110)
+
 ## 2.9.2
 
 ### Patch Changes
