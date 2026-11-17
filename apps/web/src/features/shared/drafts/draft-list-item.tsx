@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
-import { postBodySummary } from "@ecency/render-helper";
-import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";
+import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
+import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
 import { PopoverConfirm } from "@ui/popover-confirm";
 import { Badge } from "@ui/badge";
 import { Button } from "@ui/button";
@@ -23,8 +23,8 @@ interface Props {
 export function DraftListItem({ draft, editFn, deleteFn, cloneFn }: Props) {
   const tags = draft.tags ? draft.tags.split(/[ ,]+/) : [];
   const tag = tags[0] || "";
-  const img = catchPostImageSafely(draft.body, 600, 500);
-  const summary = postBodySummary(draft.body, 200);
+  const img = getEntryCardImageSafely(draft.body, 600, 500);
+  const summary = postBodyTextSafely(draft.body, 200);
 
   const { data: community } = useQuery(getCommunityCache(tag));
 

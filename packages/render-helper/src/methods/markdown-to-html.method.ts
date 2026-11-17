@@ -196,7 +196,12 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
 const QUOTE = -1
 const isSpace = (line: string, at: number) => line.charCodeAt(at) === 0x20
 
-function readContainers(line: string, from = 0, fromColumn = 0, carriedIndent = 0): { containers: number[]; at: number } {
+function readContainers(
+  line: string,
+  from = 0,
+  fromColumn = 0,
+  carriedIndent = 0
+): { containers: number[]; at: number; column: number; carry: number } {
   const containers: number[] = []
   let at = from
   // Columns, not characters: a tab after a list marker indents to the next
@@ -249,24 +254,18 @@ function readContainers(line: string, from = 0, fromColumn = 0, carriedIndent = 
     at = markerAt + markerLength + (wide ? 1 : gapChars)
     column += width - spacesFrom
   }
-  return { containers, at }
+  // No container read: the carried indent still counts before the content.
+  return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 }
 }
 
-// Where a line's content starts inside `containers`, or -1 when the line is
-// outside them: a blockquote needs its `>`, a list item its content indent
-// (a blank line stays in the item). A tab indents to the next multiple of
-// four columns, as the parser counts it.
-function insideContainers(line: string, containers: number[], blank: boolean): number {
-  return insideContainersAt(line, containers, blank).at
-}
-
-// insideContainers, with the column the content starts at. A tab that runs
-// past one container's indent counts toward the next one.
-// insideContainers, with where the content starts (index, column, and the
-// columns of a tab that ran past the last container's indent). A line outside
-// the containers has at = -1, and `matched`/`prefixAt` say how many of them it
-// is still inside and where that prefix ends, for a caller that falls back to
-// the enclosing item.
+// Where a line's content starts inside `containers`: its index, its column,
+// and the columns of a tab that ran past the last container's indent (they
+// count as indent of what follows). A blockquote needs its `>`, a list item its
+// content indent, and a blank line stays in the item; a tab indents to the
+// next multiple of four columns, as the parser counts it. A line outside the
+// containers has at = -1, and `matched`/`prefixAt` say how many of them it is
+// still inside and where that prefix ends, for a caller that falls back to the
+// enclosing item.
 type Inside = { at: number; column: number; carry: number; matched: number; prefixAt: number }
 
 function insideContainersAt(line: string, containers: number[], blank: boolean): Inside {
@@ -312,12 +311,27 @@ function insideContainersAt(line: string, containers: number[], blank: boolean):
 }
 
 // The fence run (``` or ~~~, three or more) a line has at `at` after up to
-// three spaces, or null.
-function fenceAt(line: string, at: number): { char: string; length: number; end: number } | null {
-  let indent = 0
-  while (indent < 4 && isSpace(line, at + indent)) indent++
+// three columns of indent, or null. `column` is where `at` sits on the line
+// and `carried` the columns a tab before `at` already indents past the
+// container, so a tab counts to the next four-column stop as the parser reads it.
+function fenceAt(line: string, at: number, column = 0, carried = 0): { char: string; length: number; end: number } | null {
+  let indent = carried
+  let col = column
+  let start = at
+  while (indent <= 3) {
+    if (isSpace(line, start)) {
+      indent++
+      col++
+    } else if (line[start] === '\t') {
+      const width = 4 - (col % 4)
+      indent += width
+      col += width
+    } else {
+      break
+    }
+    start++
+  }
   if (indent > 3) return null
-  const start = at + indent
   const char = line[start]
   if (char !== '`' && char !== '~') return null
   let end = start
@@ -350,7 +364,7 @@ function codeRanges(src: string): Array<[number, number]> {
     const read = readContainers(line)
     if (read.containers.length > 0) {
       containers = read.containers
-      open = fenceAt(line, read.at)
+      open = fenceAt(line, read.at, read.column)
       // A quote line outside the item ends it.
       item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {
@@ -370,9 +384,9 @@ function codeRanges(src: string): Array<[number, number]> {
           const nested = readContainers(line, inside.at, inside.column, inside.carry)
           if (nested.containers.length > 0) {
             containers = [...item, ...nested.containers]
-            open = fenceAt(line, nested.at)
+            open = fenceAt(line, nested.at, nested.column, nested.carry)
             if (nested.containers.some((c) => c !== QUOTE)) item = containers
-          } else if ((open = fenceAt(line, inside.at))) {
+          } else if ((open = fenceAt(line, inside.at, inside.column, inside.carry))) {
             containers = item
           }
         }
@@ -389,12 +403,13 @@ function codeRanges(src: string): Array<[number, number]> {
         const next = src.slice(p, le)
         // The fence ends with its container: a quote line without `>`, a
         // list item line indented less than the item's content.
-        const at = insideContainers(next, containers, next.trim() === '')
+        const inside = insideContainersAt(next, containers, next.trim() === '')
+        const at = inside.at
         if (at === -1) {
           end = p - 1
           break
         }
-        const close = fenceAt(next, at)
+        const close = fenceAt(next, at, inside.column, inside.carry)
         if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === '') {
           end = le
           break

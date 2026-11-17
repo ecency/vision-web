@@ -1,13 +1,8 @@
 import { Suspense } from "react";
 import { prefetchQuery, getQueryClient } from "@/core/react-query";
 import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
-import {
-  buildPictureSources,
-  buildSrcSet,
-  getEntryImageRawUrl,
-  IMAGE_SIZES
-} from "@ecency/render-helper";
-import { entryLcpMatch } from "@/app/(dynamicPages)/entry/_helpers/entry-lcp-match";
+import { buildPictureSources, buildSrcSet, IMAGE_SIZES } from "@ecency/render-helper";
+import { entryLcpMatch, entryLcpPreload } from "@/app/(dynamicPages)/entry/_helpers/entry-lcp-match";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { EntryPageContentClient } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-content-client";
 import { EntryPageContentSSR } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-content-ssr";
@@ -227,7 +222,9 @@ export default async function EntryPage({ params, searchParams }: Props) {
   //     The body may still render an avif <picture>, so a match preload here would
   //     mismatch the avif <source> and double-download the LCP. The in-body
   //     fetchpriority="high" <img> still prioritizes the actual fetch.
-  const rawCover = getEntryImageRawUrl(entry);
+  //   - A YouTube poster first in the body (#2119): the body renders it as a
+  //     bare format=match <img>, so preload exactly that URL.
+  const { rawCover, posterHref } = entryLcpPreload(entry);
   const coverPicture = rawCover ? buildPictureSources(rawCover) : null;
   const lcpMatch = entryLcpMatch(rawCover);
   const lcpMatchSrcSet = lcpMatch ? buildSrcSet(lcpMatch) : "";
@@ -283,6 +280,8 @@ export default async function EntryPage({ params, searchParams }: Props) {
           imageSizes={lcpMatchSrcSet ? IMAGE_SIZES : undefined}
           fetchPriority="high"
         />
+      ) : posterHref ? (
+        <link rel="preload" as="image" href={posterHref} fetchPriority="high" />
       ) : null}
       <EntryPageContextProvider>
         <MdHandler />

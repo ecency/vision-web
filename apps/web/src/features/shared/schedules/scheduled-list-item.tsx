@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
-import { postBodySummary } from "@ecency/render-helper";
-import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";
+import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
+import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
 import { PopoverConfirm } from "@ui/popover-confirm";
 import { Badge } from "@ui/badge";
 import { Button } from "@ui/button";
@@ -25,8 +25,8 @@ export function ScheduledListItem({ post }: Props) {
   const reputation = account?.reputation;
 
   const tag = post.tags_arr[0] || "";
-  const img = catchPostImageSafely(post.body, 600, 500);
-  const summary = postBodySummary(post.body, 200);
+  const img = getEntryCardImageSafely(post.body, 600, 500);
+  const summary = postBodyTextSafely(post.body, 200);
 
   const dateRelative = useMemo(() => dateToFullRelative(post.schedule), [post]);
   const dateFormatted = useMemo(() => dateToFormatted(post.schedule), [post]);

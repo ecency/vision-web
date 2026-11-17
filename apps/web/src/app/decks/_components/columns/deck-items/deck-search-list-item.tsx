@@ -1,6 +1,7 @@
 import React, { Fragment, JSX, useEffect, useRef, useState } from "react";
-import { postBodySummary, proxifyImageSrc } from "@ecency/render-helper";
-import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";
+import { proxifyImageSrc } from "@ecency/render-helper";
+import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
+import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
 import { useInViewport } from "react-in-viewport";
 import { voteSvg } from "../../icons";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -73,10 +74,10 @@ export const SearchListItem = ({
 
   const [title, setTitle] = useState(entry.title);
   const [body, setBody] = useState(
-    entry.body_marked ? transformMarkedContent(entry.body_marked) : postBodySummary(entry.body, 200)
+    entry.body_marked ? transformMarkedContent(entry.body_marked) : postBodyTextSafely(entry.body, 200)
   );
   const [image, setImage] = useState(
-    catchPostImageSafely(entry.body, 600, 500)
+    getEntryCardImageSafely(entry.body, 600, 500)
   );
 
   useEffect(() => {
@@ -84,7 +85,7 @@ export const SearchListItem = ({
     setBody(
       entry.body_marked
         ? transformMarkedContent(entry.body_marked)
-        : postBodySummary(entry.body, 200)
+        : postBodyTextSafely(entry.body, 200)
     );
   }, [entry]);
 

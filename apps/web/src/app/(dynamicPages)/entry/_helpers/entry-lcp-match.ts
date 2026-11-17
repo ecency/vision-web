@@ -1,4 +1,5 @@
-import { proxifyImageSrc } from "@ecency/render-helper";
+import { getEntryLcpImage, proxifyImageSrc } from "@ecency/render-helper";
+import type { Entry } from "@/entities";
 
 /**
  * The format=match preload URL for a cover the entry page cannot preload as a
@@ -21,4 +22,25 @@ export function entryLcpMatch(rawCover: string | null | undefined): string | nul
     ? proxifyImageSrc(rawCover, 0, 0, "match")
     : proxifyImageSrc(rawCover, 600, 500, "match");
   return proxied || null;
+}
+
+/**
+ * What the entry page preloads for its first image (#2119). `rawCover` feeds
+ * the <picture> / format=match preload as before. A YouTube link before the
+ * first image makes its poster the page's first image, rendered as a plain
+ * format=match <img>, so it gets that one URL as `posterHref` instead (and no
+ * cover preload, which would download an image the page does not show first).
+ */
+export function entryLcpPreload(entry: Entry): { rawCover: string | null; posterHref: string | null } {
+  let lcp: ReturnType<typeof getEntryLcpImage> = null;
+  try {
+    lcp = getEntryLcpImage(entry);
+  } catch {
+    // A body the scan cannot read gets no preload; the page still renders.
+    return { rawCover: null, posterHref: null };
+  }
+  if (lcp?.poster) {
+    return { rawCover: null, posterHref: proxifyImageSrc(lcp.url, 0, 0, "match") || null };
+  }
+  return { rawCover: lcp?.url ?? null, posterHref: null };
 }

@@ -35,22 +35,25 @@ const SITES: { file: string; calls: number }[] = [
 
 const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
 
-describe("card and search summaries go through the postBodySummary guard", () => {
-  it.each(SITES)("$file imports the guard, not the raw export", ({ file }) => {
+// Cards and search rows read their summary without the markdown renderer
+// (postBodyTextSafely over getPostBodyText, #2113); both guards share the
+// report-once failure handling.
+describe("card and search summaries go through the summary guard", () => {
+  it.each(SITES)("$file imports the guard, not a raw export", ({ file }) => {
     const source = read(file);
     expect(source).toMatch(
-      /import\s*{\s*postBodySummarySafely\s*}\s*from\s*"[^"]*post-body-summary-safely"/
+      /import\s*{\s*postBodyTextSafely\s*}\s*from\s*"[^"]*post-body-text-safely"/
     );
-    // Only the guard module may import postBodySummary from the package here.
+    // Only the guard module may import the summary functions from the package here.
     expect(source).not.toMatch(
-      /import\s*{[^}]*\bpostBodySummary\b[^}]*}\s*from\s*"@ecency\/render-helper"/
+      /import\s*{[^}]*\b(?:postBodySummary|getPostBodyText)\b[^}]*}\s*from\s*"@ecency\/render-helper"/
     );
   });
 
   it.each(SITES)("$file makes all $calls of its calls through the guard", ({ file, calls }) => {
     const source = read(file);
-    expect(source.match(/postBodySummarySafely\(/g)?.length ?? 0).toBe(calls);
-    expect(source.match(/(?<!Safely)\bpostBodySummary\(/g)).toBeNull();
+    expect(source.match(/postBodyTextSafely\(/g)?.length ?? 0).toBe(calls);
+    expect(source.match(/(?<!Safely)\b(?:postBodySummary|getPostBodyText)\(/g)).toBeNull();
   });
 
   // The card component reaches the reader through this module, so the pin above
@@ -65,6 +68,11 @@ describe("card and search summaries go through the postBodySummary guard", () =>
     const source = read("core/entries/post-body-summary-safely.ts");
     expect(source).toMatch(/catch\s*\([\s\S]*?\)\s*{[\s\S]*?return "";/);
     expect(source).toMatch(/reportRenderHelperFailureOnce\(\s*"postBodySummary"/);
+    // The card summary guard sits apart and imports only getPostBodyText, so a
+    // card never imports postBodySummary and its Remarkable (#2113).
+    const text = read("core/entries/post-body-text-safely.ts");
+    expect(text).toMatch(/reportRenderHelperFailureOnce\(\s*"getPostBodyText"/);
+    expect(text).not.toMatch(/\bpostBodySummary\b/);
   });
 
   // The two guards share one dedupe set, so the call site has to be part of the

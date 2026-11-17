@@ -35,27 +35,34 @@ import { describe, expect, it } from "vitest";
  */
 const SRC = path.resolve(__dirname, "../../..");
 
-/** Call sites routed through the guard, with how many calls each makes. */
-const GUARDED: { file: string; calls: number }[] = [
+/**
+ * Call sites routed through a guard, with how many calls each makes. Cards
+ * that run in the browser use getEntryCardImageSafely (no markdown renderer in
+ * their bundle, #2113); the rest use catchPostImageSafely.
+ */
+const CARD = "getEntryCardImageSafely";
+const FULL = "catchPostImageSafely";
+const GUARDED: { file: string; calls: number; guard: string }[] = [
   // #1790 — the four that render inside a route's SSR shell.
   // Full-size thumbnail + the LQIP placeholder behind it.
-  { file: "features/shared/entry-list-item/entry-list-item-thumbnail.tsx", calls: 2 },
-  { file: "features/shared/search-list-item/index.tsx", calls: 1 },
+  { file: "features/shared/entry-list-item/entry-list-item-thumbnail.tsx", calls: 2, guard: CARD },
+  { file: "features/shared/search-list-item/index.tsx", calls: 1, guard: CARD },
   // #1795 — the rest of the app.
   // Full bodies by design: RSS items, the user's own drafts and scheduled
   // posts, search rows in a deck column, and the proposal page's own body.
-  { file: "features/rss/entries-rss-handler.ts", calls: 1 },
-  { file: "features/shared/drafts/draft-list-item.tsx", calls: 1 },
-  { file: "features/shared/schedules/scheduled-list-item.tsx", calls: 1 },
-  { file: "app/decks/_components/columns/deck-items/deck-search-list-item.tsx", calls: 1 },
-  { file: "app/proposals/[id]/page.tsx", calls: 1 },
+  { file: "features/rss/entries-rss-handler.ts", calls: 1, guard: FULL },
+  { file: "features/shared/drafts/draft-list-item.tsx", calls: 1, guard: CARD },
+  { file: "features/shared/schedules/scheduled-list-item.tsx", calls: 1, guard: CARD },
+  { file: "app/decks/_components/columns/deck-items/deck-search-list-item.tsx", calls: 1, guard: CARD },
+  { file: "app/proposals/[id]/page.tsx", calls: 1, guard: FULL },
   // Slim by default, full body only via the slimming backstop — the same risk
   // class as the feed card, on the homepage and the entry page.
-  { file: "app/_components/landing-page/landing-trending.tsx", calls: 1 },
+  { file: "app/_components/landing-page/landing-trending.tsx", calls: 1, guard: FULL },
   {
     file:
       "app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-related-item.ts",
-    calls: 2
+    calls: 2,
+    guard: FULL
   }
 ];
 
@@ -76,8 +83,8 @@ const UNGUARDED_BY_DESIGN: { file: string; why: string; proof: RegExp }[] = [
   },
   {
     file: "core/entries/slim-entry.ts",
-    why: "fast mode never renders markdown, and the call already sits inside slimEntrySafely's try/catch",
-    proof: /catchPostImage\(entry, 0, 0, "match", { fast: true }\)/
+    why: "getEntryCardImage never renders markdown, and the call already sits inside slimEntrySafely's try/catch",
+    proof: /getEntryImageRawUrl\(entry\) \?\? getEntryCardImage\(entry\)/
   },
   {
     file:
@@ -87,8 +94,15 @@ const UNGUARDED_BY_DESIGN: { file: string; why: string; proof: RegExp }[] = [
   }
 ];
 
-/** The guard module itself, which is the only file that may wrap the export. */
+/** The guard modules, the only files that may wrap the exports. */
 const GUARD_MODULE = "core/entries/catch-post-image-safely.ts";
+// The card guards sit in their own module so a card never imports
+// catchPostImage, whose full tier brings the markdown renderer (#2113).
+const CARD_GUARD_MODULE = "core/entries/card-image-safely.ts";
+const MODULE_OF: Record<string, string> = {
+  getEntryCardImageSafely: "@/core/entries/card-image-safely",
+  catchPostImageSafely: "@/core/entries/catch-post-image-safely"
+};
 
 const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
 
@@ -122,18 +136,20 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("catchPostImage call sites go through the guard", () => {
-  it.each(GUARDED)("$file imports the guard, not the raw export", ({ file }) => {
+  it.each(GUARDED)("$file imports $guard, not a raw export", ({ file, guard }) => {
     const source = read(file);
     expect(source).toMatch(
-      /import\s*{[^}]*\bcatchPostImageSafely\b[^}]*}\s*from "@\/core\/entries\/catch-post-image-safely";/
+      new RegExp(`import\\s*{[^}]*\\b${guard}\\b[^}]*}\\s*from "${MODULE_OF[guard]}";`)
     );
     expect(importsRawExport(source)).toBe(false);
+    expect(importsRawExport(source, "getEntryCardImage")).toBe(false);
   });
 
-  it.each(GUARDED)("$file makes all $calls of its calls through the guard", ({ file, calls }) => {
+  it.each(GUARDED)("$file makes all $calls of its calls through $guard", ({ file, calls, guard }) => {
     const source = read(file);
-    expect(source.match(/catchPostImageSafely\(/g)?.length ?? 0).toBe(calls);
+    expect(source.match(new RegExp(`${guard}\\(`, "g"))?.length ?? 0).toBe(calls);
     expect(source.match(/(?<!Safely)\bcatchPostImage\(/g)).toBeNull();
+    expect(source.match(/(?<!Safely)\bgetEntryCardImage\(/g)).toBeNull();
   });
 
   it("the guard swallows the throw and reports rather than rethrowing", () => {
@@ -142,7 +158,14 @@ describe("catchPostImage call sites go through the guard", () => {
     // The report-once bookkeeping moved into report-render-helper-failure.ts,
     // shared with the summary guard; the guard must still call it.
     expect(source).toMatch(/reportRenderHelperFailureOnce\(\s*"catchPostImage"/);
+    expect(read(CARD_GUARD_MODULE)).toMatch(
+      /getEntryCardImage\(\.\.\.args\);\s*}\s*catch\s*\(e\)\s*{\s*reportRenderHelperFailureOnce\(\s*"getEntryCardImage"[\s\S]*?return null;/
+    );
     expect(read("core/entries/report-render-helper-failure.ts")).toContain("reportedFailures");
+  });
+
+  it("the card guard module never imports catchPostImage (#2113)", () => {
+    expect(importsRawExport(read(CARD_GUARD_MODULE))).toBe(false);
   });
 });
 
@@ -152,12 +175,12 @@ describe("the call sites that keep the raw export", () => {
   });
 
   it("is the complete list — no other file in apps/web reaches for the raw export", () => {
-    const allowed = new Set([GUARD_MODULE, ...UNGUARDED_BY_DESIGN.map((s) => s.file)]);
+    const allowed = new Set([GUARD_MODULE, CARD_GUARD_MODULE, ...UNGUARDED_BY_DESIGN.map((s) => s.file)]);
     const offenders = walk(SRC)
       // Specs mock the module by name; only production code is in scope here.
       .filter((f) => !f.startsWith("specs" + path.sep))
       .filter((f) => !allowed.has(f.split(path.sep).join("/")))
-      .filter((f) => importsRawExport(read(f)));
+      .filter((f) => importsRawExport(read(f)) || importsRawExport(read(f), "getEntryCardImage"));
 
     expect(offenders).toEqual([]);
   });
@@ -183,7 +206,7 @@ describe("getEntryCardImageRawUrl goes through its guard", () => {
   });
 
   it("the guard swallows the throw and reports rather than rethrowing", () => {
-    const source = read(GUARD_MODULE);
+    const source = read(CARD_GUARD_MODULE);
     expect(source).toMatch(
       /getEntryCardImageRawUrl\(\.\.\.args\);\s*}\s*catch\s*\(e\)\s*{\s*reportRenderHelperFailureOnce\(\s*"getEntryCardImageRawUrl"[\s\S]*?return null;/
     );
@@ -192,7 +215,7 @@ describe("getEntryCardImageRawUrl goes through its guard", () => {
   it("no other file in apps/web reaches for the raw export", () => {
     const offenders = walk(SRC)
       .filter((f) => !f.startsWith("specs" + path.sep))
-      .filter((f) => f.split(path.sep).join("/") !== GUARD_MODULE)
+      .filter((f) => f.split(path.sep).join("/") !== CARD_GUARD_MODULE)
       .filter((f) => importsRawExport(read(f), "getEntryCardImageRawUrl"));
 
     expect(offenders).toEqual([]);

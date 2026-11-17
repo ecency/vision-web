@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import i18next from "i18next";
-import { postBodySummary } from "@ecency/render-helper";
+import { getPostBodyText } from "@ecency/render-helper";
 import { detectLanguage } from "@/api/translation";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import {
@@ -172,7 +172,7 @@ export function useContentLanguageGate(
       }
       try {
         // Bound markdown work regardless of article length.
-        const detectText = postBodySummary(sample.slice(0, RAW_SAMPLE_CHARS), 0).slice(
+        const detectText = getPostBodyText(sample.slice(0, RAW_SAMPLE_CHARS), 0).slice(
           0,
           SAMPLE_CHARS
         );
