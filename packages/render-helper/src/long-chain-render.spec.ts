@@ -8,9 +8,13 @@ import { MAX_TRAVERSE_DEPTH } from './methods/traverse.method'
 // the whole string. A few thousand levels then ran out of stack and the body
 // fell back to sanitize-only output after seconds of CPU.
 //
-// The bounds below are deliberately generous (a fixed render takes a small
-// fraction of them); they only catch the quadratic path coming back.
-const BUDGET_MS = 2500
+// The checks measure growth, not wall-clock time: CI runners differ by 5x or
+// more in speed, so a fixed budget fails a slow runner with nothing wrong.
+// Rendering an eighth of a body and then the whole of it costs about 8x on
+// the linear path (up to about 10 measured, 20 once on a busy CI runner that
+// runs every package's tests at once) and 64x on the quadratic one (37 to 49
+// measured for the adjacent tag and mention chains before #1920).
+const GROWTH_LIMIT = 24
 
 const countLinks = (html: string, cls: string) =>
   (html.match(new RegExp(`<a class="${cls}`, 'g')) || []).length
@@ -21,7 +25,28 @@ function timed(body: string, forApp = false): { html: string; ms: number } {
   return { html, ms: performance.now() - t0 }
 }
 
-describe('long tag and mention chains (#1920)', () => {
+/**
+ * Render `make(n / 8)` and `make(n)` (the fastest of three runs each, after a
+ * warm-up) and return the larger render's HTML with the time ratio. Each run
+ * gets its own trailing word, as markdown2Html caches a body it has seen.
+ */
+let run = 0
+function growth(make: (n: number) => string, n: number, forApp = false): { html: string; ratio: number } {
+  const fresh = (size: number) => `${make(size)}\n\nrun${++run}`
+  markdown2Html(fresh(Math.max(1, Math.floor(n / 16))), forApp) // warm-up
+  const best = (size: number) => {
+    // Best of three: one stall on a shared runner must not decide the ratio.
+    const runs = [timed(fresh(size), forApp), timed(fresh(size), forApp), timed(fresh(size), forApp)]
+    return { html: runs[2].html, ms: Math.max(Math.min(...runs.map((r) => r.ms)), 1) }
+  }
+  const small = best(Math.floor(n / 8))
+  const big = best(n)
+  return { html: big.html, ratio: big.ms / small.ms }
+}
+
+// Each growth check renders a body several times; a runner five times slower
+// than a workstation needs more than vitest's 5 s default.
+describe('long tag and mention chains (#1920)', { timeout: 60_000 }, () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -29,33 +54,31 @@ describe('long tag and mention chains (#1920)', () => {
   afterEach(() => warnSpy.mockRestore())
 
   it('links every tag in a 6000-tag adjacent chain without falling back', () => {
-    const body = Array.from({ length: 6000 }, (_, i) => `#tag${i}`).join('')
-    const { html, ms } = timed(body)
+    const { html, ratio } = growth((n) => Array.from({ length: n }, (_, i) => `#tag${i}`).join(''), 6000)
     expect(countLinks(html, 'er-tag er-tag-link')).toBe(6000)
-    expect(ms).toBeLessThan(BUDGET_MS)
+    expect(ratio).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('links every mention in a 6000-mention adjacent chain without falling back', () => {
-    const body = Array.from({ length: 6000 }, (_, i) => `@user${i}`).join('')
-    const { html, ms } = timed(body)
+    const { html, ratio } = growth((n) => Array.from({ length: n }, (_, i) => `@user${i}`).join(''), 6000)
     expect(countLinks(html, 'er-author er-author-link')).toBe(6000)
-    expect(ms).toBeLessThan(BUDGET_MS)
+    expect(ratio).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('links every mention in a 6000-mention space separated chain', () => {
-    const body = Array.from({ length: 6000 }, (_, i) => `@user${i}`).join(' ')
-    const { html, ms } = timed(body)
+    const { html, ratio } = growth((n) => Array.from({ length: n }, (_, i) => `@user${i}`).join(' '), 6000)
     expect(countLinks(html, 'er-author er-author-link')).toBe(6000)
-    expect(ms).toBeLessThan(BUDGET_MS)
+    expect(ratio).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('links adjacent app-mode tags and mentions the same way', () => {
-    const body = Array.from({ length: 3000 }, (_, i) => `#tag${i}`).join('') + ' ' +
-      Array.from({ length: 3000 }, (_, i) => `@user${i}`).join('')
-    const { html, ms } = timed(body, true)
+    const make = (n: number) =>
+      Array.from({ length: n }, (_, i) => `#tag${i}`).join('') + ' ' +
+      Array.from({ length: n }, (_, i) => `@user${i}`).join('')
+    const { html, ratio } = growth(make, 3000, true)
     expect(countLinks(html, 'markdown-tag-link')).toBe(3000)
     expect(countLinks(html, 'markdown-author-link')).toBe(3000)
-    expect(ms).toBeLessThan(BUDGET_MS)
+    expect(ratio).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('keeps the existing stop rules inside a run', () => {
@@ -71,11 +94,10 @@ describe('long tag and mention chains (#1920)', () => {
   })
 
   it('links every item of a 3000-pair alternating tag/mention chain', () => {
-    const body = Array.from({ length: 3000 }, (_, i) => `#t${i}x@user${i}`).join('')
-    const { html, ms } = timed(body)
+    const { html, ratio } = growth((n) => Array.from({ length: n }, (_, i) => `#t${i}x@user${i}`).join(''), 3000)
     expect(countLinks(html, 'er-tag er-tag-link')).toBe(3000)
     expect(countLinks(html, 'er-author er-author-link')).toBe(3000)
-    expect(ms).toBeLessThan(BUDGET_MS)
+    expect(ratio).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('keeps transforming the rest of a body nested past the depth cap', () => {
@@ -84,13 +106,12 @@ describe('long tag and mention chains (#1920)', () => {
     const n = MAX_TRAVERSE_DEPTH + 20
     const deep = '<div>'.repeat(n) + 'deep text <img src="https://evil.example/t.png">' +
       '<a href="https://evil.example/x" target="_blank" rel="opener">l</a>' + '</div>'.repeat(n)
-    const { html, ms } = timed(`@alice https://i.imgur.com/a.png\n\n${deep}`)
+    const { html } = timed(`@alice https://i.imgur.com/a.png\n\n${deep}`)
     expect(html).not.toContain('evil.example')
     expect(html).not.toContain('rel="opener"')
     expect(html).toContain('deep text')
     expect(countLinks(html, 'er-author er-author-link')).toBe(1)
     expect(html).toMatch(/<img [^>]*src="https:\/\/i\.ecency\.com\/p\//)
-    expect(ms).toBeLessThan(BUDGET_MS)
   })
 
   it('reaches the cap on a text node or an element at any offset without falling back', () => {
@@ -107,12 +128,13 @@ describe('long tag and mention chains (#1920)', () => {
     it(`keeps every link in 600 lines of unclosed ${open}`, () => {
       // Hundreds of unclosed tags nest one or two levels per line. Develop
       // rendered these fully; they must stay well inside the cap.
-      const body = Array.from({ length: 600 }, (_, i) => `${open}line ${i} @user${i}`).join('\n\n') +
+      const make = (n: number) =>
+        Array.from({ length: n }, (_, i) => `${open}line ${i} @user${i}`).join('\n\n') +
         '\n\n<img src="https://evil.example/t.png">'
-      const { html, ms } = timed(body)
+      const { html, ratio } = growth(make, 600)
       expect(countLinks(html, 'er-author er-author-link')).toBe(600)
       expect(html).not.toContain('src="https://evil.example')
-      expect(ms).toBeLessThan(BUDGET_MS)
+      expect(ratio).toBeLessThan(GROWTH_LIMIT)
     })
   }
 

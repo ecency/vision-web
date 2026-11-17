@@ -92,8 +92,8 @@ describe('#1919 embed allow list and author markers', () => {
       expect(out).not.toMatch(/markdown-(author|profile)-link/)
       expect(out).not.toContain('data-href')
       expect(out).not.toContain('data-community')
-      // Unrelated author classes survive.
-      expect(out).toContain('class="other"')
+      // A class outside the author list is dropped too.
+      expect(out).not.toContain('class="other"')
     })
 
     it('strips an author click-to-play marker', () => {

@@ -1,12 +1,13 @@
-import { RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses } from '../consts'
+import { RENDER_HELPER_DATA_ATTRIBUTES, authorClasses } from '../consts'
 import { VALID_ATTRIBUTE_NAME, isHiddenElement } from './render-boundary.method'
 
 const ELEMENT_NODE = 1
 
 /**
- * Lower-cases an element's attribute names (the first spelling wins) and
- * drops render-helper's own link markers from it: `markdown-*` class tokens
- * and the `data-*` attributes the transforms set.
+ * Lower-cases an element's attribute names (the first spelling wins), drops
+ * render-helper's own link markers from it (`markdown-*` class tokens and the
+ * `data-*` attributes the transforms set) and keeps only the class tokens an
+ * author may write (authorClasses).
  *
  * xmldom keeps names as written, and its HTML-mode getAttribute/removeAttribute
  * do not fold case, so `CLASS=` / `DATA-AUTHOR=` / `SRC=` / `HREF=` slipped past
@@ -36,7 +37,7 @@ function normalizeElement(el: Element): void {
     seen.add(lower)
     let value = attr.value
     if (lower === 'class') {
-      value = stripMarkdownClasses(value)
+      value = authorClasses(value)
       if (!value) {
         el.removeAttributeNode(attr)
         continue

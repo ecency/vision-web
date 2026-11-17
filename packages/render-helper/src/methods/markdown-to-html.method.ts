@@ -63,7 +63,7 @@ function wrapRule(ruler: RuleList, name: string, wrap: (fn: any) => any): void {
 // The inline parse state, with the paired source computed once per state.
 // The links rule runs at every `[` and `!`, and its label parse re-enters the
 // rules on the same state, so nothing here compares or rescans the source.
-type PairState = { src: string; ampPaired?: string | null; ampInside?: boolean }
+type PairState = { src: string; ampPaired?: string | null; ampInside?: boolean; ampOriginal?: string }
 type ParseRule = (state: PairState, silent?: boolean) => boolean
 
 function withPairedSource(rule: ParseRule): ParseRule {
@@ -75,11 +75,30 @@ function withPairedSource(rule: ParseRule): ParseRule {
     const src = state.src
     state.src = paired
     state.ampInside = true
+    state.ampOriginal = src
     try {
       return rule(state, silent)
     } finally {
       state.src = src
       state.ampInside = false
+      state.ampOriginal = undefined
+    }
+  }
+}
+
+// An autolink in a link label is parsed while the label holds the pair, but an
+// autolink takes no escapes: `<https://e.com/?a\\&b>` keeps its backslash
+// (#2098). So it reads the original source, as one outside a label does. Same
+// length, so every position holds.
+function withOriginalSource(rule: ParseRule): ParseRule {
+  return (state, silent) => {
+    if (!state.ampInside || state.ampOriginal === undefined) return rule(state, silent)
+    const paired = state.src
+    state.src = state.ampOriginal
+    try {
+      return rule(state, silent)
+    } finally {
+      state.src = paired
     }
   }
 }
@@ -170,20 +189,146 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   return true
 }
 
-// A fence line, optionally inside blockquotes: `(?: {0,3}>)+` then one
-// optional space; each `>` ends its own repetition, so the match is linear.
-const FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/
-const FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/
-const quoteDepth = (prefix: string | undefined): number => {
-  let depth = 0
-  if (prefix) for (const c of prefix) if (c === '>') depth++
-  return depth
+// The containers a line sits in, outermost first: QUOTE for a blockquote
+// marker, or a list item's content width (marker, its indent and the spaces
+// after it). Read with a moving index, never a pattern: a line of thousands
+// of list markers is one pass (an earlier pattern backtracked on it).
+const QUOTE = -1
+const isSpace = (line: string, at: number) => line.charCodeAt(at) === 0x20
+
+function readContainers(line: string, from = 0, fromColumn = 0, carriedIndent = 0): { containers: number[]; at: number } {
+  const containers: number[] = []
+  let at = from
+  // Columns, not characters: a tab after a list marker indents to the next
+  // multiple of four, as the parser counts it. Containers hold content widths
+  // in columns, which insideContainers strips the same way.
+  let column = fromColumn
+  for (let first = true; ; first = false) {
+    // Columns of indent a tab already covered before `from` count as indent.
+    let indent = first ? carriedIndent : 0
+    const spacesFrom = indent
+    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++
+    if (indent > 3) break
+    const markerAt = at + indent - spacesFrom
+    const c = line[markerAt]
+    if (c === '>') {
+      containers.push(QUOTE)
+      at = markerAt + 1
+      column += indent - spacesFrom + 1
+      if (isSpace(line, at)) {
+        at++
+        column++
+      }
+      continue
+    }
+    let markerLength = 0
+    if (c === '-' || c === '*' || c === '+') {
+      markerLength = 1
+    } else {
+      let d = markerAt
+      while (d - markerAt < 9 && line.charCodeAt(d) >= 0x30 && line.charCodeAt(d) <= 0x39) d++
+      if (d > markerAt && (line[d] === '.' || line[d] === ')')) markerLength = d - markerAt + 1
+    }
+    if (markerLength === 0) break
+    const afterMarker = column + indent - spacesFrom + markerLength
+    let gapColumns = 0
+    let gapChars = 0
+    while (gapColumns < 5) {
+      const g = line[markerAt + markerLength + gapChars]
+      if (g === ' ') gapColumns++
+      else if (g === '\t') gapColumns += 4 - ((afterMarker + gapColumns) % 4)
+      else break
+      gapChars++
+    }
+    if (gapChars === 0) break
+    // Five or more columns after the marker: the content starts one column
+    // in, and the rest is an indented code block.
+    const wide = gapColumns >= 5
+    const width = indent + markerLength + (wide ? 1 : gapColumns)
+    containers.push(width)
+    at = markerAt + markerLength + (wide ? 1 : gapChars)
+    column += width - spacesFrom
+  }
+  return { containers, at }
+}
+
+// Where a line's content starts inside `containers`, or -1 when the line is
+// outside them: a blockquote needs its `>`, a list item its content indent
+// (a blank line stays in the item). A tab indents to the next multiple of
+// four columns, as the parser counts it.
+function insideContainers(line: string, containers: number[], blank: boolean): number {
+  return insideContainersAt(line, containers, blank).at
+}
+
+// insideContainers, with the column the content starts at. A tab that runs
+// past one container's indent counts toward the next one.
+// insideContainers, with where the content starts (index, column, and the
+// columns of a tab that ran past the last container's indent). A line outside
+// the containers has at = -1, and `matched`/`prefixAt` say how many of them it
+// is still inside and where that prefix ends, for a caller that falls back to
+// the enclosing item.
+type Inside = { at: number; column: number; carry: number; matched: number; prefixAt: number }
+
+function insideContainersAt(line: string, containers: number[], blank: boolean): Inside {
+  let at = 0
+  let column = 0
+  let carry = 0
+  for (let k = 0; k < containers.length; k++) {
+    const container = containers[k]
+    const prefix = { at: -1, column, carry, matched: k, prefixAt: at }
+    if (container === QUOTE) {
+      let indent = 0
+      while (indent < 4 && isSpace(line, at + indent)) indent++
+      if (indent > 3 || line[at + indent] !== '>') return prefix
+      at += indent + 1
+      column += indent + 1
+      carry = 0
+      if (isSpace(line, at)) {
+        at++
+        column++
+      }
+    } else {
+      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length }
+      let needed = container - carry
+      carry = 0
+      while (needed > 0) {
+        if (isSpace(line, at)) {
+          at++
+          column++
+          needed--
+        } else if (line[at] === '\t') {
+          const width = 4 - (column % 4)
+          at++
+          column += width
+          needed -= width
+        } else {
+          return prefix
+        }
+      }
+      carry = -needed
+    }
+  }
+  return { at, column, carry, matched: containers.length, prefixAt: at }
+}
+
+// The fence run (``` or ~~~, three or more) a line has at `at` after up to
+// three spaces, or null.
+function fenceAt(line: string, at: number): { char: string; length: number; end: number } | null {
+  let indent = 0
+  while (indent < 4 && isSpace(line, at + indent)) indent++
+  if (indent > 3) return null
+  const start = at + indent
+  const char = line[start]
+  if (char !== '`' && char !== '~') return null
+  let end = start
+  while (line[end] === char) end++
+  return end - start >= 3 ? { char, length: end - start, end } : null
 }
 
 /**
  * Code in the markdown source, as [start, end) ranges in order: fenced blocks
- * (``` or ~~~ at a line start, inside blockquotes too, to the matching close,
- * the end of a quoted fence's blockquote, or the end) and inline
+ * (``` or ~~~ at a line start, inside blockquotes and list items too, to the
+ * matching close, the end of the container it sits in, or the end) and inline
  * code spans (a backtick run to the next run of the same length). Linear: each
  * line is read once, and each backtick run is paired through a precomputed
  * "next run of the same length" table rather than a search.
@@ -191,32 +336,66 @@ const quoteDepth = (prefix: string | undefined): number => {
 function codeRanges(src: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = []
   const runs: Array<[number, number]> = [] // [start, length] of backtick runs outside fences
+  // The containers of the last list item opened, for its continuation lines
+  // (`- item`, blank, then an indented fence).
+  let item: number[] | null = null
   let pos = 0
   while (pos < src.length) {
     const eol = src.indexOf('\n', pos)
     const lineEnd = eol === -1 ? src.length : eol
-    // A fence may sit in a blockquote (`> ~~~`): each `>` takes its own
-    // optional indent, so the prefix is read without ambiguity.
-    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd))
+    const line = src.slice(pos, lineEnd)
+    const blank = line.trim() === ''
+    let containers: number[] = []
+    let open: ReturnType<typeof fenceAt> = null
+    const read = readContainers(line)
+    if (read.containers.length > 0) {
+      containers = read.containers
+      open = fenceAt(line, read.at)
+      // A quote line outside the item ends it.
+      item = containers.some((c) => c !== QUOTE) ? containers : null
+    } else if (!blank) {
+      if (item) {
+        let inside = insideContainersAt(line, item, false)
+        if (inside.at === -1 && inside.matched > 0) {
+          // Out of the innermost item but still inside an enclosing one (a
+          // fence back at the parent's indent after nested bullets).
+          item = item.slice(0, inside.matched)
+          inside = { ...inside, at: inside.prefixAt }
+        }
+        if (inside.at === -1) {
+          item = null
+        } else {
+          // A nested item on the parent's continuation line (`- a`, then
+          // `\t- ```` or `  - ````), its markers read from the right column.
+          const nested = readContainers(line, inside.at, inside.column, inside.carry)
+          if (nested.containers.length > 0) {
+            containers = [...item, ...nested.containers]
+            open = fenceAt(line, nested.at)
+            if (nested.containers.some((c) => c !== QUOTE)) item = containers
+          } else if ((open = fenceAt(line, inside.at))) {
+            containers = item
+          }
+        }
+      }
+      if (!open) open = fenceAt(line, 0)
+    }
     if (open) {
-      const depth = quoteDepth(open[1])
-      const quoted = depth > 0
-      const fence = open[2]
+      const fence = open
       let end = src.length
       let p = lineEnd + 1
       while (p < src.length) {
         const e = src.indexOf('\n', p)
         const le = e === -1 ? src.length : e
-        const line = src.slice(p, le)
-        // A quoted fence ends with its blockquote: the next line without `>`.
-        if (quoted && !/^ {0,3}>/.test(line)) {
+        const next = src.slice(p, le)
+        // The fence ends with its container: a quote line without `>`, a
+        // list item line indented less than the item's content.
+        const at = insideContainers(next, containers, next.trim() === '')
+        if (at === -1) {
           end = p - 1
           break
         }
-        const close = FENCE_CLOSE.exec(line)
-        // The close sits at the open's own quote depth: a `> ```` line inside
-        // an unquoted fence is code, not its end.
-        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
+        const close = fenceAt(next, at)
+        if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === '') {
           end = le
           break
         }
@@ -408,6 +587,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // markdown (linkify's hrefs come from text, already decoded).
   md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
+  wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', withOriginalSource)
   wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'
@@ -458,8 +638,19 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     // and the syntax highlighter split a placeholder across spans, so the
     // restore missed it and the app showed `0 1b2` for `&amp; &lt;b&gt;`
     // (#2093). Code renders exactly as on the web.
+    // An escaped `\\&` (odd backslash run) is a literal ampersand on the
+    // web, in a destination of any scheme and in text: the entity after it is
+    // not one, so it is left for the parser as the web leaves it (#2098).
+    const escaped = (text: string, at: number) => {
+      let k = at - 1;
+      while (k >= 0 && text.charCodeAt(k) === 0x5c) k--;
+      return (at - 1 - k) % 2 === 1;
+    };
     const swap = (text: string) =>
-      text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+      text.replace(ENTITY_REGEX, (entity: string, ...rest: unknown[]) => {
+        const at = rest[rest.length - 2] as number;
+        return escaped(text, at) ? entity : `\u200B${indexOf.get(entity)}\u200B`;
+      });
     const protect = (text: string) => {
       let out = '';
       let last = 0;

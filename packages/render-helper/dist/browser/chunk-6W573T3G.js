@@ -1,6 +1,6 @@
-import { traverse } from './chunk-G6CSQET3.js';
-import { sanitizeHtml } from './chunk-6TIHYBTO.js';
-import { stripAuthorMarkers } from './chunk-5TTSTJIL.js';
+import { traverse } from './chunk-6TSYCJNV.js';
+import { sanitizeHtml } from './chunk-OPUVENT7.js';
+import { stripAuthorMarkers } from './chunk-FAKJ3NFL.js';
 import { createRenderNonce, xmldomNodeFilter } from './chunk-YYHKRTAC.js';
 import { hasAmpSentinel, removeDuplicateAttributes, decodeCompleteReferences, moveBlockClosingTagOutOfParagraph } from './chunk-VLNYO6UX.js';
 import { XMLDOMSerializer, DOMParser } from './chunk-LAYY6CL4.js';
@@ -38,11 +38,25 @@ function withPairedSource(rule) {
     const src = state.src;
     state.src = paired;
     state.ampInside = true;
+    state.ampOriginal = src;
     try {
       return rule(state, silent);
     } finally {
       state.src = src;
       state.ampInside = false;
+      state.ampOriginal = void 0;
+    }
+  };
+}
+function withOriginalSource(rule) {
+  return (state, silent) => {
+    if (!state.ampInside || state.ampOriginal === void 0) return rule(state, silent);
+    const paired = state.src;
+    state.src = state.ampOriginal;
+    try {
+      return rule(state, silent);
+    } finally {
+      state.src = paired;
     }
   };
 }
@@ -91,39 +105,166 @@ function decodeDestinations(state) {
   }
   return true;
 }
-var FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/;
-var FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/;
-var quoteDepth = (prefix) => {
-  let depth = 0;
-  if (prefix) {
-    for (const c of prefix) if (c === ">") depth++;
+var QUOTE = -1;
+var isSpace = (line, at) => line.charCodeAt(at) === 32;
+function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
+  const containers = [];
+  let at = from;
+  let column = fromColumn;
+  for (let first = true; ; first = false) {
+    let indent = first ? carriedIndent : 0;
+    const spacesFrom = indent;
+    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++;
+    if (indent > 3) break;
+    const markerAt = at + indent - spacesFrom;
+    const c = line[markerAt];
+    if (c === ">") {
+      containers.push(QUOTE);
+      at = markerAt + 1;
+      column += indent - spacesFrom + 1;
+      if (isSpace(line, at)) {
+        at++;
+        column++;
+      }
+      continue;
+    }
+    let markerLength = 0;
+    if (c === "-" || c === "*" || c === "+") {
+      markerLength = 1;
+    } else {
+      let d = markerAt;
+      while (d - markerAt < 9 && line.charCodeAt(d) >= 48 && line.charCodeAt(d) <= 57) d++;
+      if (d > markerAt && (line[d] === "." || line[d] === ")")) markerLength = d - markerAt + 1;
+    }
+    if (markerLength === 0) break;
+    const afterMarker = column + indent - spacesFrom + markerLength;
+    let gapColumns = 0;
+    let gapChars = 0;
+    while (gapColumns < 5) {
+      const g = line[markerAt + markerLength + gapChars];
+      if (g === " ") gapColumns++;
+      else if (g === "	") gapColumns += 4 - (afterMarker + gapColumns) % 4;
+      else break;
+      gapChars++;
+    }
+    if (gapChars === 0) break;
+    const wide = gapColumns >= 5;
+    const width = indent + markerLength + (wide ? 1 : gapColumns);
+    containers.push(width);
+    at = markerAt + markerLength + (wide ? 1 : gapChars);
+    column += width - spacesFrom;
   }
-  return depth;
-};
+  return { containers, at };
+}
+function insideContainers(line, containers, blank) {
+  return insideContainersAt(line, containers, blank).at;
+}
+function insideContainersAt(line, containers, blank) {
+  let at = 0;
+  let column = 0;
+  let carry = 0;
+  for (let k = 0; k < containers.length; k++) {
+    const container = containers[k];
+    const prefix = { at: -1, column, carry, matched: k, prefixAt: at };
+    if (container === QUOTE) {
+      let indent = 0;
+      while (indent < 4 && isSpace(line, at + indent)) indent++;
+      if (indent > 3 || line[at + indent] !== ">") return prefix;
+      at += indent + 1;
+      column += indent + 1;
+      carry = 0;
+      if (isSpace(line, at)) {
+        at++;
+        column++;
+      }
+    } else {
+      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length };
+      let needed = container - carry;
+      carry = 0;
+      while (needed > 0) {
+        if (isSpace(line, at)) {
+          at++;
+          column++;
+          needed--;
+        } else if (line[at] === "	") {
+          const width = 4 - column % 4;
+          at++;
+          column += width;
+          needed -= width;
+        } else {
+          return prefix;
+        }
+      }
+      carry = -needed;
+    }
+  }
+  return { at, column, carry, matched: containers.length, prefixAt: at };
+}
+function fenceAt(line, at) {
+  let indent = 0;
+  while (indent < 4 && isSpace(line, at + indent)) indent++;
+  if (indent > 3) return null;
+  const start = at + indent;
+  const char = line[start];
+  if (char !== "`" && char !== "~") return null;
+  let end = start;
+  while (line[end] === char) end++;
+  return end - start >= 3 ? { char, length: end - start, end } : null;
+}
 function codeRanges(src) {
   const ranges = [];
   const runs = [];
+  let item = null;
   let pos = 0;
   while (pos < src.length) {
     const eol = src.indexOf("\n", pos);
     const lineEnd = eol === -1 ? src.length : eol;
-    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd));
+    const line = src.slice(pos, lineEnd);
+    const blank = line.trim() === "";
+    let containers = [];
+    let open = null;
+    const read = readContainers(line);
+    if (read.containers.length > 0) {
+      containers = read.containers;
+      open = fenceAt(line, read.at);
+      item = containers.some((c) => c !== QUOTE) ? containers : null;
+    } else if (!blank) {
+      if (item) {
+        let inside = insideContainersAt(line, item, false);
+        if (inside.at === -1 && inside.matched > 0) {
+          item = item.slice(0, inside.matched);
+          inside = { ...inside, at: inside.prefixAt };
+        }
+        if (inside.at === -1) {
+          item = null;
+        } else {
+          const nested = readContainers(line, inside.at, inside.column, inside.carry);
+          if (nested.containers.length > 0) {
+            containers = [...item, ...nested.containers];
+            open = fenceAt(line, nested.at);
+            if (nested.containers.some((c) => c !== QUOTE)) item = containers;
+          } else if (open = fenceAt(line, inside.at)) {
+            containers = item;
+          }
+        }
+      }
+      if (!open) open = fenceAt(line, 0);
+    }
     if (open) {
-      const depth = quoteDepth(open[1]);
-      const quoted = depth > 0;
-      const fence = open[2];
+      const fence = open;
       let end = src.length;
       let p = lineEnd + 1;
       while (p < src.length) {
         const e = src.indexOf("\n", p);
         const le = e === -1 ? src.length : e;
-        const line = src.slice(p, le);
-        if (quoted && !/^ {0,3}>/.test(line)) {
+        const next = src.slice(p, le);
+        const at = insideContainers(next, containers, next.trim() === "");
+        if (at === -1) {
           end = p - 1;
           break;
         }
-        const close = FENCE_CLOSE.exec(line);
-        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
+        const close = fenceAt(next, at);
+        if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === "") {
           end = le;
           break;
         }
@@ -236,6 +377,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   }).use(linkify);
   md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
   wrapRule(md.inline.ruler, "links", withPairedSource);
+  wrapRule(md.inline.ruler, "autolink", withOriginalSource);
   wrapRule(md.core.ruler, "references", withPairedReferences);
   md.core.ruler.enable([
     "abbr"
@@ -267,7 +409,15 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
         entityPlaceholders.push(entity);
       }
     }
-    const swap = (text) => text.replace(ENTITY_REGEX, (entity) => `\u200B${indexOf.get(entity)}\u200B`);
+    const escaped = (text, at) => {
+      let k = at - 1;
+      while (k >= 0 && text.charCodeAt(k) === 92) k--;
+      return (at - 1 - k) % 2 === 1;
+    };
+    const swap = (text) => text.replace(ENTITY_REGEX, (entity, ...rest) => {
+      const at = rest[rest.length - 2];
+      return escaped(text, at) ? entity : `\u200B${indexOf.get(entity)}\u200B`;
+    });
     const protect = (text) => {
       let out = "";
       let last2 = 0;
@@ -335,5 +485,5 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
 }
 
 export { markdownToHTML, stripDocumentWrapper };
-//# sourceMappingURL=chunk-7WIGAG4V.js.map
-//# sourceMappingURL=chunk-7WIGAG4V.js.map
+//# sourceMappingURL=chunk-6W573T3G.js.map
+//# sourceMappingURL=chunk-6W573T3G.js.map

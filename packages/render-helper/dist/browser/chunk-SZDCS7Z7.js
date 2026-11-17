@@ -187,7 +187,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   let isValidDomain = false;
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf("/") === 0) {
-      isValidDomain = true;
+      isValidDomain = !href.split(/[?#]/, 1)[0].includes("\u200B") && isInSiteHref(href);
     } else if (tpostMatch[1].includes(".")) {
       const domain = tpostMatch[1].replace(/^https?:\/\//, "").replace(/^www\./, "");
       isValidDomain = WHITE_LIST.includes(domain);
@@ -711,5 +711,5 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
 }
 
 export { a };
-//# sourceMappingURL=chunk-HPHPSDVJ.js.map
-//# sourceMappingURL=chunk-HPHPSDVJ.js.map
+//# sourceMappingURL=chunk-SZDCS7Z7.js.map
+//# sourceMappingURL=chunk-SZDCS7Z7.js.map

@@ -1,5 +1,5 @@
 import { isHiddenElement, VALID_ATTRIBUTE_NAME } from './chunk-YYHKRTAC.js';
-import { RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses } from './chunk-XGVZLBT6.js';
+import { RENDER_HELPER_DATA_ATTRIBUTES, authorClasses } from './chunk-GPH6URMW.js';
 
 // src/methods/strip-author-markers.method.ts
 var ELEMENT_NODE = 1;
@@ -21,7 +21,7 @@ function normalizeElement(el) {
     seen.add(lower);
     let value = attr.value;
     if (lower === "class") {
-      value = stripMarkdownClasses(value);
+      value = authorClasses(value);
       if (!value) {
         el.removeAttributeNode(attr);
         continue;
@@ -49,5 +49,5 @@ function stripAuthorMarkers(doc) {
 }
 
 export { stripAuthorMarkers };
-//# sourceMappingURL=chunk-5TTSTJIL.js.map
-//# sourceMappingURL=chunk-5TTSTJIL.js.map
+//# sourceMappingURL=chunk-FAKJ3NFL.js.map
+//# sourceMappingURL=chunk-FAKJ3NFL.js.map

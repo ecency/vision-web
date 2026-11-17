@@ -1,5 +1,5 @@
 import xss, { type SafeAttrValueHandler } from 'xss'
-import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, canonicalEmbedSrc, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
+import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, authorClasses, canonicalEmbedSrc, isAllowedEmbedSrc, namespacedId, stripMarkdownClasses} from '../consts'
 import { getProxyBase, proxifyImageSrc } from '../proxify-image-src'
 import { isStrictTag } from './render-boundary.method'
 import { decodeAttributeEntities, trimTrailingSlash } from '../helper'
@@ -180,6 +180,24 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   // onTag with the raw tag source right before walking its attributes.
   let trusted = false
 
+  // The ids this input declares, as written (decoded). A `#fragment` link to
+  // one of them follows it to its namespaced id; any other fragment (a
+  // `data-id` anchor, which the web resolves by script) is left alone. A
+  // false hit only points a link at a name nothing has.
+  const declaredIds = new Set<string>()
+  const declaredFragment = (fragment: string): string | null => {
+    let candidates = [fragment];
+    try {
+      candidates = [fragment, decodeURIComponent(fragment)];
+    } catch {
+      // a malformed escape: only the fragment as written can match
+    }
+    return candidates.find((id) => declaredIds.has(id) && ID_WHITELIST.test(id)) ?? null;
+  };
+  for (const m of regexMatches(html, /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
+    declaredIds.add(decodeAttributeEntities((m[1] ?? m[2] ?? m[3] ?? '').trim()))
+  }
+
   const cleaned = xss(html, {
     whiteList,
     onTag: (_tag, rawTag) => {
@@ -260,6 +278,13 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return '';
       }
       if (tag === 'span' && name === 'class' && decoded.toLowerCase().trim() === 'wr') return '';
+      // A class the render did not stamp is the author's, on every path
+      // (full render, its fallback, simple markdown for chat and paste): only
+      // the classes an author may write survive (authorClasses).
+      if (isWhiteAttr && name === 'class' && !trusted) {
+        const kept = authorClasses(decoded);
+        return kept ? `class="${escapeAttr(kept)}"` : '';
+      }
       // The embed allow list holds on every path, including bodies that never
       // reached iframe() (#1919). iframe() only emits sources it accepts.
       // A src that is refused as written gets the spelling iframe() would
@@ -347,6 +372,19 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       if (name === 'data-href' && !isSafeNavValue(decoded)) return '';
       if (name === 'id') {
         if (!ID_WHITELIST.test(decoded)) return '';
+        // render-helper writes no id of its own: every one is the author's (or
+        // the markdown stage's footnotes), namespaced away from the page's.
+        // Not in the pass before the transforms nor in the sanitize-only
+        // fallback: the final pass always follows both, and the prefix must be
+        // applied exactly once.
+        if (isWhiteAttr && !beforeTransform && !untransformed) return `id="${escapeAttr(namespacedId(decoded))}"`;
+      }
+      // A same-document link follows the namespaced id it points at (the
+      // app render carries it as data-href), matched as a browser matches a
+      // fragment: as written, or percent-decoded.
+      if (isWhiteAttr && !beforeTransform && !untransformed && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#')) {
+        const target = declaredFragment(decoded.slice(1));
+        if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
       // Every URL check above ran on the value decoded once. Left to itself,
       // xss would emit its own reading of the raw value: decoded again by the

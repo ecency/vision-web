@@ -3,7 +3,7 @@ import { video } from './chunk-UKHYGN3K.js';
 import { p } from './chunk-S6DHLIVP.js';
 import { isHiddenElement } from './chunk-YYHKRTAC.js';
 import { iframe } from './chunk-QHT7NVG5.js';
-import { a } from './chunk-HPHPSDVJ.js';
+import { a } from './chunk-SZDCS7Z7.js';
 import { img } from './chunk-7LJYQ23H.js';
 
 // src/methods/traverse.method.ts
@@ -66,5 +66,5 @@ function traverse(node, forApp, depth = 0, state = { firstImageFound: false }, p
 }
 
 export { MAX_TRAVERSE_DEPTH, traverse };
-//# sourceMappingURL=chunk-G6CSQET3.js.map
-//# sourceMappingURL=chunk-G6CSQET3.js.map
+//# sourceMappingURL=chunk-6TSYCJNV.js.map
+//# sourceMappingURL=chunk-6TSYCJNV.js.map

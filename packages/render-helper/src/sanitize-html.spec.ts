@@ -619,13 +619,13 @@ describe('sanitizeHtml', () => {
     describe('ID whitelist', () => {
       it('should allow valid IDs starting with letter', () => {
         const input = '<div id="myDiv">Content</div>'
-        const expected = '<div id="myDiv">Content</div>'
+        const expected = '<div id="user-content-myDiv">Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
       it('should allow IDs with letters, numbers, hyphens, underscores', () => {
         const input = '<div id="my-div_123">Content</div>'
-        const expected = '<div id="my-div_123">Content</div>'
+        const expected = '<div id="user-content-my-div_123">Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
@@ -667,7 +667,7 @@ describe('sanitizeHtml', () => {
 
       it('should handle entity-encoded IDs', () => {
         const input = '<div id="&#118;&#97;&#108;&#105;&#100;">Content</div>'
-        const expected = '<div id="valid">Content</div>'
+        const expected = '<div id="user-content-valid">Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
@@ -679,15 +679,15 @@ describe('sanitizeHtml', () => {
     })
 
     describe('class filtering', () => {
-      it('should allow valid classes', () => {
-        const input = '<div class="container">Content</div>'
-        const expected = '<div class="container">Content</div>'
+      it('should allow an author formatting class', () => {
+        const input = '<div class="text-center">Content</div>'
+        const expected = '<div class="text-center">Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
-      it('should allow multiple classes', () => {
-        const input = '<div class="container fluid">Content</div>'
-        const expected = '<div class="container fluid">Content</div>'
+      it('should keep only the author formatting classes of several', () => {
+        const input = '<div class="pull-left container text-justify">Content</div>'
+        const expected = '<div class="pull-left text-justify">Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
@@ -709,21 +709,21 @@ describe('sanitizeHtml', () => {
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
-      it('should allow "wr" class on non-span elements', () => {
+      it('should drop a class that is not an author formatting class', () => {
         const input = '<div class="wr">Content</div>'
-        const expected = '<div class="wr">Content</div>'
+        const expected = '<div>Content</div>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
-      it('should allow classes on images', () => {
-        const input = '<img src="https://example.com/image.jpg" class="responsive">'
-        const expected = '<img src="https://example.com/image.jpg" class="responsive">'
+      it('should keep an author formatting class on images', () => {
+        const input = '<img src="https://example.com/image.jpg" class="pull-right responsive">'
+        const expected = '<img src="https://example.com/image.jpg" class="pull-right">'
         expect(sanitizeHtml(input)).toBe(expected)
       })
 
-      it('should allow classes on links', () => {
+      it('should drop app classes on links', () => {
         const input = '<a href="https://example.com" class="btn">Link</a>'
-        const expected = '<a href="https://example.com" class="btn">Link</a>'
+        const expected = '<a href="https://example.com">Link</a>'
         expect(sanitizeHtml(input)).toBe(expected)
       })
     })
@@ -759,8 +759,8 @@ describe('sanitizeHtml', () => {
           '<a class="markdown-video-link-speak" data-embed-src="javascript:alert(document.domain)">x</a>'
         const out = sanitizeHtml(input)
         expect(out).not.toContain('javascript:')
-        // the hostile value is removed; the element/class itself is preserved
-        expect(out).toContain('class="markdown-video-link-speak"')
+        // the hostile value is removed (a standalone sanitize trusts no class)
+        expect(out).not.toContain('data-embed-src')
         expect(out).not.toContain('alert')
       })
 
@@ -826,7 +826,7 @@ describe('sanitizeHtml', () => {
         const out = sanitizeHtml(input)
         expect(out).not.toContain('youtube.com/redirect')
         expect(out).not.toContain('evil.example')
-        expect(out).toContain('class="markdown-video-link markdown-video-link-youtube"')
+        expect(out).not.toContain('data-embed-src')
       })
     })
 

@@ -225,6 +225,39 @@ function stripMarkdownClasses(value) {
   const kept = tokens.filter((token) => !/markdown-/i.test(token));
   return kept.length === tokens.length ? value : kept.join(" ");
 }
+var AUTHOR_CLASSES = /* @__PURE__ */ new Set([
+  "pull-right",
+  "pull-left",
+  "text-justify",
+  "text-rtl",
+  "text-center",
+  "text-right",
+  "videoWrapper",
+  "phishy",
+  // A pasted tweet embed's blockquote, centred by the entry stylesheet.
+  "twitter-tweet"
+]);
+var AUTHOR_CLASS_RE = /^ecency-text-color-[0-9a-f]{6}$/;
+var MARKDOWN_STAGE_CLASSES = /* @__PURE__ */ new Set([
+  "footnote-backref",
+  "footnote-item",
+  "footnote-ref",
+  "footnotes",
+  "footnotes-list",
+  "footnotes-sep"
+]);
+var MARKDOWN_STAGE_CLASS_RE = /^(?:ll-[a-z]+|language-[A-Za-z0-9_+#.-]+)$/;
+function authorClasses(value) {
+  const tokens = value.replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).filter(Boolean);
+  const kept = tokens.filter(
+    (token) => !/markdown-/i.test(token) && (AUTHOR_CLASSES.has(token) || AUTHOR_CLASS_RE.test(token) || MARKDOWN_STAGE_CLASSES.has(token) || MARKDOWN_STAGE_CLASS_RE.test(token))
+  );
+  return kept.length === tokens.length && !/[\u0000-\u001f\u007f]/.test(value) ? value : kept.join(" ");
+}
+var AUTHOR_ID_PREFIX = "user-content-";
+function namespacedId(id) {
+  return AUTHOR_ID_PREFIX + id;
+}
 var IFRAME_SANDBOX_GRANTS = /* @__PURE__ */ new Set([
   "allow-scripts",
   "allow-same-origin",
@@ -1099,6 +1132,18 @@ function sanitizeHtml(html, options) {
     img: [...ALLOWED_ATTRIBUTES.img ?? [], "width", "height"]
   } : ALLOWED_ATTRIBUTES;
   let trusted = false;
+  const declaredIds = /* @__PURE__ */ new Set();
+  const declaredFragment = (fragment) => {
+    let candidates = [fragment];
+    try {
+      candidates = [fragment, decodeURIComponent(fragment)];
+    } catch {
+    }
+    return candidates.find((id) => declaredIds.has(id) && ID_WHITELIST.test(id)) ?? null;
+  };
+  for (const m of regexMatches(html, /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
+    declaredIds.add(decodeAttributeEntities((m[1] ?? m[2] ?? m[3] ?? "").trim()));
+  }
   const cleaned = xss__default.default(html, {
     whiteList,
     onTag: (_tag, rawTag) => {
@@ -1136,6 +1181,10 @@ function sanitizeHtml(html, options) {
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return "";
       }
       if (tag === "span" && name === "class" && decoded.toLowerCase().trim() === "wr") return "";
+      if (isWhiteAttr && name === "class" && !trusted) {
+        const kept = authorClasses(decoded);
+        return kept ? `class="${escapeAttr(kept)}"` : "";
+      }
       if (!beforeTransform && (tag === "iframe" && name === "src" || EMBED_SRC_DATA_ATTRS.has(name)) && /[\t\n\r]/.test(decoded)) return "";
       if (tag === "iframe" && name === "src" && !beforeTransform && !isAllowedEmbedSrc(decoded)) {
         const canonical = canonicalEmbedSrc(decoded);
@@ -1181,6 +1230,11 @@ function sanitizeHtml(html, options) {
       if (name === "data-href" && !isSafeNavValue(decoded)) return "";
       if (name === "id") {
         if (!ID_WHITELIST.test(decoded)) return "";
+        if (isWhiteAttr && !beforeTransform && !untransformed) return `id="${escapeAttr(namespacedId(decoded))}"`;
+      }
+      if (isWhiteAttr && !beforeTransform && !untransformed && tag === "a" && (name === "href" || name === "data-href") && decoded.startsWith("#")) {
+        const target = declaredFragment(decoded.slice(1));
+        if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
       if (isWhiteAttr && name === "href") {
         return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
@@ -1532,7 +1586,7 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   let isValidDomain = false;
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf("/") === 0) {
-      isValidDomain = true;
+      isValidDomain = !href.split(/[?#]/, 1)[0].includes("\u200B") && isInSiteHref(href);
     } else if (tpostMatch[1].includes(".")) {
       const domain = tpostMatch[1].replace(/^https?:\/\//, "").replace(/^www\./, "");
       isValidDomain = WHITE_LIST.includes(domain);
@@ -2660,7 +2714,7 @@ function normalizeElement(el) {
     seen.add(lower);
     let value = attr2.value;
     if (lower === "class") {
-      value = stripMarkdownClasses(value);
+      value = authorClasses(value);
       if (!value) {
         el.removeAttributeNode(attr2);
         continue;
@@ -10758,11 +10812,25 @@ function withPairedSource(rule) {
     const src = state.src;
     state.src = paired;
     state.ampInside = true;
+    state.ampOriginal = src;
     try {
       return rule(state, silent);
     } finally {
       state.src = src;
       state.ampInside = false;
+      state.ampOriginal = void 0;
+    }
+  };
+}
+function withOriginalSource(rule) {
+  return (state, silent) => {
+    if (!state.ampInside || state.ampOriginal === void 0) return rule(state, silent);
+    const paired = state.src;
+    state.src = state.ampOriginal;
+    try {
+      return rule(state, silent);
+    } finally {
+      state.src = paired;
     }
   };
 }
@@ -10811,39 +10879,166 @@ function decodeDestinations(state) {
   }
   return true;
 }
-var FENCE_OPEN = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})/;
-var FENCE_CLOSE = /^((?: {0,3}>)+ ?)? {0,3}(`{3,}|~{3,})[ \t]*$/;
-var quoteDepth = (prefix) => {
-  let depth = 0;
-  if (prefix) {
-    for (const c of prefix) if (c === ">") depth++;
+var QUOTE = -1;
+var isSpace = (line, at) => line.charCodeAt(at) === 32;
+function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
+  const containers = [];
+  let at = from;
+  let column = fromColumn;
+  for (let first = true; ; first = false) {
+    let indent = first ? carriedIndent : 0;
+    const spacesFrom = indent;
+    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++;
+    if (indent > 3) break;
+    const markerAt = at + indent - spacesFrom;
+    const c = line[markerAt];
+    if (c === ">") {
+      containers.push(QUOTE);
+      at = markerAt + 1;
+      column += indent - spacesFrom + 1;
+      if (isSpace(line, at)) {
+        at++;
+        column++;
+      }
+      continue;
+    }
+    let markerLength = 0;
+    if (c === "-" || c === "*" || c === "+") {
+      markerLength = 1;
+    } else {
+      let d = markerAt;
+      while (d - markerAt < 9 && line.charCodeAt(d) >= 48 && line.charCodeAt(d) <= 57) d++;
+      if (d > markerAt && (line[d] === "." || line[d] === ")")) markerLength = d - markerAt + 1;
+    }
+    if (markerLength === 0) break;
+    const afterMarker = column + indent - spacesFrom + markerLength;
+    let gapColumns = 0;
+    let gapChars = 0;
+    while (gapColumns < 5) {
+      const g = line[markerAt + markerLength + gapChars];
+      if (g === " ") gapColumns++;
+      else if (g === "	") gapColumns += 4 - (afterMarker + gapColumns) % 4;
+      else break;
+      gapChars++;
+    }
+    if (gapChars === 0) break;
+    const wide = gapColumns >= 5;
+    const width = indent + markerLength + (wide ? 1 : gapColumns);
+    containers.push(width);
+    at = markerAt + markerLength + (wide ? 1 : gapChars);
+    column += width - spacesFrom;
   }
-  return depth;
-};
+  return { containers, at };
+}
+function insideContainers(line, containers, blank) {
+  return insideContainersAt(line, containers, blank).at;
+}
+function insideContainersAt(line, containers, blank) {
+  let at = 0;
+  let column = 0;
+  let carry = 0;
+  for (let k = 0; k < containers.length; k++) {
+    const container = containers[k];
+    const prefix = { at: -1, column, carry, matched: k, prefixAt: at };
+    if (container === QUOTE) {
+      let indent = 0;
+      while (indent < 4 && isSpace(line, at + indent)) indent++;
+      if (indent > 3 || line[at + indent] !== ">") return prefix;
+      at += indent + 1;
+      column += indent + 1;
+      carry = 0;
+      if (isSpace(line, at)) {
+        at++;
+        column++;
+      }
+    } else {
+      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length };
+      let needed = container - carry;
+      carry = 0;
+      while (needed > 0) {
+        if (isSpace(line, at)) {
+          at++;
+          column++;
+          needed--;
+        } else if (line[at] === "	") {
+          const width = 4 - column % 4;
+          at++;
+          column += width;
+          needed -= width;
+        } else {
+          return prefix;
+        }
+      }
+      carry = -needed;
+    }
+  }
+  return { at, column, carry, matched: containers.length, prefixAt: at };
+}
+function fenceAt(line, at) {
+  let indent = 0;
+  while (indent < 4 && isSpace(line, at + indent)) indent++;
+  if (indent > 3) return null;
+  const start = at + indent;
+  const char = line[start];
+  if (char !== "`" && char !== "~") return null;
+  let end = start;
+  while (line[end] === char) end++;
+  return end - start >= 3 ? { char, length: end - start, end } : null;
+}
 function codeRanges(src) {
   const ranges = [];
   const runs = [];
+  let item = null;
   let pos = 0;
   while (pos < src.length) {
     const eol = src.indexOf("\n", pos);
     const lineEnd = eol === -1 ? src.length : eol;
-    const open = FENCE_OPEN.exec(src.slice(pos, lineEnd));
+    const line = src.slice(pos, lineEnd);
+    const blank = line.trim() === "";
+    let containers = [];
+    let open = null;
+    const read = readContainers(line);
+    if (read.containers.length > 0) {
+      containers = read.containers;
+      open = fenceAt(line, read.at);
+      item = containers.some((c) => c !== QUOTE) ? containers : null;
+    } else if (!blank) {
+      if (item) {
+        let inside = insideContainersAt(line, item, false);
+        if (inside.at === -1 && inside.matched > 0) {
+          item = item.slice(0, inside.matched);
+          inside = { ...inside, at: inside.prefixAt };
+        }
+        if (inside.at === -1) {
+          item = null;
+        } else {
+          const nested = readContainers(line, inside.at, inside.column, inside.carry);
+          if (nested.containers.length > 0) {
+            containers = [...item, ...nested.containers];
+            open = fenceAt(line, nested.at);
+            if (nested.containers.some((c) => c !== QUOTE)) item = containers;
+          } else if (open = fenceAt(line, inside.at)) {
+            containers = item;
+          }
+        }
+      }
+      if (!open) open = fenceAt(line, 0);
+    }
     if (open) {
-      const depth = quoteDepth(open[1]);
-      const quoted = depth > 0;
-      const fence = open[2];
+      const fence = open;
       let end = src.length;
       let p2 = lineEnd + 1;
       while (p2 < src.length) {
         const e = src.indexOf("\n", p2);
         const le = e === -1 ? src.length : e;
-        const line = src.slice(p2, le);
-        if (quoted && !/^ {0,3}>/.test(line)) {
+        const next = src.slice(p2, le);
+        const at = insideContainers(next, containers, next.trim() === "");
+        if (at === -1) {
           end = p2 - 1;
           break;
         }
-        const close = FENCE_CLOSE.exec(line);
-        if (close && quoteDepth(close[1]) === depth && close[2][0] === fence[0] && close[2].length >= fence.length) {
+        const close = fenceAt(next, at);
+        if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === "") {
           end = le;
           break;
         }
@@ -10956,6 +11151,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   }).use(linkify2);
   md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
   wrapRule(md.inline.ruler, "links", withPairedSource);
+  wrapRule(md.inline.ruler, "autolink", withOriginalSource);
   wrapRule(md.core.ruler, "references", withPairedReferences);
   md.core.ruler.enable([
     "abbr"
@@ -10987,7 +11183,15 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
         entityPlaceholders.push(entity2);
       }
     }
-    const swap = (text3) => text3.replace(ENTITY_REGEX, (entity2) => `\u200B${indexOf2.get(entity2)}\u200B`);
+    const escaped = (text3, at) => {
+      let k = at - 1;
+      while (k >= 0 && text3.charCodeAt(k) === 92) k--;
+      return (at - 1 - k) % 2 === 1;
+    };
+    const swap = (text3) => text3.replace(ENTITY_REGEX, (entity2, ...rest) => {
+      const at = rest[rest.length - 2];
+      return escaped(text3, at) ? entity2 : `\u200B${indexOf2.get(entity2)}\u200B`;
+    });
     const protect = (text3) => {
       let out = "";
       let last2 = 0;
@@ -11123,8 +11327,6 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
   entryMemoSet(key, obj.body, void 0, res);
   return res;
 }
-
-// src/catch-post-image.ts
 var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
@@ -11477,11 +11679,56 @@ var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && i
 function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
+function promotesToImage(label, href) {
+  const deAmp = (value) => value.replace(/&amp;/g, "&");
+  const serialized = decodeCompleteReferences(label.trim()).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return deAmp(decodeCompleteReferences(href.trim())) === deAmp(serialized);
+}
+var CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+function withoutTrailingPunctuation(url, after) {
+  if (after.startsWith(")") || /^<\/a[\s>]/i.test(after)) return url;
+  let end = url.length;
+  while (end > 0) {
+    const c = url[end - 1];
+    if (c === ";" && /&#?[a-z\d]+$/i.test(url.slice(Math.max(0, end - 34), end - 1))) break;
+    if (!".,;:!?".includes(c)) break;
+    end--;
+  }
+  return url.slice(0, end);
+}
+var HTML_TEXT_URL_RE = /^https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/i;
+function decodeHtmlText(text3) {
+  return text3.replace(/&(?:#\d{1,7};?|#[xX][\da-fA-F]{1,6};?|([A-Za-z][A-Za-z\d]{0,31});?)/g, (ref, name) => {
+    if (name === void 0) return decodeEntities(ref);
+    const whole = entities$1.decodeHTMLStrict(`&${name};`);
+    return whole === `&${name};` ? ref : whole;
+  });
+}
+var asciiLower = (text3) => text3.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+function htmlTextImageUrl(body, pos) {
+  let end = pos;
+  while (end < body.length && !/[\s<]/.test(body[end])) end++;
+  const token = HTML_TEXT_URL_RE.exec(decodeHtmlText(body.slice(pos, end)))?.[0];
+  if (!token) return null;
+  const urlEnd = imageUrlEnd(token);
+  return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd));
+}
 function firstBodyImageRawUrl(body) {
-  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate;
+  const prepared = prepareBody(body);
+  const candidate = findFirstImageCandidate(prepared, true).candidate;
   if (!candidate) return null;
   if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url));
-  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body));
+  const ampEscapes2 = !hasAmpSentinel(body);
+  if (candidate.destination) {
+    const url2 = decodeRawBodyImageSrc(candidate.url, true, ampEscapes2);
+    return CONTROL_CHAR_RE.test(url2) ? null : url2;
+  }
+  if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos);
+  const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4));
+  return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes2);
+}
+function codeBlanked(body) {
+  return blankMatches(blankMatches(blankMatches(body, BACKTICK_FENCE_RE), TILDE_FENCE_RE), INLINE_CODE_RE);
 }
 function stripCodeRegions(body) {
   let text3 = blankMatches(body, BACKTICK_FENCE_RE);
@@ -11590,12 +11837,11 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch);
     }
-    const deAmp = (s) => s.trim().replace(/&amp;/g, "&");
     for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0;
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
-      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && promotesToImage(m[1], href)) {
         candidates.push({ url: href, pos: idx, destination: true });
         break;
       }

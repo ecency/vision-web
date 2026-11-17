@@ -1,10 +1,10 @@
-import { markdown2Html } from './chunk-AYLQOZ4J.js';
+import { markdown2Html } from './chunk-K56H3RQA.js';
 import { entryMemoGet, MEMO_MISS, entryMemoSet } from './chunk-2SC5I7QY.js';
-import { decodeImageSrc, createDoc, makeEntryCacheKey, decodeDomImageSrc, decodeAttributeEntities, decodeRawBodyImageSrc, hasAmpSentinel, decodeEntities, imageUrlEnd, stripHtmlTags } from './chunk-VLNYO6UX.js';
+import { decodeImageSrc, createDoc, makeEntryCacheKey, decodeDomImageSrc, decodeAttributeEntities, hasAmpSentinel, decodeRawBodyImageSrc, imageUrlEnd, decodeEntities, stripHtmlTags, decodeCompleteReferences } from './chunk-VLNYO6UX.js';
 import { proxifyImageSrc } from './chunk-LT2KELO7.js';
 import { regexMatches } from './chunk-SH6RGNOF.js';
+import { decodeHTMLStrict } from 'entities';
 
-// src/catch-post-image.ts
 var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
 var INLINE_CODE_RE = /`[^`\n]*`/g;
@@ -357,11 +357,56 @@ var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && i
 function findFirstImageUrl(body, includeBareUrls = false) {
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
 }
+function promotesToImage(label, href) {
+  const deAmp = (value) => value.replace(/&amp;/g, "&");
+  const serialized = decodeCompleteReferences(label.trim()).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return deAmp(decodeCompleteReferences(href.trim())) === deAmp(serialized);
+}
+var CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+function withoutTrailingPunctuation(url, after) {
+  if (after.startsWith(")") || /^<\/a[\s>]/i.test(after)) return url;
+  let end = url.length;
+  while (end > 0) {
+    const c = url[end - 1];
+    if (c === ";" && /&#?[a-z\d]+$/i.test(url.slice(Math.max(0, end - 34), end - 1))) break;
+    if (!".,;:!?".includes(c)) break;
+    end--;
+  }
+  return url.slice(0, end);
+}
+var HTML_TEXT_URL_RE = /^https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/i;
+function decodeHtmlText(text) {
+  return text.replace(/&(?:#\d{1,7};?|#[xX][\da-fA-F]{1,6};?|([A-Za-z][A-Za-z\d]{0,31});?)/g, (ref, name) => {
+    if (name === void 0) return decodeEntities(ref);
+    const whole = decodeHTMLStrict(`&${name};`);
+    return whole === `&${name};` ? ref : whole;
+  });
+}
+var asciiLower = (text) => text.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+function htmlTextImageUrl(body, pos) {
+  let end = pos;
+  while (end < body.length && !/[\s<]/.test(body[end])) end++;
+  const token = HTML_TEXT_URL_RE.exec(decodeHtmlText(body.slice(pos, end)))?.[0];
+  if (!token) return null;
+  const urlEnd = imageUrlEnd(token);
+  return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd));
+}
 function firstBodyImageRawUrl(body) {
-  const candidate = findFirstImageCandidate(prepareBody(body), true).candidate;
+  const prepared = prepareBody(body);
+  const candidate = findFirstImageCandidate(prepared, true).candidate;
   if (!candidate) return null;
   if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url));
-  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body));
+  const ampEscapes = !hasAmpSentinel(body);
+  if (candidate.destination) {
+    const url2 = decodeRawBodyImageSrc(candidate.url, true, ampEscapes);
+    return CONTROL_CHAR_RE.test(url2) ? null : url2;
+  }
+  if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos);
+  const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4));
+  return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes);
+}
+function codeBlanked(body) {
+  return blankMatches(blankMatches(blankMatches(body, BACKTICK_FENCE_RE), TILDE_FENCE_RE), INLINE_CODE_RE);
 }
 function stripCodeRegions(body) {
   let text = blankMatches(body, BACKTICK_FENCE_RE);
@@ -470,12 +515,11 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
       candidates.push(bareMatch);
     }
-    const deAmp = (s) => s.trim().replace(/&amp;/g, "&");
     for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0;
       if (idx > 0 && cleaned[idx - 1] === "!") continue;
       const href = m[2];
-      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && promotesToImage(m[1], href)) {
         candidates.push({ url: href, pos: idx, destination: true });
         break;
       }
@@ -658,5 +702,5 @@ function catchPostImage(obj, width = 0, height = 0, format = "match", options = 
 }
 
 export { catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl };
-//# sourceMappingURL=chunk-GKNXTLMV.js.map
-//# sourceMappingURL=chunk-GKNXTLMV.js.map
+//# sourceMappingURL=chunk-TC6JMTXN.js.map
+//# sourceMappingURL=chunk-TC6JMTXN.js.map
