@@ -36,6 +36,27 @@ declare module '@tiptap/core' {
 
 const KEY = new PluginKey('imageUpload');
 
+// Uploads in flight in any editor, so publishing can wait for them: a post
+// submitted mid-upload would go out without those images.
+let pendingTotal = 0;
+const pendingListeners = new Set<() => void>();
+
+function addPending(n: number): void {
+  pendingTotal += n;
+  for (const listener of pendingListeners) listener();
+}
+
+export function pendingImageUploads(): number {
+  return pendingTotal;
+}
+
+export function subscribePendingImageUploads(listener: () => void): () => void {
+  pendingListeners.add(listener);
+  return () => {
+    pendingListeners.delete(listener);
+  };
+}
+
 export function imageUploadState(editor: Editor): ImageUploadState {
   const { pending, error } = editor.storage.imageUpload;
   return { pending, error };
@@ -70,12 +91,12 @@ function place(editor: Editor, src: string, file: File, at: number | undefined):
   return null;
 }
 
-async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: File[], pos?: number) {
+async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: File[], pos: number) {
   const storage = editor.storage.imageUpload;
-  storage.error = null;
-  // Keep the drop point on the same spot while uploads run: every edit made in
-  // the meantime (typing above it, another image landing) moves it with them.
-  let at = pos;
+  // Keep the insertion point on the same spot while uploads run: every edit
+  // made in the meantime (typing elsewhere, another image landing) moves it
+  // with them, for a drop and for the cursor of a pick or paste alike.
+  let at: number | undefined = pos;
   const track = ({ transaction }: { transaction: { mapping: { map: (p: number) => number } } }) => {
     if (at !== undefined) at = transaction.mapping.map(at);
   };
@@ -84,7 +105,10 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
   try {
     for (const file of files) {
       // The post was closed: do not upload (or ask a wallet) for the rest.
-      if (editor.isDestroyed) break;
+      if (editor.isDestroyed) {
+        addPending(-1);
+        continue;
+      }
       let src: string | null = null;
       try {
         src = await upload(file);
@@ -100,7 +124,12 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
         }
       }
       storage.pending -= 1;
-      storage.error = problems.length ? problems.join('; ') : null;
+      addPending(-1);
+      // Add to the error rather than replace it: another upload running at the
+      // same time may already have reported a failure.
+      if (problems.length) {
+        storage.error = [storage.error, ...problems.splice(0)].filter(Boolean).join('; ');
+      }
       notify(editor);
     }
   } finally {
@@ -113,12 +142,11 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
  * of a table or text on the clipboard next to its HTML; that paste is the HTML.
  */
 function htmlIsOnlyImages(html: string): boolean {
-  const rest = html
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<\/?(?:meta|html|head|body|span|div|p|br)\b[^>]*>/gi, '')
-    .replace(/<img\b[^>]*>/gi, '')
-    .trim();
-  return rest === '' && /<img\b/i.test(html);
+  // Parsed, not pattern-matched: the HTML only decides whether to take the
+  // paste, and a parser cannot be fooled by nested or odd markup.
+  const body = new DOMParser().parseFromString(html, 'text/html').body;
+  return body.querySelector('img') !== null && (body.textContent ?? '').trim() === ''
+    && body.querySelector('table, video, iframe, svg') === null;
 }
 
 function imageFiles(list: FileList | File[] | null | undefined): File[] {
@@ -147,8 +175,12 @@ export const ImageUpload = Extension.create<ImageUploadOptions, ImageUploadState
           if (images.length === 0 || !editor.isEditable) return false;
           // editor.can() asks without dispatch: answer, start nothing.
           if (!dispatch) return true;
-          editor.storage.imageUpload.pending += images.length;
-          void run(editor as Editor, this.options.upload, images, pos);
+          const storage = editor.storage.imageUpload;
+          // A new batch with nothing else running starts with a clean slate.
+          if (storage.pending === 0) storage.error = null;
+          storage.pending += images.length;
+          addPending(images.length);
+          void run(editor as Editor, this.options.upload, images, pos ?? editor.state.selection.to);
           return true;
         },
     };

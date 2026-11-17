@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
 import { describe, expect, it, vi } from 'vitest';
 import { STARTER_KIT_EXTENSION } from './editor-extensions';
-import { ImageUpload, imageUploadState } from './image-upload-extension';
+import { ImageUpload, imageUploadState, pendingImageUploads } from './image-upload-extension';
 
 // #1462: the editor takes images from the toolbar picker, a drop or a paste,
 // uploads each one and inserts it where it was put.
@@ -182,5 +182,62 @@ describe('ImageUpload', () => {
     editor.destroy();
     for (let i = 0; i < 4; i++) await flush();
     expect(upload.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it('puts a picked image where the cursor was when it was picked', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const editor = makeEditor(async (file) => {
+      await gate;
+      return `https://images.ecency.com/u/${file.name}`;
+    });
+    editor.commands.setContent('<p>first</p><p>second</p>');
+    // Cursor at the start of "second", then the toolbar picker.
+    editor.commands.setTextSelection(editor.state.doc.child(0).nodeSize + 1);
+    editor.commands.uploadImages([png('picked.png')]);
+    // The author moves on and types in the first paragraph meanwhile.
+    editor.commands.setTextSelection(1);
+    editor.commands.insertContent('typed ');
+    release();
+    await flush();
+    await flush();
+    expect(editor.state.doc.child(1).firstChild?.type.name).toBe('image');
+    expect(editor.state.doc.child(0).textContent).toBe('typed first');
+    editor.destroy();
+  });
+
+  it('keeps one upload\'s failure when another finishes after it', async () => {
+    let releaseGood!: () => void;
+    const slow = new Promise<void>((r) => (releaseGood = r));
+    const editor = makeEditor(async (file) => {
+      if (file.name === 'bad.png') throw new Error('status 500');
+      await slow;
+      return `https://images.ecency.com/u/${file.name}`;
+    });
+    editor.commands.uploadImages([png('good.png')]);
+    editor.commands.uploadImages([png('bad.png')]);
+    await flush();
+    expect(imageUploadState(editor).error).toMatch(/bad\.png/);
+    releaseGood();
+    await flush();
+    await flush();
+    expect(imageUploadState(editor).error).toMatch(/bad\.png/);
+    editor.destroy();
+  });
+
+  it('counts pending uploads across editors, so publishing can wait for them', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const editor = makeEditor(async () => {
+      await gate;
+      return 'https://images.ecency.com/u/x.png';
+    });
+    expect(pendingImageUploads()).toBe(0);
+    editor.commands.uploadImages([png('a.png'), png('b.png')]);
+    expect(pendingImageUploads()).toBe(2);
+    release();
+    for (let i = 0; i < 4; i++) await flush();
+    expect(pendingImageUploads()).toBe(0);
+    editor.destroy();
   });
 });

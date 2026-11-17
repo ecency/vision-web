@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { usePendingImageUploads } from "../hooks/use-pending-image-uploads";
 import { usePublishState } from "../hooks/use-publish-state";
 import { usePublishPost } from "../hooks/use-publish-post";
 import { Link } from "@tanstack/react-router";
@@ -60,10 +61,13 @@ export function PublishActionBar({ onSuccess }: Props) {
   const safeContent = content ?? "";
   const safeTags = tags ?? [];
 
+  const pendingImageUploads = usePendingImageUploads();
   const canPublish =
     safeTitle.trim().length > 0 &&
     safeContent.trim().length > 0 &&
-    safeTags.length > 0;
+    safeTags.length > 0 &&
+    // An image still uploading would be missing from the published body.
+    pendingImageUploads === 0;
 
   // Built once and both confirmed and published, so the payload the author
   // agreed to is the payload that goes out. A second object built for the

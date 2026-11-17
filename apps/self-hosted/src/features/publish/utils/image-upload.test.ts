@@ -47,6 +47,7 @@ function deps(over: Partial<ImageUploadDeps> = {}): ImageUploadDeps {
     getHiveAuthSession: () => ({ expire: Date.now() / 1000 + 3600 }) as never,
     now: () => 1_000_000_000_000,
     storage: memoryStorage(),
+    isCurrentUser: () => true,
     ...over,
   };
 }
@@ -135,6 +136,16 @@ describe('prepareImageFile', () => {
     const convert = vi.fn(async () => jpeg);
     expect(await prepareImageFile(heic, convert)).toBe(jpeg);
     expect(convert).toHaveBeenCalledWith(heic);
+  });
+
+  it('gives a file the browser left untyped its image type, which the service requires', async () => {
+    const avif = new File(['x'], 'photo.AVIF', { type: '' });
+    const prepared = await prepareImageFile(avif, async (f) => f);
+    expect(prepared.type).toBe('image/avif');
+    expect(prepared.name).toBe('photo.AVIF');
+    // A HEIC that could not be converted goes up typed as HEIC.
+    const heic = new File(['x'], 'IMG.heic', { type: '' });
+    expect((await prepareImageFile(heic, async (f) => f)).type).toBe('image/heic');
   });
 
   it('leaves other images alone', async () => {
@@ -226,6 +237,19 @@ describe('uploadEditorImage', () => {
         convert: async (f) => f,
       }),
     ).rejects.toThrow(/reputation/i);
+  });
+
+  it('does not keep a code signed after the account logged out', async () => {
+    let signedIn = true;
+    const d = deps({
+      isCurrentUser: () => signedIn,
+      signWithExtension: vi.fn(async () => {
+        signedIn = false; // logged out while the wallet prompt was open
+        return { result: 'SIG', extension: 'keychain' as const };
+      }),
+    });
+    await expect(getImageUploadToken(user('keychain'), d)).rejects.toThrow(/logged out/i);
+    expect(d.storage?.getItem('ecency_image_upload_code')).toBeNull();
   });
 
   it('asks the wallet once when two uploads start together', async () => {

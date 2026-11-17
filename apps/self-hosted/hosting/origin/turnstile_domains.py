@@ -86,7 +86,13 @@ def covered(domain: str, entries: Iterable[str]) -> bool:
 
 
 def missing_domains(wanted: Iterable[str], entries: list) -> list:
-    return sorted({d for d in wanted if not covered(d, entries)})
+    """The wanted domains not yet covered, without any another one covers.
+
+    `example.net` covers `a.example.net`, so when both are wanted only the
+    apex takes a slot: the widget holds at most 10 hostnames.
+    """
+    missing = {d for d in wanted if not covered(d, entries)}
+    return sorted(d for d in missing if not covered(d, [m for m in missing if m != d]))
 
 
 def put_body(widget: dict, domains: list) -> dict:
@@ -152,7 +158,15 @@ def reconcile(wanted: Iterable[str], config: Config, http: Http, log: Log, dry_r
             log(f"TURNSTILE FAILED adding {', '.join(missing)}: {_errors(updated)}")
             return []
         after = http("GET", url, config.token)
-        stored = set((after.get("result") or {}).get("domains") or []) if after.get("success") else set()
+        if not after.get("success"):
+            # The write was accepted; only the check failed. Say that, rather
+            # than report every hostname on the widget as lost.
+            log(
+                f"TURNSTILE FAILED: added {', '.join(missing)}, but the result could not be checked: "
+                f"{_errors(after)}"
+            )
+            return missing
+        stored = set((after.get("result") or {}).get("domains") or [])
         lost = sorted(set(domains) - stored)
         if lost:
             log(f"TURNSTILE FAILED: after the update the widget lacks {', '.join(lost)}")

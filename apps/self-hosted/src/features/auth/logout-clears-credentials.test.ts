@@ -26,4 +26,12 @@ describe('logout', () => {
     expect(localStorage.getItem('ecency_image_upload_code')).toBeNull();
     expect(localStorage.getItem('ecency_hosting_token')).toBeNull();
   });
+
+  it('also forgets the image-upload code when a stored session has expired', async () => {
+    const { getUser } = await import('./storage');
+    localStorage.setItem('ecency_image_upload_code', JSON.stringify({ username: 'alice', code: 'c', signedAt: 1 }));
+    localStorage.setItem('ecency_selfhost_user', JSON.stringify({ username: 'alice', loginType: 'keychain', expiresAt: 1 }));
+    expect(getUser()).toBeNull();
+    expect(localStorage.getItem('ecency_image_upload_code')).toBeNull();
+  });
 });

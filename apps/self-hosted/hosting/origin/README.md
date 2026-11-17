@@ -60,7 +60,10 @@ TURNSTILE_API_TOKEN=<token with Turnstile: Edit>
 Keep it `chmod 600`. Without it the step is skipped and `sync.log` says `TURNSTILE SKIPPED`.
 The sync runs every 5 minutes but writes a Turnstile outcome only when it changes, so a
 standing skip or failure appears once, and again only after something else happened. The token needs **Turnstile: Edit**; with read-only the API
-answers `10405` or `10000` rather than saying the permission is missing. A widget holds at most 10
+answers `10405` or `10000` rather than saying the permission is missing. The Turnstile API has no conditional update, so a hostname added to the widget by hand in
+the second between the sync's read and its write would be lost; add hostnames by hand only
+through the snippet below, which does the same read-and-append, and not while the sync runs.
+A widget holds at most 10
 hostnames: the sync adds what fits and names the rest in a `TURNSTILE FAILED` line, since a
 custom domain beyond the tenth needs a second widget. A `www.` and a bare domain take two.
 

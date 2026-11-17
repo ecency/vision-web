@@ -48,6 +48,10 @@ export function clearUser(): void {
   } catch (error) {
     console.error('Failed to clear user from localStorage:', error);
   }
+  // Every way a session ends (logout, an expired stored session at startup, the
+  // expiry check while the app is open) comes through here, so the signed
+  // image-upload code goes with it.
+  clearImageUploadCode();
 }
 
 /**

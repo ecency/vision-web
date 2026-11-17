@@ -3,6 +3,7 @@
 Run: cd apps/self-hosted/hosting/origin && python3 -m unittest discover -p 'test_*.py'
 """
 import os
+import re
 import tempfile
 import unittest
 
@@ -50,6 +51,11 @@ class FakeApi:
 
     def puts(self):
         return [c for c in self.calls if c[0] == "PUT"]
+
+
+def mentions(line, name):
+    """True when `name` appears in a log line as a whole hostname."""
+    return name in re.findall(r"[a-z0-9.-]+", line)
 
 
 class Logs(list):
@@ -128,7 +134,7 @@ class ReconcileTest(unittest.TestCase):
         api, logs = FakeApi(WIDGET), Logs()
         self.assertEqual(td.reconcile(["blog.example.org"], CONFIG, api, logs, dry_run=True), [])
         self.assertEqual(api.puts(), [])
-        self.assertTrue(any("DRY-RUN" in line and "blog.example.org" in line for line in logs))
+        self.assertTrue(any("DRY-RUN" in line and mentions(line, "blog.example.org") for line in logs))
 
     def test_a_refused_write_is_logged_loudly_and_not_raised(self):
         api, logs = FakeApi(WIDGET, put_ok=False), Logs()
@@ -138,7 +144,7 @@ class ReconcileTest(unittest.TestCase):
     def test_a_write_that_lost_a_domain_is_reported(self):
         api, logs = FakeApi(WIDGET, put_drops={"blog.hivexplorer.com"}), Logs()
         td.reconcile(["blog.example.org"], CONFIG, api, logs)
-        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and "blog.hivexplorer.com" in line for line in logs))
+        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and mentions(line, "blog.hivexplorer.com") for line in logs))
 
     def test_adds_what_fits_under_the_ten_hostname_limit_and_reports_the_rest(self):
         full = dict(WIDGET, domains=[f"t{i}.example.org" for i in range(8)] + ["ecency.com"])
@@ -147,14 +153,37 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(added, ["a-new.example.org"])
         [put] = api.puts()
         self.assertEqual(len(put[3]["domains"]), 10)
-        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and "b-new.example.org" in line and "10" in line for line in logs))
+        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and mentions(line, "b-new.example.org") and "10" in line for line in logs))
 
     def test_a_full_widget_is_not_written(self):
         full = dict(WIDGET, domains=[f"t{i}.example.org" for i in range(9)] + ["ecency.com"])
         api, logs = FakeApi(full), Logs()
         self.assertEqual(td.reconcile(["new.example.org"], CONFIG, api, logs), [])
         self.assertEqual(api.puts(), [])
-        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and "new.example.org" in line for line in logs))
+        self.assertTrue(any(line.startswith("TURNSTILE FAILED") and mentions(line, "new.example.org") for line in logs))
+
+    def test_adds_the_domain_that_covers_the_other_when_one_slot_is_left(self):
+        full = dict(WIDGET, domains=[f"t{i}.example.org" for i in range(8)] + ["ecency.com"])
+        api, logs = FakeApi(full), Logs()
+        added = td.reconcile(["a.example.net", "example.net"], CONFIG, api, logs)
+        self.assertEqual(added, ["example.net"])
+        self.assertFalse(any(line.startswith("TURNSTILE FAILED") for line in logs))
+
+    def test_a_failed_read_back_says_it_could_not_check_not_that_everything_is_lost(self):
+        api, logs = FakeApi(WIDGET), Logs()
+        real = api.__call__
+        calls = {"get": 0}
+
+        def flaky(method, url, token, body=None):
+            if method == "GET":
+                calls["get"] += 1
+                if calls["get"] == 2:
+                    return {"success": False, "errors": [{"code": 10000, "message": "busy"}]}
+            return real(method, url, token, body)
+
+        td.reconcile(["blog.example.org"], CONFIG, flaky, logs)
+        self.assertTrue(any("could not be checked" in line for line in logs))
+        self.assertFalse(any("lacks" in line for line in logs))
 
     def test_an_api_exception_is_logged_not_raised(self):
         def broken(*args, **kwargs):

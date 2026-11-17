@@ -1,4 +1,5 @@
 import { uploadImage } from '@ecency/sdk';
+import { authenticationStore } from '@/store';
 import { HIVESIGNER_CLIENT_ID } from '@/features/auth/constants';
 import { getHiveAuthSession, IMAGE_UPLOAD_CODE_KEY } from '@/features/auth/storage';
 import type { AuthUser, HiveAuthSession, HiveExtensionId } from '@/features/auth/types';
@@ -46,6 +47,8 @@ export interface ImageUploadDeps {
   getHiveAuthSession: () => HiveAuthSession | null;
   now: () => number;
   storage: Storage | null;
+  /** Whether this account is still the one logged in (it may log out mid-prompt). */
+  isCurrentUser: (username: string) => boolean;
 }
 
 function defaultStorage(): Storage | null {
@@ -63,6 +66,7 @@ export const defaultImageUploadDeps = (): ImageUploadDeps => ({
   getHiveAuthSession,
   now: () => Date.now(),
   storage: defaultStorage(),
+  isCurrentUser: (username) => authenticationStore.getState().user?.username === username,
 });
 
 interface StoredCode {
@@ -159,6 +163,11 @@ async function signCode(user: AuthUser, deps: ImageUploadDeps): Promise<string> 
     signature = await deps.signWithHiveAuth(session, text);
   }
 
+  // Logged out while the wallet prompt was open: logout already cleared the
+  // cache, so neither store nor use the late signature.
+  if (!deps.isCurrentUser(user.username)) {
+    throw new Error('You logged out before the signature arrived. Log in again to upload images.');
+  }
   const code = b64uEncode(JSON.stringify({ ...message, signatures: [signature] }));
   storeCode(deps, { username: user.username, code, signedAt });
   return code;
@@ -195,6 +204,28 @@ export async function convertHeicToJpeg(file: File): Promise<File> {
   }
 }
 
+const TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+};
+
+/**
+ * Some browsers report no type for AVIF or HEIC, and the image service checks
+ * the upload's declared type before its bytes, so an untyped file is refused.
+ */
+function withType(file: File): File {
+  if (file.type) return file;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const type = TYPE_BY_EXTENSION[ext];
+  return type ? new File([file], file.name, { type, lastModified: file.lastModified }) : file;
+}
+
 export async function prepareImageFile(
   file: File,
   convert: (file: File) => Promise<File> = convertHeicToJpeg,
@@ -202,7 +233,7 @@ export async function prepareImageFile(
   if (!isImageFile(file)) {
     throw new Error(`${file.name} is not an image.`);
   }
-  return isHeic(file) ? convert(file) : file;
+  return withType(isHeic(file) ? await convert(file) : file);
 }
 
 export interface UploadEditorImageOptions {
