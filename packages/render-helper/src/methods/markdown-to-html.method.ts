@@ -262,16 +262,24 @@ function insideContainers(line: string, containers: number[], blank: boolean): n
 
 // insideContainers, with the column the content starts at. A tab that runs
 // past one container's indent counts toward the next one.
-function insideContainersAt(line: string, containers: number[], blank: boolean): { at: number; column: number; carry: number } {
+// insideContainers, with where the content starts (index, column, and the
+// columns of a tab that ran past the last container's indent). A line outside
+// the containers has at = -1, and `matched`/`prefixAt` say how many of them it
+// is still inside and where that prefix ends, for a caller that falls back to
+// the enclosing item.
+type Inside = { at: number; column: number; carry: number; matched: number; prefixAt: number }
+
+function insideContainersAt(line: string, containers: number[], blank: boolean): Inside {
   let at = 0
   let column = 0
   let carry = 0
-  const outside = { at: -1, column: -1, carry: 0 }
-  for (const container of containers) {
+  for (let k = 0; k < containers.length; k++) {
+    const container = containers[k]
+    const prefix = { at: -1, column, carry, matched: k, prefixAt: at }
     if (container === QUOTE) {
       let indent = 0
       while (indent < 4 && isSpace(line, at + indent)) indent++
-      if (indent > 3 || line[at + indent] !== '>') return outside
+      if (indent > 3 || line[at + indent] !== '>') return prefix
       at += indent + 1
       column += indent + 1
       carry = 0
@@ -280,7 +288,7 @@ function insideContainersAt(line: string, containers: number[], blank: boolean):
         column++
       }
     } else {
-      if (blank) return { at: line.length, column, carry: 0 }
+      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length }
       let needed = container - carry
       carry = 0
       while (needed > 0) {
@@ -294,13 +302,13 @@ function insideContainersAt(line: string, containers: number[], blank: boolean):
           column += width
           needed -= width
         } else {
-          return outside
+          return prefix
         }
       }
       carry = -needed
     }
   }
-  return { at, column, carry }
+  return { at, column, carry, matched: containers.length, prefixAt: at }
 }
 
 // The fence run (``` or ~~~, three or more) a line has at `at` after up to
@@ -347,7 +355,13 @@ function codeRanges(src: string): Array<[number, number]> {
       item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {
       if (item) {
-        const inside = insideContainersAt(line, item, false)
+        let inside = insideContainersAt(line, item, false)
+        if (inside.at === -1 && inside.matched > 0) {
+          // Out of the innermost item but still inside an enclosing one (a
+          // fence back at the parent's indent after nested bullets).
+          item = item.slice(0, inside.matched)
+          inside = { ...inside, at: inside.prefixAt }
+        }
         if (inside.at === -1) {
           item = null
         } else {

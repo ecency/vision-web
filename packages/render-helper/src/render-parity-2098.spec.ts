@@ -35,6 +35,10 @@ describe('fenced code inside list items, app render', () => {
     // A tab after the list marker.
     '-\t```\n    &amp; x\n    ```',
     '1.\t~~~\n    &lt;b&gt;\n    ~~~',
+    // A fence back at the parent item's level after nested bullets.
+    '1. Install:\n    - on mac\n    - on linux\n\n    ~~~bash\n    a &lt; b\n    ~~~',
+    '- a\n  - b\n    - c\n\n    ~~~\n    x &lt; y\n    ~~~',
+    '10. Install:\n    - on mac\n\n    ~~~\n    a &lt; b\n    ~~~',
     // A nested item indented with a tab on the parent's continuation line.
     '- a\n\t- ```\n\t  &amp; x\n\t  ```',
     '- a\n\n\t-\t~~~\n\t\t&lt;b&gt;\n\t\t~~~',
