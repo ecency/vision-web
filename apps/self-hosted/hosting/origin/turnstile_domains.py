@@ -143,11 +143,14 @@ def reconcile(wanted: Iterable[str], config: Config, http: Http, log: Log, dry_r
             log(f"DRY-RUN would add to Turnstile widget: {', '.join(missing)}")
             return []
         room = max(0, MAX_DOMAINS - len(set(before)))
-        fits, left_out = missing[:room], missing[room:]
-        if left_out:
+        fits = missing[:room]
+        # Every tenant still without cover, not only the hostnames that asked
+        # for a slot: a subdomain whose apex did not fit is uncovered too.
+        uncovered = [d for d in wanted if not covered(d, before + fits)]
+        if uncovered:
             log(
-                f"TURNSTILE FAILED: the widget holds at most {MAX_DOMAINS} hostnames, so "
-                f"{', '.join(left_out)} cannot be added. Move some tenants to a second widget."
+                f"TURNSTILE FAILED: the widget holds at most {MAX_DOMAINS} hostnames, so these stay "
+                f"uncovered: {', '.join(uncovered)}; move some tenants to a second widget."
             )
         if not fits:
             return []

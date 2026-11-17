@@ -2,7 +2,7 @@ import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { authenticationStore } from '@/store';
-import { isImageFile, uploadEditorImage } from './image-upload';
+import { ImageUploadAuthError, isImageFile, uploadEditorImage } from './image-upload';
 
 /**
  * Image upload for both editors (#1462): the toolbar's picker calls
@@ -141,14 +141,19 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
   editor.on('transaction', track);
   const problems: string[] = [];
   try {
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       // The post was closed: do not upload (or ask a wallet) for the rest.
       if (editor.isDestroyed) break;
       let src: string | null = null;
+      let stop = false;
       try {
         src = await upload(file);
       } catch (e) {
-        problems.push(`Could not upload ${file.name}: ${describe(e)}`);
+        // A refused signature or an ended session fails every file the same
+        // way: say it once for all of them and ask the wallet no more.
+        stop = e instanceof ImageUploadAuthError;
+        const names = stop ? files.slice(index).map((f) => f.name).join(', ') : file.name;
+        problems.push(`Could not upload ${names}: ${describe(e)}`);
       }
       if (src !== null && !editor.isDestroyed) {
         const after = place(editor, src, file, at);
@@ -166,11 +171,21 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
         storage.error = [storage.error, ...problems.splice(0)].filter(Boolean).join('; ');
       }
       notify(editor);
+      if (stop) break;
     }
   } finally {
-    // Whatever is left: the editor closed, or something above threw.
-    if (!editor.isDestroyed) storage.pending -= remaining;
-    release(remaining);
+    // Whatever is left: the editor closed, the batch stopped, or something
+    // above threw.
+    const left = remaining;
+    release(left);
+    if (left > 0 && !editor.isDestroyed) {
+      storage.pending -= left;
+      try {
+        notify(editor);
+      } catch {
+        // The toolbar catches up on the next transaction.
+      }
+    }
     editor.off('transaction', track);
     editor.off('destroy', onDestroy);
   }
@@ -194,6 +209,9 @@ function textOnlyNamesImages(text: string, files: File[]): boolean {
         names.some((name) => line === name || line.endsWith(`/${name}`) || line.endsWith(`\\${name}`)),
     );
 }
+
+/** A table or a link in the pasted HTML: what Safari's Copy Image never sends. */
+const RICH_MARKUP = /<(?:table|a)[\s>]/i;
 
 function imageFiles(list: FileList | File[] | null | undefined): File[] {
   return Array.from(list ?? []).filter(isImageFile);
@@ -265,6 +283,11 @@ export const ImageUpload = Extension.create<ImageUploadOptions, ImageUploadState
             const text = event.clipboardData?.getData?.('text/plain') ?? '';
             // Every pasted file, images or not, may be named in the text.
             if (!textOnlyNamesImages(text, Array.from(event.clipboardData?.files ?? []))) return false;
+            // Text of only URLs is still content when it came as a table (a
+            // spreadsheet column) or as a link (a document): keep it. Only
+            // looked for, never parsed or cleaned, as nothing here renders it.
+            const html = event.clipboardData?.getData?.('text/html') ?? '';
+            if (text.trim() && RICH_MARKUP.test(html)) return false;
             event.preventDefault();
             return editor.commands.uploadImages(files);
           },

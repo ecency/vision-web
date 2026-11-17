@@ -3,6 +3,7 @@ import type { AuthUser } from '@/features/auth/types';
 import {
   CODE_LIFETIME_MS,
   getImageUploadToken,
+  ImageUploadAuthError,
   prepareImageFile,
   uploadEditorImage,
   type ImageUploadDeps,
@@ -113,6 +114,19 @@ describe('getImageUploadToken', () => {
     await expect(getImageUploadToken(user('keychain'), d)).rejects.toThrow(/cancelled/i);
   });
 
+  it('marks every signing or session failure as an authentication error', async () => {
+    const cancelled = deps({ signWithExtension: vi.fn(async () => ({ result: '', extension: 'keychain' as const })) });
+    await expect(getImageUploadToken(user('keychain'), cancelled)).rejects.toBeInstanceOf(ImageUploadAuthError);
+    const declined = deps({ signWithHiveAuth: vi.fn(async () => Promise.reject(new Error('Request rejected'))) });
+    const error = await getImageUploadToken(user('hiveauth'), declined).catch((e) => e);
+    expect(error).toBeInstanceOf(ImageUploadAuthError);
+    expect(error.message).toMatch(/rejected/);
+    const missing = deps({ signWithExtension: vi.fn(async () => Promise.reject(new Error('Keychain is not installed'))) });
+    await expect(getImageUploadToken(user('keychain'), missing)).rejects.toBeInstanceOf(ImageUploadAuthError);
+    await expect(getImageUploadToken(user('hivesigner'), deps())).rejects.toBeInstanceOf(ImageUploadAuthError);
+    await expect(getImageUploadToken(null, deps())).rejects.toBeInstanceOf(ImageUploadAuthError);
+  });
+
   it('asks a HiveAuth user with an expired session to log in again', async () => {
     const d = deps({ getHiveAuthSession: () => ({ expire: 1 }) as never });
     await expect(getImageUploadToken(user('hiveauth'), d)).rejects.toThrow(/log in again/i);
@@ -189,6 +203,50 @@ describe('uploadEditorImage', () => {
     expect(d.signWithExtension).toHaveBeenCalledTimes(2);
   });
 
+  it('stops a batch when the service refuses a code signed just now: signing again would fail the same', async () => {
+    const refused = Object.assign(new Error('Request failed with status 400'), {
+      status: 400,
+      data: { error: { name: 'invalid_signature' } },
+    });
+    const png = new File(['x'], 'a.png', { type: 'image/png' });
+    const options = { user: user('keychain'), deps: deps(), upload: async () => Promise.reject(refused), convert: async (f: File) => f };
+    // Freshly signed and refused: the wallet's key no longer matches the chain.
+    await expect(uploadEditorImage(png, options)).rejects.toBeInstanceOf(ImageUploadAuthError);
+  });
+
+  it('leaves a HiveSigner refusal a per-file error: there is no code to sign again', async () => {
+    const refused = Object.assign(new Error('Request failed with status 400'), {
+      status: 400,
+      data: { error: { name: 'invalid_signature' } },
+    });
+    const png = new File(['x'], 'a.png', { type: 'image/png' });
+    const error = await uploadEditorImage(png, {
+      user: user('hivesigner', { accessToken: 't' }),
+      deps: deps(),
+      upload: async () => Promise.reject(refused),
+      convert: async (f: File) => f,
+    }).catch((e) => e);
+    expect(error).not.toBeInstanceOf(ImageUploadAuthError);
+  });
+
+  it('retries a refused code that came from the cache, as a stale one may just be old', async () => {
+    const d = deps();
+    await getImageUploadToken(user('keychain'), d); // cached now
+    const refused = Object.assign(new Error('Request failed with status 400'), {
+      status: 400,
+      data: { error: { name: 'invalid_signature' } },
+    });
+    const png = new File(['x'], 'a.png', { type: 'image/png' });
+    const error = await uploadEditorImage(png, {
+      user: user('keychain'),
+      deps: d,
+      upload: async () => Promise.reject(refused),
+      convert: async (f: File) => f,
+    }).catch((e) => e);
+    expect(error).not.toBeInstanceOf(ImageUploadAuthError);
+    expect(error.message).toMatch(/invalid signature/);
+  });
+
   it('keeps a valid code when the account is refused for another reason', async () => {
     // 403 is the service's low-reputation answer: signing again changes nothing.
     const d = deps();
@@ -251,6 +309,7 @@ describe('uploadEditorImage', () => {
         return { result: 'SIG', extension: 'keychain' as const };
       }),
     });
+    await expect(getImageUploadToken(user('keychain'), d)).rejects.toThrow(ImageUploadAuthError);
     await expect(getImageUploadToken(user('keychain'), d)).rejects.toThrow(/logged out/i);
     expect(d.storage?.getItem('ecency_image_upload_code')).toBeNull();
   });
@@ -275,6 +334,6 @@ describe('uploadEditorImage', () => {
     const png = new File(['x'], 'a.png', { type: 'image/png' });
     await expect(
       uploadEditorImage(png, { user: null, deps: deps(), upload: vi.fn(), convert: async (f) => f }),
-    ).rejects.toThrow(/log in/i);
+    ).rejects.toThrow(ImageUploadAuthError);
   });
 });

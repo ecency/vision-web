@@ -5,6 +5,7 @@ import Image from '@tiptap/extension-image';
 import { describe, expect, it, vi } from 'vitest';
 import { STARTER_KIT_EXTENSION } from './editor-extensions';
 import { ImageUpload, imageUploadState, pendingImageUploads } from './image-upload-extension';
+import { ImageUploadAuthError } from './image-upload';
 
 // #1462: the editor takes images from the toolbar picker, a drop or a paste,
 // uploads each one and inserts it where it was put.
@@ -107,6 +108,29 @@ describe('ImageUpload', () => {
     expect(upload).not.toHaveBeenCalled();
     // "Copy image" from a page: HTML holding the image, no text. Upload it.
     expect(handlePaste(editor.view, clipboard('', '<meta charset="utf-8"><img src="https://x.test/a.png">'))).toBe(true);
+    editor.destroy();
+  });
+
+  it('keeps a copied column of links as a table, though its text is only URLs', () => {
+    const upload = vi.fn(async () => 'https://images.ecency.com/u/x.png');
+    const editor = makeEditor(upload);
+    const { handlePaste } = plugin(editor);
+    const clipboard = (text: string, html: string) => ({
+      clipboardData: {
+        files: [png('image.png')],
+        getData: (type: string) => (type === 'text/plain' ? text : type === 'text/html' ? html : ''),
+      },
+      preventDefault: vi.fn(),
+    });
+    const urls = 'https://a.test/1\nhttps://a.test/2';
+    expect(handlePaste(editor.view, clipboard(urls, '<TABLE><tr><td>https://a.test/1</td></tr></TABLE>'))).toBe(false);
+    // A single link copied from a document is text with a link in it.
+    expect(handlePaste(editor.view, clipboard('https://a.test/1', '<p><a href="https://a.test/1">https://a.test/1</a></p>'))).toBe(false);
+    expect(upload).not.toHaveBeenCalled();
+    // Safari's Copy Image: the URL as text and the image as HTML. Upload it.
+    expect(handlePaste(editor.view, clipboard('https://x.test/a.png', '<img src="https://x.test/a.png">'))).toBe(true);
+    // A copied chart or picture with no text: the image, whatever HTML wraps it.
+    expect(handlePaste(editor.view, clipboard('', '<table><tr><td><img src="x.png"></td></tr></table>'))).toBe(true);
     editor.destroy();
   });
 
@@ -280,6 +304,27 @@ describe('ImageUpload', () => {
     expect(pendingImageUploads()).toBe(2);
     editor.destroy();
     expect(pendingImageUploads()).toBe(0);
+  });
+
+  it('stops the batch at a refused or cancelled signature, so the wallet asks once', async () => {
+    const upload = vi.fn(async () => {
+      throw new ImageUploadAuthError('Signing was cancelled in Keychain.');
+    });
+    const editor = makeEditor(upload);
+    editor.commands.uploadImages([png('a.png'), png('b.png'), png('c.png')]);
+    const seen: number[] = [];
+    editor.on('transaction', () => seen.push(imageUploadState(editor).pending));
+    for (let i = 0; i < 4; i++) await flush();
+    expect(upload).toHaveBeenCalledTimes(1);
+    // The toolbar is told the batch is over, not left showing "uploading".
+    expect(seen[seen.length - 1]).toBe(0);
+    const { pending, error } = imageUploadState(editor);
+    expect(pending).toBe(0);
+    expect(pendingImageUploads()).toBe(0);
+    // One message naming every file left out, not the same one three times.
+    expect(error?.match(/cancelled/g)).toHaveLength(1);
+    expect(error).toMatch(/a\.png.*b\.png.*c\.png/);
+    editor.destroy();
   });
 
   it('releases the whole batch when something throws midway', async () => {

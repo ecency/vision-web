@@ -162,6 +162,16 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(api.puts(), [])
         self.assertTrue(any(line.startswith("TURNSTILE FAILED") and mentions(line, "new.example.org") for line in logs))
 
+    def test_a_full_widget_names_every_wanted_domain_it_leaves_uncovered(self):
+        # example.net would cover a.example.net, so only the apex asks for a
+        # slot; with no room both tenants stay uncovered and both are named.
+        full = dict(WIDGET, domains=[f"t{i}.example.org" for i in range(9)] + ["ecency.com"])
+        api, logs = FakeApi(full), Logs()
+        self.assertEqual(td.reconcile(["a.example.net", "example.net"], CONFIG, api, logs), [])
+        [line] = [line for line in logs if line.startswith("TURNSTILE FAILED")]
+        self.assertTrue(mentions(line, "example.net"))
+        self.assertTrue(mentions(line, "a.example.net"))
+
     def test_adds_the_domain_that_covers_the_other_when_one_slot_is_left(self):
         full = dict(WIDGET, domains=[f"t{i}.example.org" for i in range(8)] + ["ecency.com"])
         api, logs = FakeApi(full), Logs()

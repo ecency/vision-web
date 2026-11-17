@@ -112,6 +112,19 @@ function b64uEncode(text: string): string {
   return btoa(binary).replace(/[+/=]/g, (c) => (c === '+' ? '-' : c === '/' ? '_' : '.'));
 }
 
+/**
+ * The session could not authenticate the upload: no login, an expired session,
+ * or a signature the wallet refused or could not give. The same answer holds
+ * for every other file in the batch, so the editor stops there instead of
+ * asking the wallet once per image.
+ */
+export class ImageUploadAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ImageUploadAuthError';
+  }
+}
+
 /** Signatures in flight, so two uploads started together ask the wallet once. */
 const signing = new Map<string, Promise<string>>();
 
@@ -120,7 +133,7 @@ export async function getImageUploadToken(
   user: AuthUser | null,
   deps: ImageUploadDeps = defaultImageUploadDeps(),
 ): Promise<string> {
-  if (!user) throw new Error('Log in to upload images.');
+  if (!user) throw new ImageUploadAuthError('Log in to upload images.');
   if (user.loginType === 'hivesigner') return sessionToken(user);
   const cached = readCode(deps, user.username);
   if (cached) return cached;
@@ -133,13 +146,12 @@ export async function getImageUploadToken(
 
 function sessionToken(user: AuthUser): string {
   if (!user.accessToken) {
-    throw new Error('Your session has expired. Log in again to upload images.');
+    throw new ImageUploadAuthError('Your session has expired. Log in again to upload images.');
   }
   return user.accessToken;
 }
 
 async function signCode(user: AuthUser, deps: ImageUploadDeps): Promise<string> {
-
   const signedAt = deps.now();
   const message = {
     signed_message: { type: 'code', app: HIVESIGNER_CLIENT_ID },
@@ -149,28 +161,36 @@ async function signCode(user: AuthUser, deps: ImageUploadDeps): Promise<string> 
   const text = JSON.stringify(message);
 
   let signature: string;
-  if (user.loginType === 'keychain') {
-    const signed = await deps.signWithExtension(user.username, text, 'Posting', user.extension);
-    if (typeof signed.result !== 'string' || signed.result.length === 0) {
-      throw new Error(extensionCancelledMessage(signed.extension));
-    }
-    signature = signed.result;
-  } else {
-    const session = deps.getHiveAuthSession();
-    if (!session || !isHiveAuthSessionValid(session)) {
-      throw new Error('Your HiveAuth session has expired. Log in again to upload images.');
-    }
-    signature = await deps.signWithHiveAuth(session, text);
+  try {
+    signature = await sign(user, text, deps);
+  } catch (e) {
+    // A wallet that is missing, refuses or times out answers every file the same.
+    throw e instanceof ImageUploadAuthError ? e : new ImageUploadAuthError(e instanceof Error ? e.message : String(e));
   }
 
   // Logged out while the wallet prompt was open: logout already cleared the
   // cache, so neither store nor use the late signature.
   if (!deps.isCurrentUser(user.username)) {
-    throw new Error('You logged out before the signature arrived. Log in again to upload images.');
+    throw new ImageUploadAuthError('You logged out before the signature arrived. Log in again to upload images.');
   }
   const code = b64uEncode(JSON.stringify({ ...message, signatures: [signature] }));
   storeCode(deps, { username: user.username, code, signedAt });
   return code;
+}
+
+async function sign(user: AuthUser, text: string, deps: ImageUploadDeps): Promise<string> {
+  if (user.loginType === 'keychain') {
+    const signed = await deps.signWithExtension(user.username, text, 'Posting', user.extension);
+    if (typeof signed.result !== 'string' || signed.result.length === 0) {
+      throw new ImageUploadAuthError(extensionCancelledMessage(signed.extension));
+    }
+    return signed.result;
+  }
+  const session = deps.getHiveAuthSession();
+  if (!session || !isHiveAuthSessionValid(session)) {
+    throw new ImageUploadAuthError('Your HiveAuth session has expired. Log in again to upload images.');
+  }
+  return deps.signWithHiveAuth(session, text);
 }
 
 // What the image service accepts. SVG is not among them: it refuses the upload.
@@ -249,8 +269,10 @@ export async function uploadEditorImage(
   file: File,
   { user, deps = defaultImageUploadDeps(), upload = uploadImage, convert, signal }: UploadEditorImageOptions,
 ): Promise<string> {
-  if (!user) throw new Error('Log in to upload images.');
+  if (!user) throw new ImageUploadAuthError('Log in to upload images.');
   const prepared = await prepareImageFile(file, convert);
+  const signsCodes = user.loginType !== 'hivesigner';
+  const fromCache = signsCodes && readCode(deps, user.username) !== null;
   const token = await getImageUploadToken(user, deps);
   try {
     // Started here, after the wallet answered: a slow approval must not use up
@@ -263,8 +285,15 @@ export async function uploadEditorImage(
     // The service answers a signature it cannot verify (a rotated posting key)
     // with 400 invalid_signature: that code must not be reused. Other refusals,
     // such as 403 for a low-reputation account, are not fixed by signing again.
-    if (user.loginType !== 'hivesigner' && reason === 'invalid_signature') {
+    if (signsCodes && reason === 'invalid_signature') {
       forgetCode(deps);
+      // Signed just now and still refused: the wallet's key no longer matches
+      // the account, so every other file would prompt and fail the same way.
+      if (!fromCache) {
+        throw new ImageUploadAuthError(
+          "The image service could not verify your wallet's signature. Check that your posting key is current, then log in again.",
+        );
+      }
     }
     if (reason) {
       const message =
