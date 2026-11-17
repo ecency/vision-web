@@ -6,6 +6,16 @@ import { takenDownPostPaths } from "@/core/dmca-posts";
 /**
  * Takedown lists, loaded into the SDK config.
  *
+ * What each list does (#1870):
+ *  - posts (`dmca-posts.json`): the post is removed. Its page, .md, .json,
+ *    oEmbed and import are censored.
+ *  - accounts (`dmca-accounts.json`): only the account's own profile lists are
+ *    emptied (`getAccountPosts` returns nothing for it). Its posts still open
+ *    from a direct link and still appear in ranked, tag and community feeds
+ *    and in search. To remove a post by a listed account, add that post to the
+ *    posts list as well.
+ *  - tags (`dmca-tags.json`): the ranked feeds for those tags are empty.
+ *
  * The SDK's post queries filter against CONFIG, which holds nothing until this
  * runs, so a surface that never calls it is not filtered at all. The call used
  * to live in `core/sdk-init`, which the root layout and the client providers

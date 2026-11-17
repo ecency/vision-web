@@ -2,8 +2,8 @@ import "@/styles/style.scss";
 import "@/core/sdk-init"; // Initialize SDK DMCA filters immediately (SSR)
 import Providers from "@/app/providers";
 import { HiringConsoleLog } from "@/app/_components/hiring-console-log";
-import { cookies } from "next/headers";
-import { Theme } from "@/enums";
+import { connection } from "next/server";
+import { THEME_INIT_SCRIPT } from "@/app/_components/theme-init-script";
 import { BannerManager } from "@/features/banners";
 import { ServiceWorkerRecovery } from "@/features/pwa-install";
 import React from "react";
@@ -91,10 +91,17 @@ const lora = Lora({
 });
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const theme = (await cookies()).get("theme")?.value;
+  // The theme cookie used to be read here, which kept every route request-time
+  // rendered. It is now applied in the browser (THEME_INIT_SCRIPT below), and
+  // connection() keeps rendering exactly as dynamic as the cookie read did: a
+  // static switch is its own per-route project (#1262).
+  await connection();
 
   return (
-    // The dark class goes on BOTH <html> and <body>, deliberately.
+    // The dark class goes on BOTH <html> and <body>, deliberately. It is set
+    // before first paint by THEME_INIT_SCRIPT, the first child of <body>, so the
+    // server HTML no longer depends on the theme cookie (#1262); both elements
+    // therefore suppress the className hydration warning.
     //
     // <html> is what five checkout components probe via
     // `document.documentElement.classList.contains("dark")` — with the class on
@@ -109,7 +116,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // preserves that cascade exactly as it was.
     <html
       lang="en"
-      className={`${lora.variable} ${inter.variable} ${theme === Theme.night ? "dark" : ""}`}
+      suppressHydrationWarning
+      className={`${lora.variable} ${inter.variable}`}
     >
       <head>
         {/*
@@ -143,7 +151,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           and the headers() call behind it was the app's second forced-dynamic
           read (see #1262). */}
       <Script defer data-domain="ecency.com" data-api="/pl/api/event" src="/pl/js/script.js" />
-      <body className={theme === Theme.night ? "dark" : ""}>
+      <body suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <BannerManager />
         <ServiceWorkerRecovery />
         <HiringConsoleLog />

@@ -403,15 +403,17 @@ describe("getEntryTierForAge", () => {
     });
   });
 
+  // Two days, not 30: cached HTML pins the build it was rendered with, so a
+  // front-end fix reaches an old post within days of a deploy (#1505).
   it("returns entry-archive for posts 30-60 days old", () => {
     expect(getEntryTierForAge(30 * DAY)).toEqual({
       tier: "entry-archive",
-      sMaxAge: 2592000,
+      sMaxAge: 172800,
       staleWhileRevalidate: 604800
     });
     expect(getEntryTierForAge(59 * DAY)).toEqual({
       tier: "entry-archive",
-      sMaxAge: 2592000,
+      sMaxAge: 172800,
       staleWhileRevalidate: 604800
     });
   });
@@ -419,12 +421,12 @@ describe("getEntryTierForAge", () => {
   it("returns entry-ancient for posts over 60 days old", () => {
     expect(getEntryTierForAge(60 * DAY)).toEqual({
       tier: "entry-ancient",
-      sMaxAge: 2592000,
+      sMaxAge: 172800,
       staleWhileRevalidate: 5184000
     });
     expect(getEntryTierForAge(365 * DAY)).toEqual({
       tier: "entry-ancient",
-      sMaxAge: 2592000,
+      sMaxAge: 172800,
       staleWhileRevalidate: 5184000
     });
   });

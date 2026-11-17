@@ -77,8 +77,8 @@ describe("retain-static", () => {
   });
 
   it("keeps builds for the cache horizon, not a fixed count: many deploys a day all stay", () => {
-    // The longest HTML tier is s-maxage 30 days (entry-archive / entry-ancient),
-    // honoured by Cloudflare's standard cache and the origin nginx.
+    // Sized for the old 30 day HTML tiers; kept after #1505 cut them to 2 days,
+    // because a stale-while-revalidate answer can still name an older build.
     expect(MAX_AGE_MS).toBe(31 * DAY);
     let prev = tmp();
     put(prev, "chunks/b0.js");

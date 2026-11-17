@@ -14,11 +14,11 @@
  * merges the previous builds' files into the new directory (new files win on a
  * clash, which never happens for hashed names) and records which files belong
  * to which build, with its build time, in `retained-builds.json`. A build is
- * kept while it is younger than MAX_AGE_MS: the longest HTML tier
- * (entry-archive / entry-ancient) is s-maxage 30 days, honoured by Cloudflare's
- * standard cache and by the origin nginx (the worker's own cache caps at 7
- * days; stale-while-revalidate does not extend this, the revalidation fetches
- * the new build). MAX_BUILDS and MAX_RETAINED_BYTES are backstops so the image
+ * kept while it is younger than MAX_AGE_MS. It was sized when the longest
+ * HTML tier (entry-archive / entry-ancient) was s-maxage 30 days. Those tiers
+ * are 2 days since #1505, but it stays at 31 days: under stale-while-revalidate
+ * a cache may still answer once with an expired copy, which names the build it
+ * was rendered with, while it fetches the new one. MAX_BUILDS and MAX_RETAINED_BYTES are backstops so the image
  * cannot grow without bound: a retained build only adds the files it does not
  * share with newer ones, roughly 1-2 MB for a typical deploy.
  *

@@ -120,8 +120,8 @@ age-based TTL.
 | < 1d | 60s | 300s |
 | 1-7d | 1h | 1d |
 | 7-30d | 1d | 7d |
-| 30-60d | 30d | 7d |
-| > 60d | 30d | 60d |
+| 30-60d | 2d | 7d |
+| > 60d | 2d | 60d |
 
 The worker caps stored TTL at 7 days as a safety bound:
 
