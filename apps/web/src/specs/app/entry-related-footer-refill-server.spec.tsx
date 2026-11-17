@@ -36,6 +36,8 @@ const { EntryRelatedFooterRefill } = await import(
   "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-related-footer-refill"
 );
 
+type RefillElement = React.ReactElement<React.ComponentProps<typeof EntryRelatedFooterRefill>>;
+
 type DegradedGlobal = { __ecencySsrDegraded?: { mark: (reason: string) => void } };
 
 const row = (author: string, permlink: string) =>
@@ -72,12 +74,12 @@ describe("related footer when a feed fails", () => {
 
   it("hands the failed column to the browser and keeps the loaded ones", async () => {
     failing.add("similar");
-    const el = (await EntryRelatedFooter({ entry: post() })) as React.ReactElement<any>;
+    const el = (await EntryRelatedFooter({ entry: post() })) as RefillElement;
 
     expect(el.type).toBe(EntryRelatedFooterRefill);
     expect(el.props.failed).toEqual({ similar: true, author: false, community: false });
-    expect(el.props.initial.author.map((e: { permlink: string }) => e.permlink)).toEqual(["a1", "a2"]);
-    expect(el.props.initial.community.map((e: { permlink: string }) => e.permlink)).toEqual(["c1", "c2"]);
+    expect(el.props.initial.author.map((e) => e.permlink)).toEqual(["a1", "a2"]);
+    expect(el.props.initial.community.map((e) => e.permlink)).toEqual(["c1", "c2"]);
     // Only what a row shows crosses to the browser, never whole entries.
     expect(Object.keys(el.props.initial.author[0]).sort()).toEqual(
       ["author", "category", "created", "image", "permlink", "title"].filter((k) => k in el.props.initial.author[0]).sort()
@@ -86,13 +88,24 @@ describe("related footer when a feed fails", () => {
     expect(el.props.initial.author[0]).not.toHaveProperty("json_metadata");
     expect(el.props.titles.community).toBeDefined();
     // What the browser needs to ask again, and no more of the body than that.
-    expect(el.props.similarInput.title).toBe("The post");
-    expect(el.props.similarInput.body.length).toBeLessThanOrEqual(6000);
+    expect(el.props.similarInput?.title).toBe("The post");
+    expect(el.props.similarInput?.body.length).toBeLessThanOrEqual(3000);
+  });
+
+  it("hands the browser the excerpt the similar query reads, not a raw cut of the body", async () => {
+    failing.add("similar");
+    const imageFirst = mockEntry({
+      ...post(),
+      body: "![pic](https://images.hive.blog/DQm-long-hash.png) ".repeat(200) + "Prose that comes after the images"
+    });
+    const el = (await EntryRelatedFooter({ entry: imageFirst })) as RefillElement;
+
+    expect(el.props.similarInput?.body).toBe("Prose that comes after the images");
   });
 
   it("renders on the server alone when every feed answered", async () => {
     answers.set("similar", []);
-    const el = (await EntryRelatedFooter({ entry: post() })) as React.ReactElement<any>;
+    const el = (await EntryRelatedFooter({ entry: post() })) as React.ReactElement<unknown>;
     expect(el.type).not.toBe(EntryRelatedFooterRefill);
     expect(mark).not.toHaveBeenCalled();
   });

@@ -10,6 +10,7 @@ import { mockEntry } from "@/specs/test-utils";
 const answers = vi.hoisted(() => new Map<string, unknown>());
 const calls = vi.hoisted(() => [] as string[]);
 const similarInputs = vi.hoisted(() => [] as unknown[]);
+const failingFeeds = vi.hoisted(() => new Set<string>());
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<Record<string, unknown>>("@ecency/sdk");
@@ -17,6 +18,7 @@ vi.mock("@ecency/sdk", async () => {
     queryKey: [name, ...key],
     queryFn: async () => {
       calls.push(name);
+      if (failingFeeds.has(name)) throw new Error(`${name} 503`);
       return answers.get(name) ?? [];
     }
   });
@@ -26,7 +28,9 @@ vi.mock("@ecency/sdk", async () => {
     getAccountPostsQueryOptions: (username: string) => answer("account", username),
     getSimilarEntriesQueryOptions: (input: unknown) => {
       similarInputs.push(input);
-      return answer("similar");
+      // As the SDK pins it: never retry the similar backend (retryDelay 0 only
+      // keeps a wrongly allowed retry fast here).
+      return { ...answer("similar"), retry: false, retryDelay: 0 };
     }
   };
 });
@@ -72,6 +76,7 @@ describe("EntryRelatedFooterRefill", () => {
     answers.clear();
     calls.length = 0;
     similarInputs.length = 0;
+    failingFeeds.clear();
   });
 
   it("shows the server's columns at once and fetches only the failed one", async () => {
@@ -111,4 +116,27 @@ describe("EntryRelatedFooterRefill", () => {
       json_metadata: { tags: ["photography"] }
     });
   });
+
+  it("keeps the SDK's no-retry rule for the similar backend", async () => {
+    failingFeeds.add("similar");
+    renderRefill({
+      failed: { similar: true, author: false, community: false },
+      similarInput: { title: "The post", body: "words", tags: ["photography"] }
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls).toEqual(["similar"]);
+  });
+
+  it("asks the author and community feeds once more when they fail again", async () => {
+    failingFeeds.add("account");
+    failingFeeds.add("ranked");
+    renderRefill({ failed: { similar: false, author: true, community: true } });
+
+    await vi.waitFor(() => expect(calls.filter((c) => c === "account")).toHaveLength(2), { timeout: 4000 });
+    await vi.waitFor(() => expect(calls.filter((c) => c === "ranked")).toHaveLength(2), { timeout: 4000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(calls.filter((c) => c === "account")).toHaveLength(2);
+    expect(calls.filter((c) => c === "ranked")).toHaveLength(2);
+  }, 10_000);
 });

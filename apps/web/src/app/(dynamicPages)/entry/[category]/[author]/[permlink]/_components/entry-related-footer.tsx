@@ -4,7 +4,8 @@ import { withCardOnlyPageEntries } from "@/core/entries/slim-entry";
 import {
   getAccountPostsQueryOptions,
   getPostsRankedQueryOptions,
-  getSimilarEntriesQueryOptions
+  getSimilarEntriesQueryOptions,
+  similarEntriesExcerpt
 } from "@ecency/sdk";
 import { initI18next } from "@/features/i18n";
 import { SimilarRow } from "./entry-related-item";
@@ -19,10 +20,6 @@ import {
 } from "./entry-related-columns";
 import { EntryRelatedFooterView } from "./entry-related-footer-view";
 import { EntryRelatedFooterRefill } from "./entry-related-footer-refill";
-
-// The similar query only reads an excerpt of the body (3000 characters after
-// markdown is stripped); the browser refill gets no more of it than this.
-const REFILL_BODY_LIMIT = 6000;
 
 interface Props {
   entry: Entry;
@@ -116,7 +113,9 @@ export async function EntryRelatedFooter({ entry }: Props) {
           failed.similar
             ? {
                 title: entry.title ?? "",
-                body: (entry.body ?? "").slice(0, REFILL_BODY_LIMIT),
+                // The excerpt the similar query sends: the browser asks with the
+                // text the server did, and gets no more of the body than that.
+                body: similarEntriesExcerpt(entry.body ?? ""),
                 tags: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : []
               }
             : undefined

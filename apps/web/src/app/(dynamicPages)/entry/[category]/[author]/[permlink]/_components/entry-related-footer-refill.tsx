@@ -36,9 +36,12 @@ interface Props {
   similarInput?: { title: string; body: string; tags: string[] };
 }
 
-// One retry: a page cached with a failed feed asks again from every reader's
-// browser for as long as it stays cached.
-const REFILL_QUERY = { retry: 1, refetchOnWindowFocus: false } as const;
+// A page cached with a failed feed asks again from every reader's browser for
+// as long as it stays cached: no refetch on focus, and one retry for the feeds
+// from the API. The similar query keeps the SDK's own `retry: false`, which
+// stops a degraded search backend being asked twice by every reader.
+const REFILL_QUERY = { refetchOnWindowFocus: false } as const;
+const FEED_RETRY = { retry: 1 } as const;
 
 /**
  * The related footer when one of its feeds failed during the server render
@@ -71,6 +74,7 @@ export function EntryRelatedFooterRefill({
   const authorPosts = useQuery({
     ...withCardOnlyPageEntries(getAccountPostsQueryOptions(author, "posts", "", "", RELATED_FETCH_LIMIT)),
     ...REFILL_QUERY,
+    ...FEED_RETRY,
     enabled: failed.author
   });
   const communityPosts = useQuery({
@@ -78,6 +82,7 @@ export function EntryRelatedFooterRefill({
       getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source?.tag ?? "")
     ),
     ...REFILL_QUERY,
+    ...FEED_RETRY,
     enabled: failed.community && !!source
   });
 
