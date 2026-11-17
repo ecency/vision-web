@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/methods/noop.method.ts"],"names":[],"mappings":";AAAO,SAAS,IAAA,GAAa;AAAC","file":"chunk-3XHU5C2A.js","sourcesContent":["export function noop(): void {}\n"]}

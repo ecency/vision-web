@@ -1,0 +1,55 @@
+// src/consts/regexes.const.ts
+var URL_REGEX = /(https?:\/\/[^\s]+)/g;
+var IMG_REGEX = /(https?:\/\/.*\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw))(.*)/gim;
+var ECENCY_IMG_REGEX = /https?:\/\/images\.ecency\.com\/(?:(?:p|DQm[a-zA-Z0-9]+)\/)?[^\s"'<>]+/gi;
+var IPFS_REGEX = /^https?:\/\/[^/]+\/(ip[fn]s)\/([^/?#]+)/gim;
+var POST_REGEX = /^https?:\/\/([^/]+)\/([^/]+)\/(@[\w.\d-]+)\/(.+)$/i;
+var CCC_REGEX = /^https?:\/\/(.*)\/ccc\/([\w.\d-]+)\/(.*)/i;
+var MENTION_REGEX = /^https?:\/\/(.*)\/(@[\w.\d-]+)$/i;
+var TOPIC_REGEX = /^https?:\/\/(.*)\/(trending|hot|created|promoted|muted|payout)\/(.*)$/i;
+var INTERNAL_MENTION_REGEX = /^\/@[\w.\d-]+$/i;
+var INTERNAL_TOPIC_REGEX = /^\/(trending|hot|created|promoted|muted|payout)\/(.*)$/i;
+var INTERNAL_POST_TAG_REGEX = /^(.+?)\/(@[\w.\d-]+)\/(.*)$/i;
+var INTERNAL_POST_REGEX = /^\/(@[\w.\d-]+)\/(.*)$/i;
+var CUSTOM_COMMUNITY_REGEX = /^https?:\/\/(.*)\/c\/(hive-\d+)(.*)/i;
+var YOUTUBE_REGEX = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|shorts\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+var YOUTUBE_EMBED_REGEX = /^(https?:)?\/\/(?:www\.|m\.)?youtube\.com\/(embed|shorts)\/.*/i;
+var VIMEO_REGEX = /(https?:\/\/)?(www\.)?(?:vimeo)\.com.*(?:videos|video|channels|)\/([\d]+)/i;
+var VIMEO_EMBED_REGEX = /https:\/\/player\.vimeo\.com\/video\/([0-9]+)(?:$|[?#])/;
+var BITCHUTE_REGEX = /^(?:https?:\/\/)?(?:www\.)?bitchute\.com\/(?:video|embed)\/([a-z0-9_-]+)/i;
+var D_TUBE_REGEX = /(https?:\/\/d\.tube\/#!\/v\/)(\w+)\/(\w+)/g;
+var D_TUBE_REGEX2 = /(https?:\/\/d\.tube\/v\/)(\w+)\/(\w+)/g;
+var D_TUBE_EMBED_REGEX = /^https:\/\/emb\.d\.tube\/#!\/[^/?#]+\/[^/?#]+(?:$|[?#])/i;
+var TWITCH_REGEX = /https?:\/\/(?:www\.)?twitch\.tv\/(?:(videos)\/)?([a-zA-Z0-9][\w]{3,24})/i;
+var DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-videos\/.*/i;
+var TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i;
+var LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i;
+var ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i;
+var ODYSEE_WATCH_REGEX = /^(?:https?:)?\/\/odysee\.com\/(@[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+\/[^/?#\s:"'<>\\]+:[^/?#\s:"'<>\\]+|[^@/?#\s:"'<>\\][^/?#\s:"'<>\\]*:[^/?#\s:"'<>\\]+)(?:$|[?#])/i;
+var SKATEHIVE_IPFS_REGEX = /^https?:\/\/ipfs\.skatehive\.app\/ipfs\/([^/?#]+)/i;
+var SKATEHYPE_EMBED_REGEX = /^(https?:)?\/\/(www\.)?skatehype\.com\/ifplay\.php\?v=\d+(?:$|[&#])/i;
+var ARCH_REGEX = /^(https?:)?\/\/archive\.org\/embed\/[^/?#]+(?:$|[?#])/i;
+var SPEAK_REGEX = /(?:https?:\/\/(?:(?:play\.)?3speak\.([a-z]+)\/watch\?v=)|(?:(?:play\.)?3speak\.([a-z]+)\/embed\?v=))([A-Za-z0-9_\-\.\/]+)(&.*)?/i;
+var SPEAK_EMBED_REGEX = /^(https?:)?\/\/(?:play\.)?3speak\.([a-z]+)\/(?:embed|watch)\?.+$/i;
+var SPEAK_AUDIO_REGEX = /https?:\/\/audio\.3speak\.tv\/play\?[^\s]+/i;
+var SPEAK_AUDIO_EMBED_REGEX = /^https?:\/\/audio\.3speak\.tv\/play\?.+$/i;
+var LIKETU_AUDIO_REGEX = /^https?:\/\/cdn\.liketu\.com\/.+\.(?:webm|mp3|m4a|ogg|wav)(?:\?.*)?$/i;
+var TWITTER_REGEX = /(?:https?:\/\/(?:(?:twitter\.com\/(.*?)\/status\/(.*))))/gi;
+var SPOTIFY_REGEX = /^https:\/\/open\.spotify\.com\/playlist\/(.*)?$/gi;
+var RUMBLE_REGEX = /^https:\/\/rumble\.com\/embed\/([a-zA-Z0-9-]+)\/\?pub=\w+/;
+var BRIGHTEON_REGEX = /^https?:\/\/(www\.)?brighteon\.com\/(?:embed\/)?(.*[0-9].*)/i;
+var VIMM_EMBED_REGEX = /^https:\/\/www\.vimm\.tv\/[^?#]+(?:$|[?#])/i;
+var SPOTIFY_EMBED_REGEX = /^https:\/\/open\.spotify\.com\/(embed|embed-podcast)\/(playlist|show|episode|track|album)\/([^/?#]+)(?:$|[?#])/i;
+var SOUNDCLOUD_EMBED_REGEX = /^https:\/\/w\.soundcloud\.com\/player\/\?[^#]+$/i;
+var TWITCH_EMBED_REGEX = /^(https?:)?\/\/player\.twitch\.tv\/(?:\?[^/]+)?$/i;
+var BRAND_NEW_TUBE_REGEX = /^https:\/\/brandnewtube\.com\/embed\/[a-z0-9]+$/i;
+var LOOM_REGEX = /^(https?:)?\/\/www\.loom\.com\/share\/([^/?#]+)(?:$|[?#])/i;
+var LOOM_EMBED_REGEX = /^(https?:)?\/\/www\.loom\.com\/embed\/([^/?#]+)(?:$|[?#])/i;
+var AUREAL_EMBED_REGEX = /^(https?:)?\/\/(www\.)?(?:aureal-embed)\.web\.app\/([0-9]+)(?:$|[?#])/i;
+var ENTITY_REGEX = /&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-fA-F]{1,6});/ig;
+var SECTION_REGEX = /\B(\#[\da-zA-Z-_]+\b)(?!;)/i;
+var ID_WHITELIST = /^[A-Za-z][-A-Za-z0-9_]*$/;
+
+export { ARCH_REGEX, AUREAL_EMBED_REGEX, BITCHUTE_REGEX, BRAND_NEW_TUBE_REGEX, BRIGHTEON_REGEX, CCC_REGEX, CUSTOM_COMMUNITY_REGEX, DAPPLR_REGEX, D_TUBE_EMBED_REGEX, D_TUBE_REGEX, D_TUBE_REGEX2, ECENCY_IMG_REGEX, ENTITY_REGEX, ID_WHITELIST, IMG_REGEX, INTERNAL_MENTION_REGEX, INTERNAL_POST_REGEX, INTERNAL_POST_TAG_REGEX, INTERNAL_TOPIC_REGEX, IPFS_REGEX, LBRY_REGEX, LIKETU_AUDIO_REGEX, LOOM_EMBED_REGEX, LOOM_REGEX, MENTION_REGEX, ODYSEE_REGEX, ODYSEE_WATCH_REGEX, POST_REGEX, RUMBLE_REGEX, SECTION_REGEX, SKATEHIVE_IPFS_REGEX, SKATEHYPE_EMBED_REGEX, SOUNDCLOUD_EMBED_REGEX, SPEAK_AUDIO_EMBED_REGEX, SPEAK_AUDIO_REGEX, SPEAK_EMBED_REGEX, SPEAK_REGEX, SPOTIFY_EMBED_REGEX, SPOTIFY_REGEX, TOPIC_REGEX, TRUVVL_REGEX, TWITCH_EMBED_REGEX, TWITCH_REGEX, TWITTER_REGEX, URL_REGEX, VIMEO_EMBED_REGEX, VIMEO_REGEX, VIMM_EMBED_REGEX, YOUTUBE_EMBED_REGEX, YOUTUBE_REGEX };
+//# sourceMappingURL=chunk-3IFARPWV.js.map
+//# sourceMappingURL=chunk-3IFARPWV.js.map
