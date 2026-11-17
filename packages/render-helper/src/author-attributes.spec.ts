@@ -118,6 +118,14 @@ describe('a protocol-relative link with an invalid permlink', () => {
     expect(render(body, false)).not.toMatch(/markdown-(post|profile)-link/)
   })
 
+  it.each([
+    '[x](/hive-125125/@alice/my-post?a=1&amp;b=2)',
+    '[x](/ecency/@alice/my-post?ref=bob&amp;x=1)',
+    '<a href="/hive-1/@alice/my-post#c&amp;z">x</a>'
+  ])('%s stays an in-app post link in the app render (an entity only in the query or fragment)', (body) => {
+    expect(render(body, true)).toContain('markdown-post-link')
+  })
+
   it('a valid in-site post link is still internal', () => {
     expect(render('[x](/@alice/valid-permlink)')).toContain('markdown-post-link')
   })
