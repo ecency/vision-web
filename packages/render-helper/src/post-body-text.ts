@@ -87,10 +87,51 @@ function stripTags(text: string): string {
     if (close === -1) break
     at = close + 3
   }
-  // One pass removes the tags; a tag split by another (`<scr<b>ipt>`) can
-  // leave an opener behind, so any `<` that still starts a tag goes too. Two
-  // linear passes, never a loop until nothing changes.
-  return out.replace(/<\/?[A-Za-z][^<>]*>/g, '').replace(/<(?=[A-Za-z/!])/g, '')
+  return dropTags(out)
+}
+
+const isLetter = (c: string) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+
+/**
+ * One left-to-right scan: a tag (`<` + optional `/` + letter, up to the next
+ * `>` with no `<` before it) is skipped whole; any other `<` that would start
+ * a tag (left by one tag split by another, `<scr<b>ipt>`) is dropped alone.
+ * Its output never holds `<` before a letter, `/` or `!` (entities decoded
+ * later can still show one, as text). Linear: the search for `>` stops at the
+ * next `<`, and each character is pushed and popped at most once.
+ */
+function dropTags(text: string): string {
+  // Characters in an array: dropping the last kept `<` is a pop, not a copy.
+  const out: string[] = []
+  let i = 0
+  while (i < text.length) {
+    const c = text[i]
+    if (c !== '<') {
+      // A kept `<` that a removed tag has now put before a letter, `/` or `!`
+      // would read as an opener: it goes.
+      if (isLetter(c) || c === '/' || c === '!') {
+        while (out[out.length - 1] === '<') out.pop()
+      }
+      out.push(c)
+      i++
+      continue
+    }
+    const next = text[i + 1] ?? ''
+    const opensTag = isLetter(next) || (next === '/' && isLetter(text[i + 2] ?? ''))
+    if (opensTag) {
+      let j = i + 1
+      while (j < text.length && text[j] !== '>' && text[j] !== '<') j++
+      // A whole tag is skipped; an opener with no `>` before the next `<` is
+      // dropped alone and the scan goes on from the character after it.
+      i = text[j] === '>' ? j + 1 : i + 1
+      continue
+    }
+    if (next !== '/' && next !== '!') {
+      out.push(c)
+    }
+    i++
+  }
+  return out.join('')
 }
 
 const joint = (arr: string[], limit = 200) => {

@@ -51,8 +51,9 @@ describe('getPostBodyText', () => {
   })
 
   it('leaves no tag opener behind when tags are nested inside each other', () => {
-    const text = getPostBodyText('a <scr<b>ipt>x</scr</b>ipt> b <<i>img src=x> c', 200)
-    expect(text).not.toMatch(/<[A-Za-z/!]/)
+    for (const body of ['a <scr<b>ipt>x</scr</b>ipt> b <<i>img src=x> c', '<<<Z', '<<<<a', 'x <<<script y']) {
+      expect(getPostBodyText(body, 200)).not.toMatch(/<[A-Za-z/!]/)
+    }
   })
 
   it('returns the whole text with length 0', () => {
