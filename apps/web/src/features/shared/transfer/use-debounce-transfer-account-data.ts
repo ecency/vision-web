@@ -107,8 +107,23 @@ export function useDebounceTransferAccountData() {
   const currentAmountRef = useRef(currentAmount);
   currentAmountRef.current = currentAmount;
   const filledFor = useRef<string | null>(null);
+  // The value this hook last put in the field: still showing it means the
+  // user has not typed, so a new recipient's delegation (or the default when
+  // it has none) may replace it.
+  const autoFilled = useRef<string | null>(null);
   useEffect(() => {
-    if (mode !== "delegate" || amount === null) {
+    if (mode !== "delegate") {
+      return;
+    }
+    const typed = currentAmountRef.current;
+    const untouched =
+      !typed || ["0", "0.000", "0.001"].includes(typed) || typed === autoFilled.current;
+    if (amount === null) {
+      if (autoFilled.current !== null && typed === autoFilled.current) {
+        autoFilled.current = null;
+        filledFor.current = null;
+        setAmount("0.001");
+      }
       return;
     }
     const key = `${to}|${amount}`;
@@ -116,8 +131,8 @@ export function useDebounceTransferAccountData() {
       return;
     }
     filledFor.current = key;
-    const typed = currentAmountRef.current;
-    if (!typed || ["0", "0.000", "0.001"].includes(typed)) {
+    if (untouched) {
+      autoFilled.current = amount;
       setAmount(amount);
     }
   }, [amount, mode, setAmount, to]);

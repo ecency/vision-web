@@ -94,6 +94,29 @@ describe("useDebounceTransferAccountData", () => {
     expect(setAmount).toHaveBeenCalledTimes(1);
   });
 
+  it("does not carry one recipient's filled delegation to another", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const setAmount = vi.fn((v: string) => (state.amount = v));
+    const state = { amount: "0.001", to: "ecency" };
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ to: state.to, mode: "delegate", amount: state.amount, setAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    const { rerender } = renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(state.amount).toBe("5000");
+    h.delegations = [{ delegator: "alice", delegatee: "bob", vesting_shares: "400000.000000 VESTS" }];
+    state.to = "bob";
+    rerender();
+    expect(state.amount).toBe("200");
+    h.delegations = [];
+    state.to = "carol";
+    rerender();
+    expect(state.amount).toBe("0.001");
+  });
+
   it("keeps the amount it was given when there is no delegation (#2123)", () => {
     h.delegations = [];
     const { setAmount } = run("transfer", "100.000");
