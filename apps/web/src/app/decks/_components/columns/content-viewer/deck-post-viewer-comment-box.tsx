@@ -37,8 +37,10 @@ export const DeckPostViewerCommentBox = ({ entry, onReplied }: Props) => {
   );
 
   const submitReply = async (text: string, { declinePayout }: CommentSubmitOptions) => {
+    // Refuse rather than return: the composer treats a resolved submit as posted
+    // and clears the text, so returning here dropped the reply unsent (#2109).
     if (!username || !account) {
-      return;
+      throw new Error("Missing active user or entry");
     }
 
     const permlink = createReplyPermlink(entry.author);
