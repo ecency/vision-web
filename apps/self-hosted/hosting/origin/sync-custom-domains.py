@@ -36,6 +36,16 @@ import sys
 import time
 from datetime import datetime, timezone
 
+# Imported defensively: these files are copied to the origin by hand, and a
+# half-copied directory must not stop certificates and vhosts (#1586).
+try:
+    import turnstile_domains
+except Exception as _turnstile_import_error:  # pragma: no cover - exercised via the None path
+    turnstile_domains = None
+    TURNSTILE_IMPORT_ERROR = f"{type(_turnstile_import_error).__name__}: {_turnstile_import_error}"
+else:
+    TURNSTILE_IMPORT_ERROR = ""
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, "sync.log")
 LOCK_FILE = os.path.join(BASE_DIR, ".lock")
@@ -356,7 +366,8 @@ def main() -> None:
     state = load_state()
     # Both lists produce the same vhost shape (TLS + proxy with X-Tenant-Id), so they
     # share issuance, backoff, stale-removal and reload handling.
-    domains = fetch_domains() + fetch_dotted_subdomains()
+    custom = fetch_domains()
+    domains = custom + fetch_dotted_subdomains()
     desired: set[str] = set()
     changed: list[str] = []
 
@@ -392,6 +403,43 @@ def main() -> None:
 
     if changed or removed:
         reload_nginx(changed)
+
+    sync_turnstile([domain for domain, _ in custom], state)
+    save_state(state)
+
+
+def sync_turnstile(custom_domains: list[str], state: dict) -> None:
+    """Add verified custom domains to the newsletter Turnstile widget (#1586).
+
+    Custom domains only: dotted tenants live under blogs.ecency.com, which the
+    widget's ecency.com entry already covers. See turnstile_domains.py; it never
+    removes a domain and never raises.
+    """
+    if not custom_domains:
+        return
+    lines: list[str] = []
+    if turnstile_domains is None:
+        lines.append(
+            "TURNSTILE FAILED: turnstile_domains.py is missing or broken next to this script "
+            f"({TURNSTILE_IMPORT_ERROR or 'not imported'}); copy it with sync-custom-domains.py"
+        )
+    else:
+        config = turnstile_domains.load_config(BASE_DIR, os.environ)
+        if config is None:
+            lines.append("TURNSTILE SKIPPED: no turnstile.env; custom domains must be added to the widget by hand")
+        else:
+            turnstile_domains.reconcile(
+                custom_domains, config, turnstile_domains.http_json, lines.append, dry_run=DRY_RUN
+            )
+    # This runs every 5 minutes: write an outcome when it changes, not 288 times
+    # a day. A success is always new; a failure that persists is logged once.
+    outcome = "\n".join(lines)
+    if outcome != state.get("turnstile_last_outcome", ""):
+        for line in lines:
+            log(line)
+    if not DRY_RUN:
+        # A manual dry run must not make the next real run stay silent.
+        state["turnstile_last_outcome"] = outcome
 
 
 if __name__ == "__main__":

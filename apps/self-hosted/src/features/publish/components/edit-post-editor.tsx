@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
+import { usePendingImageUploads } from "../hooks/use-pending-image-uploads";
 import Image from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extensions";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -8,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
 import { t } from "@/core";
 import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from "../utils/editor-extensions";
+import { ImageUpload } from "../utils/image-upload-extension";
 import {
   hasUnsupportedMarkup,
   htmlToMarkdown,
@@ -64,6 +66,7 @@ export function EditPostEditor({
       TableHeader,
       TableCell,
       Image.configure({ inline: true }),
+      ImageUpload,
     ],
     onUpdate({ editor }) {
       const html = editor.getHTML();
@@ -87,8 +90,13 @@ export function EditPostEditor({
     }
   }, [editAsMarkdown, editor, initialBody]);
 
+  const pendingImageUploads = usePendingImageUploads();
   const canUpdate =
-    title.trim().length > 0 && body.trim().length > 0 && tags.length > 0;
+    title.trim().length > 0 &&
+    body.trim().length > 0 &&
+    tags.length > 0 &&
+    // An image still uploading would be missing from the updated body.
+    pendingImageUploads === 0;
 
   const handleUpdate = useCallback(async () => {
     if (!canUpdate || isUpdating) return;

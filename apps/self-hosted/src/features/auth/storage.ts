@@ -48,6 +48,10 @@ export function clearUser(): void {
   } catch (error) {
     console.error('Failed to clear user from localStorage:', error);
   }
+  // Every way a session ends (logout, an expired stored session at startup, the
+  // expiry check while the app is open) comes through here, so the signed
+  // image-upload code goes with it.
+  clearImageUploadCode();
 }
 
 /**
@@ -101,5 +105,19 @@ export function clearHiveAuthSession(): void {
     localStorage.removeItem(HIVEAUTH_KEY);
   } catch (error) {
     console.error('Failed to clear HiveAuth session:', error);
+  }
+}
+
+/**
+ * The signed image-upload code (features/publish/utils/image-upload.ts, #1462).
+ * Kept here so logout can drop it without the auth feature importing the editor.
+ */
+export const IMAGE_UPLOAD_CODE_KEY = 'ecency_image_upload_code';
+
+export function clearImageUploadCode(): void {
+  try {
+    localStorage.removeItem(IMAGE_UPLOAD_CODE_KEY);
+  } catch {
+    // storage unavailable: nothing was cached
   }
 }

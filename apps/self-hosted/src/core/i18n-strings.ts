@@ -100,6 +100,8 @@ export type TranslationKey =
   | 'editor_start_writing'
   | 'editor_link'
   | 'editor_link_remove'
+  | 'editor_image_upload'
+  | 'editor_image_uploading'
   | 'editor_link_prompt'
   | 'editor_markdown_fallback'
   | 'editor_post_title'
@@ -442,6 +444,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: 'Start writing...',
     editor_link: 'Link',
     editor_link_remove: 'Remove link',
+    editor_image_upload: 'Upload image',
+    editor_image_uploading: 'Uploading images...',
     editor_link_prompt: 'Enter the link address',
     editor_markdown_fallback: 'This post contains embeds or HTML the rich text editor cannot represent. Editing as markdown so nothing is lost.',
     editor_post_title: 'Post title...',
@@ -743,6 +747,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: 'Empieza a escribir...',
     editor_link: 'Enlace',
     editor_link_remove: 'Quitar enlace',
+    editor_image_upload: 'Subir imagen',
+    editor_image_uploading: 'Subiendo imágenes...',
     editor_link_prompt: 'Introduce la dirección del enlace',
     editor_markdown_fallback: 'Esta publicación contiene incrustaciones o HTML que el editor visual no puede representar. Se edita como markdown para no perder nada.',
     editor_post_title: 'Título de la publicación...',
@@ -888,6 +894,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: 'Beginne zu schreiben...',
     editor_link: 'Link',
     editor_link_remove: 'Link entfernen',
+    editor_image_upload: 'Bild hochladen',
+    editor_image_uploading: 'Bilder werden hochgeladen...',
     editor_link_prompt: 'Gib die Link-Adresse ein',
     editor_markdown_fallback: 'Dieser Beitrag enthält Einbettungen oder HTML, die der visuelle Editor nicht darstellen kann. Er wird als Markdown bearbeitet, damit nichts verloren geht.',
     editor_post_title: 'Beitragstitel...',
@@ -1034,6 +1042,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: 'Commencez à écrire...',
     editor_link: 'Lien',
     editor_link_remove: 'Supprimer le lien',
+    editor_image_upload: 'Téléverser une image',
+    editor_image_uploading: 'Téléversement des images...',
     editor_link_prompt: "Saisissez l'adresse du lien",
     editor_markdown_fallback: "Cet article contient des intégrations ou du HTML que l'éditeur visuel ne peut pas représenter. Il est modifié en markdown pour ne rien perdre.",
     editor_post_title: "Titre de l'article...",
@@ -1180,6 +1190,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: '글을 작성하세요...',
     editor_link: '링크',
     editor_link_remove: '링크 제거',
+    editor_image_upload: '이미지 업로드',
+    editor_image_uploading: '이미지 업로드 중...',
     editor_link_prompt: '링크 주소를 입력하세요',
     editor_markdown_fallback: '이 게시물에는 리치 텍스트 편집기가 표현할 수 없는 임베드나 HTML이 있습니다. 내용이 손실되지 않도록 마크다운으로 편집합니다.',
     editor_post_title: '게시물 제목...',
@@ -1321,6 +1333,8 @@ export const translations: { en: Translations } & Record<
     editor_start_writing: 'Начните писать...',
     editor_link: 'Ссылка',
     editor_link_remove: 'Удалить ссылку',
+    editor_image_upload: 'Загрузить изображение',
+    editor_image_uploading: 'Загрузка изображений...',
     editor_link_prompt: 'Введите адрес ссылки',
     editor_markdown_fallback: 'В этом посте есть встроенные объекты или HTML, которые визуальный редактор не может отобразить. Редактирование идёт в markdown, чтобы ничего не потерялось.',
     editor_post_title: 'Заголовок поста...',

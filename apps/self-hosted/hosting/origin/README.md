@@ -15,6 +15,8 @@ in practice — **re-copy any change made there back into this directory.**
 |---|---|---|
 | `blogs.ecency.com.conf` | `/etc/nginx/sites-available/`, under whatever name the `sites-enabled` symlink already points at (currently `blogs.ecency.com`, no suffix) | TLS termination and proxying for the apex, the API, and tenant subdomains |
 | `sync-custom-domains.py` | cron, every 5 min | issues certificates and writes vhosts for custom domains and dotted tenant names |
+| `turnstile_domains.py` | next to `sync-custom-domains.py`; **copy both together** | adds verified custom domains to the newsletter Turnstile widget (#1586). If it is missing the sync still serves certificates and vhosts and logs `TURNSTILE FAILED` |
+| `turnstile.env` | next to the script **only** (not in git), `chmod 600` | the Turnstile account id, sitekey and API token (Turnstile: Edit) |
 | `install.sh` | once, idempotent | nginx include dir, certbot deploy hook, cron entry |
 | `hosting-internal-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/v1/internal` |
 | `newsletter-relay-allow.conf` | `/etc/nginx/` **only** (not in git) | who may reach `/newsletter-relay/` (the newsletter service, ecency/news) |
@@ -33,19 +35,44 @@ in practice — **re-copy any change made there back into this directory.**
 
 ## A custom domain also needs a Turnstile hostname
 
-The sync does NOT do this, and nothing else will notice if it is skipped.
-
 The newsletter signup form on a tenant blog renders a Cloudflare Turnstile widget, and the
 relay refuses an anonymous subscribe without a valid token. A Turnstile sitekey is bound to
 a hostname list, and adding a hostname covers that hostname **and all of its subdomains**,
 so every `*.blogs.ecency.com` tenant is already covered by the `ecency.com` entry and needs
 nothing. A custom domain on its own apex is not.
 
-So when a custom domain is attached, add it to the sitekey's domain list as well:
+**The sync adds it** (#1586). On every run, after the vhosts, `sync-custom-domains.py` passes
+the verified custom domains to `turnstile_domains.py`, which adds any the widget does not
+cover yet. It only ever adds: a domain that leaves the database stays on the widget, so a
+database blip cannot break another tenant's form. The widget update is a PUT of the whole
+object, so the body is built from the current widget with every setting carried over, and
+read back afterwards. A failure is logged with a `TURNSTILE FAILED` prefix in `sync.log`
+and never stops the vhost sync; the next run retries.
 
-The update is a **PUT of the whole widget object**, so `domains` REPLACES the stored list
-rather than adding to it. Never hand-write the array: read the current one and append, or
-the tenants added before this one are silently dropped and their forms break instead.
+It needs a `turnstile.env` next to the script (gitignored, never committed):
+
+```
+TURNSTILE_ACCOUNT_ID=<Cloudflare account id>
+TURNSTILE_SITEKEY=<the newsletter widget sitekey>
+TURNSTILE_API_TOKEN=<token with Turnstile: Edit>
+```
+
+Keep it `chmod 600`. Without it the step is skipped and `sync.log` says `TURNSTILE SKIPPED`.
+The sync runs every 5 minutes but writes a Turnstile outcome only when it changes, so a
+standing skip or failure appears once, and again only after something else happened. The token needs **Turnstile: Edit**; with read-only the API
+answers `10405` or `10000` rather than saying the permission is missing. The Turnstile API has no conditional update, so a hostname added to the widget by hand in
+the second between the sync's read and its write would be lost; add hostnames by hand only
+through the snippet below, which does the same read-and-append, and not while the sync runs.
+A widget holds at most 10
+hostnames: the sync adds what fits and names the rest in a `TURNSTILE FAILED` line, since a
+custom domain beyond the tenth needs a second widget. Wanted names covered by another wanted name are left out, so a bare domain and its `www.`
+take one slot when both arrive in the same run.
+
+### By hand
+
+If the sync cannot run, add the domain by hand. Never hand-write the `domains` array: read
+the current one and append, or the tenants added before this one are silently dropped and
+their forms break instead.
 
 ```bash
 NEW_DOMAIN="blog.example.com"
@@ -56,7 +83,10 @@ BODY=$(curl -s -H "Authorization: Bearer $CF_TOKEN" "$WIDGET" | python3 -c '
 import json, sys
 w = json.load(sys.stdin)["result"]
 domains = sorted(set(w["domains"]) | {sys.argv[1]})
-print(json.dumps({"name": w["name"], "mode": w["mode"], "domains": domains}))
+# The settings a PUT would otherwise reset, as turnstile_domains.py sends them.
+body = {k: w[k] for k in ("name", "mode", "clearance_level") if k in w}
+body.update({k: True for k in ("bot_fight_mode", "offlabel", "ephemeral_id") if w.get(k) is True})
+print(json.dumps({**body, "domains": domains}))
 ' "$NEW_DOMAIN")
 
 curl -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
@@ -66,12 +96,9 @@ curl -X PUT -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/j
 curl -s -H "Authorization: Bearer $CF_TOKEN" "$WIDGET" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["domains"])'
 ```
 
-The token needs **Turnstile: Edit**; with read-only it answers `10405` or `10000` rather
-than saying the permission is missing.
-
-Skipping it leaves that tenant's signup form with a widget that will not solve and a submit
-button that never enables. It fails visibly on the blog and invisibly to us, which is why
-it belongs in this list rather than in someone's memory.
+A missing hostname leaves that tenant's signup form with a widget that will not solve and a
+submit button that never enables. It fails visibly on the blog and invisibly to us, which is
+why the sync does it and logs every failure.
 
 ## origin-ips (not in git)
 

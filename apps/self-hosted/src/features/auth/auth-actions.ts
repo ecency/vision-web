@@ -4,11 +4,13 @@ import type { Operation } from '@ecency/sdk';
 import { InstanceConfigManager } from '@/core';
 import { authenticationStore } from '@/store';
 import { HIVESIGNER_REDIRECT_PATH } from './constants';
+import { clearHostingToken } from './utils/hosting-token';
 import {
   clearHiveAuthSession,
   clearUser,
   saveHiveAuthSession,
   saveUser,
+  clearImageUploadCode,
 } from './storage';
 import type { AuthMethod, AuthUser, HiveExtensionId } from './types';
 import {
@@ -149,6 +151,10 @@ export function logout(): void {
   setSession(undefined);
   clearUser();
   clearHiveAuthSession();
+  // Credentials cached for this account, keyed by username so another account
+  // never uses them, but they should not outlive the session on a shared machine.
+  clearImageUploadCode();
+  clearHostingToken();
 }
 
 export type BroadcastAuthorityType = 'Active' | 'Posting' | 'Owner' | 'Memo';

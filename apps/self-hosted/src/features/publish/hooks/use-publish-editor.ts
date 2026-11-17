@@ -5,6 +5,7 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import TextAlign from "@tiptap/extension-text-align";
 import { useCallback, useEffect } from "react";
 import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from "../utils/editor-extensions";
+import { ImageUpload } from "../utils/image-upload-extension";
 import { htmlToMarkdown, markdownToHtml } from "../utils/markdown";
 import { usePublishState } from "./use-publish-state";
 
@@ -31,7 +32,8 @@ export function usePublishEditor() {
       TableCell,
       Image.configure({
         inline: true
-      })
+      }),
+      ImageUpload
     ],
     onUpdate({ editor }) {
       // Convert HTML to markdown and save to state
