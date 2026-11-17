@@ -25,6 +25,8 @@ import { authMiddleware } from '../middleware/auth';
 import { subscriptionPaywall, proUpgradePaywall } from '../middleware/x402-paywall';
 import { withPaymentTargetLock } from '../middleware/payment-target-lock';
 import { AuditService, parseClientIp } from '../services/audit-service';
+import { ACTIVATED_STATUS_SQL } from '../utils/subscription-status-sql';
+import { isReservedTenantName } from '../utils/reserved-tenant-names';
 
 export const tenantRoutes = new Hono();
 
@@ -178,6 +180,9 @@ export async function resolveAndValidateTenant(
   const isCommunity =
     COMMUNITY_NAME.test(username) || body.config?.type === 'community';
 
+  if (isReservedTenantName(username)) {
+    return { ok: false, status: 400, error: 'This blog name is reserved' };
+  }
   if (!(await TenantService.verifyHiveAccount(username))) {
     return { ok: false, status: 400, error: 'Hive account not found' };
   }
@@ -415,7 +420,7 @@ tenantRoutes.post('/subscribe',
       // Activate subscription (use SQL INTERVAL for correct month arithmetic)
       const activatedRow = await client.query(
         `UPDATE tenants
-         SET subscription_status = 'active',
+         SET subscription_status = ${ACTIVATED_STATUS_SQL},
              subscription_started_at = NOW(),
              subscription_expires_at = NOW() + INTERVAL '1 month',
              updated_at = NOW()

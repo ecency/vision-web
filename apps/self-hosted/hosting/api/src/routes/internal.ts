@@ -23,6 +23,8 @@ import { mapTenantFromDb, type Tenant } from '../types';
 import { addVerifiedDomainOrigin } from '../utils/cors-domains';
 import { ACCENT_HEX_PATTERN, FONT_PRESET_KEYS } from '../appearance';
 import { STYLE_TEMPLATES } from '../style-templates';
+import { ACTIVATED_STATUS_SQL } from '../utils/subscription-status-sql';
+import { isReservedTenantName } from '../utils/reserved-tenant-names';
 
 export const internalRoutes = new Hono();
 
@@ -192,7 +194,7 @@ internalRoutes.post('/activate', async (c) => {
 
         await client.query(
           `UPDATE tenants
-             SET subscription_status = 'active',
+             SET subscription_status = ${ACTIVATED_STATUS_SQL},
                  subscription_started_at = $2,
                  subscription_expires_at = $3,
                  updated_at = NOW()
@@ -510,6 +512,9 @@ internalRoutes.post('/claim-blog', async (c) => {
     !(FONT_PRESET_KEYS as readonly string[]).includes(fontPreset)
   ) {
     return c.json({ error: 'invalid_request' }, 400);
+  }
+  if (isReservedTenantName(username)) {
+    return c.json({ error: 'reserved_name' }, 400);
   }
 
   try {
