@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Behaviour test for the SSR cache headers in the committed origin configs
 # (infra/origin/*.ecency.com.conf). It copies the real `location /` and
-# `location @ssr_stale` blocks and their Cache-Control map out of each file,
+# `location @ssr_stale` blocks, their Cache-Control map and the navigation
+# bypass map out of each file,
 # runs them in nginx 1.24 (the origin version) in front of a stand-in app, and
 # checks what clients get.
 #
@@ -10,7 +11,8 @@
 # them), so the edge cannot store them again for a full new s-maxage. Every other answer must
 # keep the app's Cache-Control exactly. With the render ceiling full, the
 # fallback must also answer uncached pages and POSTs with 429, without
-# buffering request bodies.
+# buffering request bodies. A client navigation request (router headers) must
+# neither be stored as the page nor be answered from it.
 #
 # Needs docker. Usage: scripts/origin-ssr-cache-test.sh [conf ...]
 set -euo pipefail
@@ -33,7 +35,7 @@ block() { # print a block of the vhost: $1 = exact opening line, $2 = exact clos
 }
 
 start() { # $1 = conf file, $2 = anonymous render ceiling
-  local conf="$1" cap="$2" loc stale map
+  local conf="$1" cap="$2" loc stale map nav
   loc="$(block '    location / {' '    }' "$conf")"
   stale="$(block '    location @ssr_stale {' '    }' "$conf")"
   map="$(block 'map $upstream_cache_status $ssr_stale_cache_control {' '}' "$conf")"
@@ -41,6 +43,10 @@ start() { # $1 = conf file, $2 = anonymous render ceiling
   # Without the map the blocks reference an undefined variable and nginx would not
   # start; define a pass-through so the behaviour checks can still report.
   [ -n "$map" ] || map='map $upstream_cache_status $ssr_stale_cache_control { default $upstream_http_cache_control; }'
+  # The navigation bypass is what the router-header checks test, so no stand-in:
+  # without the real map the config is wrong and the test fails here.
+  nav="$(block 'map "$http_rsc$http_next_router_prefetch" $skip_rsc {' '}' "$conf")"
+  [ -n "$nav" ] || { echo "FAIL $LABEL: the \$skip_rsc map for router headers is missing"; return 1; }
   echo "limit_conn total_ssr $cap;" > "$WORK/conn-limits.conf"
   cat > "$WORK/nginx.conf" <<NGX
 user nginx;
@@ -59,6 +65,7 @@ http {
   limit_req_zone \$binary_remote_addr zone=ssrlimit:1m rate=1000r/s;
   limit_req_zone \$binary_remote_addr zone=general:1m rate=1000r/s;
 $map
+$nav
 
   # Stand-in for the app on the port the real block proxies to.
   server {
@@ -85,7 +92,7 @@ NGX
     -v "$WORK/nginx.conf:/etc/nginx/nginx.conf:ro" \
     -v "$WORK/conn-limits.conf:/etc/nginx/conn-limits.conf:ro" \
     "$IMAGE" sh -c 'mkdir -p /srv/s /srv/l /srv/slow
-      for f in s/a s/err s/old l/fresh l/fresh2 page; do echo "page $f" > /srv/$f; done
+      for f in s/a s/err s/old l/fresh l/fresh2 l/nav l/pre page; do echo "page $f" > /srv/$f; done
       head -c 524288 /dev/zero > /srv/slow/big; cp /srv/slow/big /srv/slow/big2
       rm -f /var/log/nginx/error.log; exec nginx -g "daemon off;"' >/dev/null
   local up=""
@@ -134,6 +141,11 @@ normal_path() { # render ceiling open: everything goes through location /
   check "HEAD of a HIT keeps Cache-Control" "$(get -I http://127.0.0.1:8080/l/fresh)" 200 HIT "$CC_LONG"
   check "404 from the app keeps Cache-Control" "$(get http://127.0.0.1:8080/l/missing)" 404 - "$CC_LONG"
   check "logged-in BYPASS keeps the app's private header" "$(get -b active_user=x http://127.0.0.1:8080/private)" 200 BYPASS "$CC_PRIVATE"
+  check "router request is not answered from the page cache" "$(get -H 'RSC: 1' http://127.0.0.1:8080/l/fresh)" 200 BYPASS "$CC_LONG"
+  check "router request is not stored as the page" "$(get -H 'RSC: 1' http://127.0.0.1:8080/l/nav)" 200 BYPASS "$CC_LONG"
+  check "page after a router request is a MISS" "$(get http://127.0.0.1:8080/l/nav)" 200 MISS "$CC_LONG"
+  check "prefetch header alone is not stored either" "$(get -H 'Next-Router-Prefetch: 1' http://127.0.0.1:8080/l/pre)" 200 BYPASS "$CC_LONG"
+  check "page after a prefetch request is a MISS" "$(get http://127.0.0.1:8080/l/pre)" 200 MISS "$CC_LONG"
   check "no Cache-Control from the app adds none (MISS)" "$(get http://127.0.0.1:8080/none)" 200 MISS ""
   check "no Cache-Control from the app adds none (HIT)" "$(get http://127.0.0.1:8080/none)" 200 HIT ""
   # nginx 1.24 joins repeated upstream header lines in \$upstream_http_*; the
@@ -170,6 +182,7 @@ ceiling_full() { # render ceiling of 1, held by a slow refresh: anonymous reques
   check "full: page being refreshed gets a short edge lifetime" "$(get http://127.0.0.1:8080/slow/big2)" 200 UPDATING "$CC_EXPIRED"
   check "full: uncached page gets 429" "$(get http://127.0.0.1:8080/never)" 429 - ""
   check "full: POST gets 429" "$(get -X POST --data-binary @/tmp/body http://127.0.0.1:8080/l/fresh2)" 429 - ""
+  check "full: router request is not answered from a cached page" "$(get -H 'RSC: 1' http://127.0.0.1:8080/l/fresh2)" 429 - ""
   check "full: logged-in requests are not limited" "$(get -b active_user=x http://127.0.0.1:8080/private)" 200 BYPASS "$CC_PRIVATE"
   if docker exec "$NAME" grep -q 'buffered to a temporary file' /var/log/nginx/error.log; then
     echo "FAIL $LABEL: full: POST body was buffered before the 429"; FAILED=1

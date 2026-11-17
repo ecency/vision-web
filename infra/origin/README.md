@@ -84,6 +84,11 @@ the vhosts will load:
   `docs/cache/nginx.md`. Deploying a change to that list means editing the map on every
   origin in the same rollout, otherwise a browser-primed entry is served to the crawler
 
+The other way round, each tracked vhost defines `map ... $skip_rsc` (the page-cache bypass
+for client navigation requests) at its top, and the untracked `ecency.com` vhost on the
+same box uses it too. That vhost needs the tracked file loaded. Do not define the map a
+second time elsewhere: a second definition silently replaces this one.
+
 ## Restoring an origin
 
 ```bash
