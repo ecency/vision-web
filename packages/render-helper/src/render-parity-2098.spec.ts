@@ -35,6 +35,9 @@ describe('fenced code inside list items, app render', () => {
     // A tab after the list marker.
     '-\t```\n    &amp; x\n    ```',
     '1.\t~~~\n    &lt;b&gt;\n    ~~~',
+    // A nested item indented with a tab on the parent's continuation line.
+    '- a\n\t- ```\n\t  &amp; x\n\t  ```',
+    '- a\n\n\t-\t~~~\n\t\t&lt;b&gt;\n\t\t~~~',
     // A quote line ends the list item: the fence after it is top-level.
     '1. step\n> tip\n\n   ```\nx &lt; y\n   ```'
   ])('renders %j as the web does', (body) => {

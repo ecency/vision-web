@@ -196,23 +196,25 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
 const QUOTE = -1
 const isSpace = (line: string, at: number) => line.charCodeAt(at) === 0x20
 
-function readContainers(line: string): { containers: number[]; at: number } {
+function readContainers(line: string, from = 0, fromColumn = 0, carriedIndent = 0): { containers: number[]; at: number } {
   const containers: number[] = []
-  let at = 0
+  let at = from
   // Columns, not characters: a tab after a list marker indents to the next
   // multiple of four, as the parser counts it. Containers hold content widths
   // in columns, which insideContainers strips the same way.
-  let column = 0
-  for (;;) {
-    let indent = 0
-    while (indent < 4 && isSpace(line, at + indent)) indent++
+  let column = fromColumn
+  for (let first = true; ; first = false) {
+    // Columns of indent a tab already covered before `from` count as indent.
+    let indent = first ? carriedIndent : 0
+    const spacesFrom = indent
+    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++
     if (indent > 3) break
-    const markerAt = at + indent
+    const markerAt = at + indent - spacesFrom
     const c = line[markerAt]
     if (c === '>') {
       containers.push(QUOTE)
       at = markerAt + 1
-      column += indent + 1
+      column += indent - spacesFrom + 1
       if (isSpace(line, at)) {
         at++
         column++
@@ -228,7 +230,7 @@ function readContainers(line: string): { containers: number[]; at: number } {
       if (d > markerAt && (line[d] === '.' || line[d] === ')')) markerLength = d - markerAt + 1
     }
     if (markerLength === 0) break
-    const afterMarker = column + indent + markerLength
+    const afterMarker = column + indent - spacesFrom + markerLength
     let gapColumns = 0
     let gapChars = 0
     while (gapColumns < 5) {
@@ -245,7 +247,7 @@ function readContainers(line: string): { containers: number[]; at: number } {
     const width = indent + markerLength + (wide ? 1 : gapColumns)
     containers.push(width)
     at = markerAt + markerLength + (wide ? 1 : gapChars)
-    column += width
+    column += width - spacesFrom
   }
   return { containers, at }
 }
@@ -255,22 +257,32 @@ function readContainers(line: string): { containers: number[]; at: number } {
 // (a blank line stays in the item). A tab indents to the next multiple of
 // four columns, as the parser counts it.
 function insideContainers(line: string, containers: number[], blank: boolean): number {
+  return insideContainersAt(line, containers, blank).at
+}
+
+// insideContainers, with the column the content starts at. A tab that runs
+// past one container's indent counts toward the next one.
+function insideContainersAt(line: string, containers: number[], blank: boolean): { at: number; column: number; carry: number } {
   let at = 0
   let column = 0
+  let carry = 0
+  const outside = { at: -1, column: -1, carry: 0 }
   for (const container of containers) {
     if (container === QUOTE) {
       let indent = 0
       while (indent < 4 && isSpace(line, at + indent)) indent++
-      if (indent > 3 || line[at + indent] !== '>') return -1
+      if (indent > 3 || line[at + indent] !== '>') return outside
       at += indent + 1
       column += indent + 1
+      carry = 0
       if (isSpace(line, at)) {
         at++
         column++
       }
     } else {
-      if (blank) return line.length
-      let needed = container
+      if (blank) return { at: line.length, column, carry: 0 }
+      let needed = container - carry
+      carry = 0
       while (needed > 0) {
         if (isSpace(line, at)) {
           at++
@@ -282,12 +294,13 @@ function insideContainers(line: string, containers: number[], blank: boolean): n
           column += width
           needed -= width
         } else {
-          return -1
+          return outside
         }
       }
+      carry = -needed
     }
   }
-  return at
+  return { at, column, carry }
 }
 
 // The fence run (``` or ~~~, three or more) a line has at `at` after up to
@@ -334,9 +347,21 @@ function codeRanges(src: string): Array<[number, number]> {
       item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {
       if (item) {
-        const at = insideContainers(line, item, false)
-        if (at === -1) item = null
-        else if ((open = fenceAt(line, at))) containers = item
+        const inside = insideContainersAt(line, item, false)
+        if (inside.at === -1) {
+          item = null
+        } else {
+          // A nested item on the parent's continuation line (`- a`, then
+          // `\t- ```` or `  - ````), its markers read from the right column.
+          const nested = readContainers(line, inside.at, inside.column, inside.carry)
+          if (nested.containers.length > 0) {
+            containers = [...item, ...nested.containers]
+            open = fenceAt(line, nested.at)
+            if (nested.containers.some((c) => c !== QUOTE)) item = containers
+          } else if ((open = fenceAt(line, inside.at))) {
+            containers = item
+          }
+        }
       }
       if (!open) open = fenceAt(line, 0)
     }

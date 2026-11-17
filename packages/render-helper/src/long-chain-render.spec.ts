@@ -11,8 +11,10 @@ import { MAX_TRAVERSE_DEPTH } from './methods/traverse.method'
 // The checks measure growth, not wall-clock time: CI runners differ by 5x or
 // more in speed, so a fixed budget fails a slow runner with nothing wrong.
 // Rendering an eighth of a body and then the whole of it costs about 8x on
-// the linear path and 64x on the quadratic one; GROWTH_LIMIT sits between.
-const GROWTH_LIMIT = 20
+// the linear path (up to about 10 measured, 20 once on a busy CI runner that
+// runs every package's tests at once) and 64x on the quadratic one (37 to 49
+// measured for the adjacent tag and mention chains before #1920).
+const GROWTH_LIMIT = 24
 
 const countLinks = (html: string, cls: string) =>
   (html.match(new RegExp(`<a class="${cls}`, 'g')) || []).length
@@ -24,7 +26,7 @@ function timed(body: string, forApp = false): { html: string; ms: number } {
 }
 
 /**
- * Render `make(n / 8)` and `make(n)` (the faster of two runs each, after a
+ * Render `make(n / 8)` and `make(n)` (the fastest of three runs each, after a
  * warm-up) and return the larger render's HTML with the time ratio. Each run
  * gets its own trailing word, as markdown2Html caches a body it has seen.
  */
@@ -33,9 +35,9 @@ function growth(make: (n: number) => string, n: number, forApp = false): { html:
   const fresh = (size: number) => `${make(size)}\n\nrun${++run}`
   markdown2Html(fresh(Math.max(1, Math.floor(n / 16))), forApp) // warm-up
   const best = (size: number) => {
-    const a = timed(fresh(size), forApp)
-    const b = timed(fresh(size), forApp)
-    return { html: b.html, ms: Math.max(Math.min(a.ms, b.ms), 1) }
+    // Best of three: one stall on a shared runner must not decide the ratio.
+    const runs = [timed(fresh(size), forApp), timed(fresh(size), forApp), timed(fresh(size), forApp)]
+    return { html: runs[2].html, ms: Math.max(Math.min(...runs.map((r) => r.ms)), 1) }
   }
   const small = best(Math.floor(n / 8))
   const big = best(n)
