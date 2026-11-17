@@ -170,9 +170,22 @@ export async function broadcastOperationsWithKeys(
     );
   }
   tx.sign(keys);
-  return callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [
-    tx.transaction,
-  ]);
+  try {
+    return await callRPCBroadcast("condenser_api.broadcast_transaction_synchronous", [
+      tx.transaction,
+    ]);
+  } catch (error) {
+    // This exact signed transaction is already known to the chain: a node
+    // accepted it and its answer was lost (a gateway 5xx), and the failover
+    // node now calls it a duplicate. It went through, so report it as accepted
+    // rather than as a failure the user would retry and pay twice (#2124).
+    // The block is not known here; poll transaction_status_api for it.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/duplicate transaction/i.test(message)) {
+      return { id: tx.digest().txId, block_num: 0, trx_num: 0, expired: false };
+    }
+    throw error;
+  }
 }
 
 /**

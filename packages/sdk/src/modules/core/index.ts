@@ -3,6 +3,7 @@ export * from "./abort-signal";
 export * from "./config";
 export * from "./errors";
 export * from "./hive-tx";
+export * from "./pending-external-signature";
 export * from "./queries-manager";
 export * from "./queries";
 export * from "./query-keys";
