@@ -19,15 +19,22 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-// Any static import or re-export of memo-crypto: named, multiline, bare
-// (side-effect) or `export ... from`. A dynamic `import("...")` is not one.
-const TARGET = String.raw`(?:@\/utils\/memo-crypto|\.\.?\/(?:[^"']*\/)?memo-crypto)`;
+// Any static import, re-export or require() of memo-crypto: named, multiline,
+// bare (side-effect), with or without an extension. Comments are removed first,
+// so a commented-out import neither hides nor raises one, and `import type` is
+// left alone because it is erased at build. A dynamic import() is not static.
+const TARGET = String.raw`(?:@\/utils\/memo-crypto|\.\.?\/(?:[^"']*\/)?memo-crypto)(?:\.tsx?)?`;
 const STATIC_FORMS = [
-  new RegExp(String.raw`(?:^|[;\n])\s*(?:import|export)\b[^;"'()]*?\bfrom\s*["']${TARGET}["']`, "m"),
-  new RegExp(String.raw`(?:^|[;\n])\s*import\s*["']${TARGET}["']`, "m")
+  new RegExp(String.raw`(?:^|[;\n])\s*(?:import(?!\s+type\b)|export)\b[^;"'()]*?\bfrom\s*["']${TARGET}["']`, "m"),
+  new RegExp(String.raw`(?:^|[;\n])\s*import\s*["']${TARGET}["']`, "m"),
+  new RegExp(String.raw`\brequire\s*\(\s*["']${TARGET}["']\s*\)`)
 ];
+function stripComments(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1");
+}
 function importsStatically(code: string): boolean {
-  return STATIC_FORMS.some((re) => re.test(code));
+  const bare = stripComments(code);
+  return STATIC_FORMS.some((re) => re.test(bare));
 }
 
 describe("memo-crypto", () => {
@@ -45,11 +52,17 @@ describe("memo-crypto", () => {
       "import {\n  encryptMemo,\n  decryptMemo\n} from '@/utils/memo-crypto'",
       'import "@/utils/memo-crypto";',
       'export * from "./memo-crypto";',
-      'export { encryptMemo } from "../utils/memo-crypto"'
+      'export { encryptMemo } from "../utils/memo-crypto"',
+      "import {\n  a, // don't drop (a comment with quotes; and parens)\n  b\n} from \"@/utils/memo-crypto\"",
+      'import { a } from "@/utils/memo-crypto.ts";',
+      'const m = require("@/utils/memo-crypto");'
     ]) {
       expect(importsStatically(code), code).toBe(true);
     }
     expect(importsStatically('const { decryptMemo } = await import("@/utils/memo-crypto");')).toBe(false);
+    // Types are erased at build, and code in comments never runs.
+    expect(importsStatically('import type { X } from "@/utils/memo-crypto";')).toBe(false);
+    expect(importsStatically('/*\nimport { a } from "@/utils/memo-crypto";\n*/')).toBe(false);
   });
 
   it("is still loaded by both callers", () => {
