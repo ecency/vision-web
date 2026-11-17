@@ -95,12 +95,45 @@ function stripMarkdownClasses(value) {
   const kept = tokens.filter((token) => !/markdown-/i.test(token));
   return kept.length === tokens.length ? value : kept.join(" ");
 }
+var AUTHOR_CLASSES = /* @__PURE__ */ new Set([
+  "pull-right",
+  "pull-left",
+  "text-justify",
+  "text-rtl",
+  "text-center",
+  "text-right",
+  "videoWrapper",
+  "phishy",
+  // A pasted tweet embed's blockquote, centred by the entry stylesheet.
+  "twitter-tweet"
+]);
+var AUTHOR_CLASS_RE = /^ecency-text-color-[0-9a-f]{6}$/;
+var MARKDOWN_STAGE_CLASSES = /* @__PURE__ */ new Set([
+  "footnote-backref",
+  "footnote-item",
+  "footnote-ref",
+  "footnotes",
+  "footnotes-list",
+  "footnotes-sep"
+]);
+var MARKDOWN_STAGE_CLASS_RE = /^(?:ll-[a-z]+|language-[A-Za-z0-9_+#.-]+)$/;
+function authorClasses(value) {
+  const tokens = value.replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).filter(Boolean);
+  const kept = tokens.filter(
+    (token) => !/markdown-/i.test(token) && (AUTHOR_CLASSES.has(token) || AUTHOR_CLASS_RE.test(token) || MARKDOWN_STAGE_CLASSES.has(token) || MARKDOWN_STAGE_CLASS_RE.test(token))
+  );
+  return kept.length === tokens.length && !/[\u0000-\u001f\u007f]/.test(value) ? value : kept.join(" ");
+}
+var AUTHOR_ID_PREFIX = "user-content-";
+function namespacedId(id) {
+  return AUTHOR_ID_PREFIX + id;
+}
 var IFRAME_SANDBOX_GRANTS = /* @__PURE__ */ new Set([
   "allow-scripts",
   "allow-same-origin",
   "allow-popups"
 ]);
 
-export { ALLOWED_ATTRIBUTES, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses };
-//# sourceMappingURL=chunk-XGVZLBT6.js.map
-//# sourceMappingURL=chunk-XGVZLBT6.js.map
+export { ALLOWED_ATTRIBUTES, AUTHOR_ID_PREFIX, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, authorClasses, namespacedId, stripMarkdownClasses };
+//# sourceMappingURL=chunk-GPH6URMW.js.map
+//# sourceMappingURL=chunk-GPH6URMW.js.map

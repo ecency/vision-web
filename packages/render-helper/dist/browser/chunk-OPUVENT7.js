@@ -1,7 +1,7 @@
 import { isStrictTag } from './chunk-YYHKRTAC.js';
 import { parsePixelDimension, authorPixelSize } from './chunk-LUI6MD5L.js';
 import { trimTrailingSlash, decodeAttributeEntities } from './chunk-VLNYO6UX.js';
-import { ALLOWED_ATTRIBUTES, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses } from './chunk-XGVZLBT6.js';
+import { ALLOWED_ATTRIBUTES, authorClasses, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses, namespacedId } from './chunk-GPH6URMW.js';
 import { isAllowedEmbedSrc, canonicalEmbedSrc } from './chunk-U2R3LBKQ.js';
 import { ID_WHITELIST } from './chunk-3IFARPWV.js';
 import { getProxyBase, proxifyImageSrc } from './chunk-LT2KELO7.js';
@@ -73,6 +73,18 @@ function sanitizeHtml(html, options) {
     img: [...ALLOWED_ATTRIBUTES.img ?? [], "width", "height"]
   } : ALLOWED_ATTRIBUTES;
   let trusted = false;
+  const declaredIds = /* @__PURE__ */ new Set();
+  const declaredFragment = (fragment) => {
+    let candidates = [fragment];
+    try {
+      candidates = [fragment, decodeURIComponent(fragment)];
+    } catch {
+    }
+    return candidates.find((id) => declaredIds.has(id) && ID_WHITELIST.test(id)) ?? null;
+  };
+  for (const m of regexMatches(html, /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
+    declaredIds.add(decodeAttributeEntities((m[1] ?? m[2] ?? m[3] ?? "").trim()));
+  }
   const cleaned = xss(html, {
     whiteList,
     onTag: (_tag, rawTag) => {
@@ -110,6 +122,10 @@ function sanitizeHtml(html, options) {
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return "";
       }
       if (tag === "span" && name === "class" && decoded.toLowerCase().trim() === "wr") return "";
+      if (isWhiteAttr && name === "class" && !trusted) {
+        const kept = authorClasses(decoded);
+        return kept ? `class="${escapeAttr(kept)}"` : "";
+      }
       if (!beforeTransform && (tag === "iframe" && name === "src" || EMBED_SRC_DATA_ATTRS.has(name)) && /[\t\n\r]/.test(decoded)) return "";
       if (tag === "iframe" && name === "src" && !beforeTransform && !isAllowedEmbedSrc(decoded)) {
         const canonical = canonicalEmbedSrc(decoded);
@@ -155,6 +171,11 @@ function sanitizeHtml(html, options) {
       if (name === "data-href" && !isSafeNavValue(decoded)) return "";
       if (name === "id") {
         if (!ID_WHITELIST.test(decoded)) return "";
+        if (isWhiteAttr && !beforeTransform && !untransformed) return `id="${escapeAttr(namespacedId(decoded))}"`;
+      }
+      if (isWhiteAttr && !beforeTransform && !untransformed && tag === "a" && (name === "href" || name === "data-href") && decoded.startsWith("#")) {
+        const target = declaredFragment(decoded.slice(1));
+        if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
       if (isWhiteAttr && name === "href") {
         return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
@@ -184,5 +205,5 @@ function sanitizeHtml(html, options) {
 }
 
 export { sanitizeHtml };
-//# sourceMappingURL=chunk-6TIHYBTO.js.map
-//# sourceMappingURL=chunk-6TIHYBTO.js.map
+//# sourceMappingURL=chunk-OPUVENT7.js.map
+//# sourceMappingURL=chunk-OPUVENT7.js.map

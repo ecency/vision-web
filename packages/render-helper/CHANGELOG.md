@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.50
+
+### Patch Changes
+
+- render-helper: app code and preload parity edges, growth-based timing spec, post body attribute hardening (#2131)
+
 ## 2.5.49
 
 ### Patch Changes
