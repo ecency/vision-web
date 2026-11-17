@@ -1,3 +1,5 @@
+import { proxifyImageSrc } from "@ecency/render-helper";
+
 /**
  * Injects a thumbnail image into a 3Speak video embed element
  * if one doesn't already exist.
@@ -10,10 +12,16 @@ export function injectThreeSpeakThumbnail(
   element: HTMLElement,
   images?: string[]
 ): void {
-  if (!images?.length) return;
+  // json_metadata is whatever the author's client wrote: `image` may be a
+  // string or anything else, not an array.
+  if (!Array.isArray(images) || !images.length) return;
   if (element.querySelector(".video-thumbnail")) return;
 
-  const stringImages = images.filter((img): img is string => typeof img === "string");
+  // Absolute http(s) URLs only: the thumbnail loads through the image proxy
+  // like every other image in a post, never straight from the author's host.
+  const stringImages = images.filter(
+    (img): img is string => typeof img === "string" && /^https?:\/\//i.test(img.trim())
+  );
   if (!stringImages.length) return;
 
   const embedSrc = element.dataset.embedSrc ?? "";
@@ -21,12 +29,14 @@ export function injectThreeSpeakThumbnail(
 
   const thumbnail = findBestThumbnail(stringImages, videoId);
   if (!thumbnail) return;
+  const proxied = proxifyImageSrc(thumbnail.trim(), 0, 0, "match");
+  if (!proxied) return;
 
   const img = document.createElement("img");
   img.className = "no-replace video-thumbnail";
   img.alt = "";
   img.setAttribute("itemprop", "thumbnailUrl");
-  img.src = thumbnail;
+  img.src = proxied;
 
   const playBtn = element.querySelector(".markdown-video-play");
   if (playBtn) {

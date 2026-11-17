@@ -784,11 +784,11 @@ Content
     })
 
     it('should not affect inline tags like <span>', () => {
-      const input = 'This is <span class="highlight">highlighted</span> text'
+      const input = 'This is <span class="text-center">highlighted</span> text'
       const result = markdownToHTML(input, false, 'ecency.com')
 
       // Inline tags should remain inside paragraphs
-      expect(result).toContain('<span class="highlight">')
+      expect(result).toContain('<span class="text-center">')
       expect(result).toContain('</span>')
     })
 

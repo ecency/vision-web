@@ -94,10 +94,10 @@ describe('output boundary (#1919 review r10)', () => {
     const nonce = 'n0nce-for-test'
     it('strips markers and link policy from unstamped elements, keeps stamped ones', () => {
       const html =
-        `<a class="markdown-post-link x" data-author="SENT" rel="opener" target="_top" href="${E}/q">a</a>` +
+        `<a class="markdown-post-link text-center" data-author="SENT" rel="opener" target="_top" href="${E}/q">a</a>` +
         `<a data-rh="${nonce}" class="markdown-author-link" data-author="alice">b</a>`
       const out = sanitizeHtml(html, { renderNonce: nonce })
-      expect(out).toContain('<a class="x" href="https://evil.example/q" rel="nofollow ugc noopener">a</a>')
+      expect(out).toContain('<a class="text-center" href="https://evil.example/q" rel="nofollow ugc noopener">a</a>')
       expect(out).toContain('<a class="markdown-author-link" data-author="alice">b</a>')
       expect(out).not.toContain(nonce)
     })
@@ -243,11 +243,11 @@ describe('output boundary (#1919 review r10)', () => {
 
   it('strips class tokens that contain markdown- anywhere (review r17 fuzz)', () => {
     for (const forApp of [false, true]) {
-      const out = markdown2Html('<div><div class="`markdown-zzsent` x ]]>markdown-post-link">y</div></div>', forApp) +
+      const out = markdown2Html('<div><div class="`markdown-zzsent` text-center ]]>markdown-post-link">y</div></div>', forApp) +
         // No `>` and no reference: only the substring rule catches these.
-        markdown2Html('<div><div class="`markdown-zzsent` x xmarkdown-post-link">y</div></div>', forApp)
+        markdown2Html('<div><div class="`markdown-zzsent` text-center xmarkdown-post-link">y</div></div>', forApp)
       expect(out).not.toContain('markdown-')
-      expect(out).toContain('class="x"')
+      expect(out).toContain('class="text-center"')
     }
   })
 
@@ -256,19 +256,20 @@ describe('output boundary (#1919 review r10)', () => {
     for (const dash of dashes) {
       for (const forApp of [false, true]) {
         it(`class "markdown${dash}video-play" forApp=${forApp}`, () => {
-          const out = markdown2Html(`<div><span class="markdown${dash}video-play x">x</span></div>`, forApp)
+          const out = markdown2Html(`<div><span class="markdown${dash}video-play text-center">x</span></div>`, forApp)
           expect(out).not.toMatch(/markdown(-|&#)/i)
-          expect(out).toContain('class="x"')
+          expect(out).toContain('class="text-center"')
         })
       }
     }
 
     it('a control character inside the token (U+007F)', () => {
       for (const forApp of [false, true]) {
-        const out = markdown2Html('<div><span class="mark\u007fdown-video-play x">x</span></div>', forApp)
-        // U+007F separates tokens now: `mark` and `down-video-play`, neither a marker.
+        const out = markdown2Html('<div><span class="mark\u007fdown-video-play text-center">x</span></div>', forApp)
+        // U+007F separates tokens: `mark` and `down-video-play`, neither a
+        // marker, and neither a class an author may write.
         expect(out).not.toMatch(/mark\u007f?down/i)
-        expect(out).toContain('class="mark down-video-play x"')
+        expect(out).toContain('class="text-center"')
       }
     })
 

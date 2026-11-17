@@ -367,8 +367,9 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   let isValidDomain = false;
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf('/') === 0) {
-      // Internal path like /ecency/@user/post
-      isValidDomain = true;
+      // Internal path like /ecency/@user/post. Not `//host/...` nor
+      // `/\host/...`, which a browser reads as another site (isInSiteHref).
+      isValidDomain = isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
       const domain = tpostMatch[1]

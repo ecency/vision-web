@@ -1,5 +1,5 @@
 import xss, { type SafeAttrValueHandler } from 'xss'
-import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, canonicalEmbedSrc, isAllowedEmbedSrc, stripMarkdownClasses} from '../consts'
+import {ALLOWED_ATTRIBUTES, ID_WHITELIST, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, authorClasses, canonicalEmbedSrc, isAllowedEmbedSrc, namespacedId, stripMarkdownClasses} from '../consts'
 import { getProxyBase, proxifyImageSrc } from '../proxify-image-src'
 import { isStrictTag } from './render-boundary.method'
 import { decodeAttributeEntities, trimTrailingSlash } from '../helper'
@@ -180,6 +180,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   // onTag with the raw tag source right before walking its attributes.
   let trusted = false
 
+  // The ids this input declares, as written (decoded). A `#fragment` link to
+  // one of them follows it to its namespaced id; any other fragment (a
+  // `data-id` anchor, which the web resolves by script) is left alone. A
+  // false hit only points a link at a name nothing has.
+  const declaredIds = new Set<string>()
+  for (const m of regexMatches(html, /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
+    declaredIds.add(decodeAttributeEntities((m[1] ?? m[2] ?? m[3] ?? '').trim()))
+  }
+
   const cleaned = xss(html, {
     whiteList,
     onTag: (_tag, rawTag) => {
@@ -260,6 +269,13 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (!preserveImageDimensions || parsePixelDimension(decoded) == null) return '';
       }
       if (tag === 'span' && name === 'class' && decoded.toLowerCase().trim() === 'wr') return '';
+      // A class the render did not stamp is the author's, on every path
+      // (full render, its fallback, simple markdown for chat and paste): only
+      // the classes an author may write survive (authorClasses).
+      if (isWhiteAttr && name === 'class' && !trusted) {
+        const kept = authorClasses(decoded);
+        return kept ? `class="${escapeAttr(kept)}"` : '';
+      }
       // The embed allow list holds on every path, including bodies that never
       // reached iframe() (#1919). iframe() only emits sources it accepts.
       // A src that is refused as written gets the spelling iframe() would
@@ -347,6 +363,13 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       if (name === 'data-href' && !isSafeNavValue(decoded)) return '';
       if (name === 'id') {
         if (!ID_WHITELIST.test(decoded)) return '';
+        // render-helper writes no id of its own: every one is the author's (or
+        // the markdown stage's footnotes), namespaced away from the page's.
+        if (isWhiteAttr) return `id="${escapeAttr(namespacedId(decoded))}"`;
+      }
+      // A same-document link follows the namespaced id it points at.
+      if (isWhiteAttr && tag === 'a' && name === 'href' && decoded.startsWith('#') && declaredIds.has(decoded.slice(1)) && ID_WHITELIST.test(decoded.slice(1))) {
+        return `href="#${escapeAttr(namespacedId(decoded.slice(1)))}"`;
       }
       // Every URL check above ran on the value decoded once. Left to itself,
       // xss would emit its own reading of the raw value: decoded again by the

@@ -850,7 +850,7 @@ describe('Markdown2Html', () => {
         last_update: '2021-10-23T09:15:21',
         body: 'this is link <iframe loading="lazy" src="https://aureal-embed.web.app/535939" width="100%" height="200" frameborder="0" data-rocket-lazyload="fitvidscompatible" class="lazyloaded" data-ll-status="loaded"></iframe>'
       }
-      const expected = '<p dir=\"auto\">this is link <iframe src=\"https://aureal-embed.web.app/535939\" frameborder=\"0\" class=\"lazyloaded\"></iframe></p>'
+      const expected = '<p dir=\"auto\">this is link <iframe src=\"https://aureal-embed.web.app/535939\" frameborder=\"0\"></iframe></p>'
 
       expect(markdown2Html(input)).toBe(expected)
     })
@@ -1037,7 +1037,7 @@ describe('Markdown2Html', () => {
     })
 
     it('Rumble iframes 2', () => {
-      let expected = '<iframe class="rumble" src="https://rumble.com/embed/v2mb4d6/?pub=1aoesn" frameborder="0" allowfullscreen="allowfullscreen"></iframe>'
+      let expected = '<iframe src="https://rumble.com/embed/v2mb4d6/?pub=1aoesn" frameborder="0" allowfullscreen="allowfullscreen"></iframe>'
       let input = {
         author: 'foo350xx',
         permlink: 'bar350xx',
@@ -1426,8 +1426,8 @@ describe('Markdown2Html', () => {
       expect(out).toContain('href="/trending/powerup"')
     })
 
-    // `class` is author-writable: the sanitizer permits it on <span> and runs after
-    // traverse, so a post body can carry `er-tag-link` into the DOM the guard walks.
+    // `class` was author-writable: a post body could carry `er-tag-link` into the
+    // DOM the guard walks. Author classes are now limited to formatting classes.
     // An unconditional guard would let any author suppress linkification for every
     // reader on ecency.com and in the mobile app.
     describe('author-supplied chip classes on the default path', () => {
@@ -1460,12 +1460,13 @@ describe('Markdown2Html', () => {
         expect(out).toContain('<span class="er-author er-author-link">')
       })
 
-      it('suppresses re-linkification only inside a real chip on inert renders', () => {
+      it('linkifies inside an author span on inert renders too', () => {
         const out = markdown2Html(hostile, false, false, 'ecency.com', undefined, inert)
 
-        // The author's own span is a genuine chip-class token, so its contents are
-        // left alone on this path. Accepted: narrow, and only on self-hosted.
-        expect(out).toContain('hello @alice and #btc')
+        // An author's chip class no longer survives to the guard (only author
+        // formatting classes do), so the span's contents are chips like any text.
+        expect(out).toContain('<span class="er-author er-author-link">')
+        expect(out).toContain('<span class="er-tag er-tag-link">#btc</span>')
       })
     })
 

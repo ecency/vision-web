@@ -49,12 +49,12 @@ describe('untransformed sanitize-only fallback output', () => {
 
   it('strips author markers', () => {
     const out = render(
-      '<a class="markdown-post-link x" data-author="victim" data-permlink="fake" href="https://ecency.com/">c</a>',
+      '<a class="markdown-post-link text-center" data-author="victim" data-permlink="fake" href="https://ecency.com/">c</a>',
       true
     )
     expect(out).not.toContain('markdown-post-link')
     expect(out).not.toContain('data-author')
-    expect(out).toContain('class="x"')
+    expect(out).toContain('class="text-center"')
   })
 
   it('serves a video poster through the proxy', () => {

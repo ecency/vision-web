@@ -104,8 +104,8 @@ describe('sanitizeHtml: ordinary entities still decode', () => {
   })
 
   it('keeps zero-padded and named references decoding as before', () => {
-    expect(sanitizeHtml('<div id="&#65;bc">x</div>')).toBe('<div id="Abc">x</div>')
-    expect(sanitizeHtml('<div id="&#0065;bc">x</div>')).toBe('<div id="Abc">x</div>')
+    expect(sanitizeHtml('<div id="&#65;bc">x</div>')).toBe('<div id="user-content-Abc">x</div>')
+    expect(sanitizeHtml('<div id="&#0065;bc">x</div>')).toBe('<div id="user-content-Abc">x</div>')
     expect(sanitizeHtml('<img src="https://x.y/a.png?a=1&amp;b=2">')).toBe(
       '<img src="https://x.y/a.png?a=1&amp;b=2">'
     )

@@ -109,6 +109,46 @@ export function stripMarkdownClasses(value: string): string {
   return kept.length === tokens.length ? value : kept.join(' ')
 }
 
+// The classes an author may write: the formatting classes Hive posts have
+// always been written with (the list condenser allowed), nothing the page's own
+// stylesheet would apply. The page's utility classes (`fixed inset-0 z-[...]`)
+// would otherwise let a post cover the whole viewport or hide parts of the app.
+const AUTHOR_CLASSES: ReadonlySet<string> = new Set([
+  'pull-right', 'pull-left', 'text-justify', 'text-rtl', 'text-center', 'text-right', 'videoWrapper', 'phishy'
+])
+// What the markdown stage writes before the DOM pass sees the body, so it
+// reaches the author-class filter too: footnotes, code highlighting (ll-*) and
+// a fenced block's language.
+const MARKDOWN_STAGE_CLASSES: ReadonlySet<string> = new Set([
+  'footnote-backref', 'footnote-item', 'footnote-ref', 'footnotes', 'footnotes-list', 'footnotes-sep'
+])
+const MARKDOWN_STAGE_CLASS_RE = /^(?:ll-[a-z]+|language-[A-Za-z0-9_+#.-]+)$/
+
+/**
+ * An author-written class value reduced to the classes an author may use.
+ * Control characters separate tokens, as xss reads them. Returns the value
+ * unchanged when every token is kept.
+ */
+export function authorClasses(value: string): string {
+  const tokens = value.replace(/[\u0000-\u001f\u007f]/g, ' ').split(/\s+/).filter(Boolean)
+  const kept = tokens.filter(
+    (token) =>
+      !/markdown-/i.test(token) &&
+      (AUTHOR_CLASSES.has(token) || MARKDOWN_STAGE_CLASSES.has(token) || MARKDOWN_STAGE_CLASS_RE.test(token))
+  )
+  return kept.length === tokens.length && !/[\u0000-\u001f\u007f]/.test(value) ? value : kept.join(' ')
+}
+
+/**
+ * An author-written id, namespaced so it can never equal an id the page uses
+ * (`modal-dialog-container`) or a window global it reads by name (`nws`).
+ * Same-document `#fragment` links get the same prefix (namespacedFragment).
+ */
+export const AUTHOR_ID_PREFIX = 'user-content-'
+export function namespacedId(id: string): string {
+  return id.startsWith(AUTHOR_ID_PREFIX) ? id : AUTHOR_ID_PREFIX + id
+}
+
 // The only sandbox tokens iframe() and a() ever grant an embed. An author's
 // sandbox keeps these and loses everything else (allow-top-navigation,
 // allow-forms, allow-modals, ...).
