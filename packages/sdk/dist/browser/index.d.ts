@@ -6042,7 +6042,7 @@ type Subscription = string[];
 
 interface AccountNotification {
     date: string;
-    id: number;
+    id: string;
     msg: string;
     score: number;
     type: string;
@@ -6134,7 +6134,7 @@ declare function getCommunitySubscribersInfiniteQueryOptions(communityName: stri
 };
 
 type NotifPage = AccountNotification[];
-type NotifCursor = number | null;
+type NotifCursor = string | null;
 /**
  * Get account notifications for a community (bridge API)
  *

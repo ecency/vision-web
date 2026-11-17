@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.2
+
+### Patch Changes
+
+- Reply drafts and decline payout follow-ups, autosave account switch, notification ids, fallback href schemes (#2106)
+
 ## 2.9.1
 
 ### Patch Changes

@@ -1034,6 +1034,8 @@ var hasQuotedAttr = (attrs, wanted) => {
 };
 var isUrlAttribute = (tag, name) => name === "src" && tag !== "a" || name === "srcset" || name === "poster" || name === "data-href" || EMBED_SRC_DATA_ATTRS.has(name);
 var RENDER_HELPER_RELS = /* @__PURE__ */ new Set(["nofollow ugc noopener", "noopener"]);
+var xssSafeAttrValue = xss.safeAttrValue;
+var HREF_SCHEMES = /* @__PURE__ */ new Set(["http", "https", "mailto", "tel", "hive", "steem", "esteem", "ecency"]);
 var QUOTED_ATTR = /\s([^\s"'>\/=]+)="([^"]*)"/g;
 function enforceImageDimensionPair(html) {
   return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) => {
@@ -1080,6 +1082,12 @@ function sanitizeHtml(html, options) {
       const decoded = decodeAttributeEntities(value.trim());
       const decodedLower = decoded.toLowerCase();
       if (name.startsWith("on")) return "";
+      if (name === "href") {
+        const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(
+          decoded.replace(/^[\s\u0000-\u0020\ufffd]+/, "").replace(/[\t\n\r]/g, "")
+        );
+        if (scheme && !HREF_SCHEMES.has(scheme[1].toLowerCase())) return isWhiteAttr ? "href" : "";
+      }
       if (tag === "img" && name === "src" && !/^https?:\/\//.test(decodedLower)) return "";
       if ((tag === "img" || tag === "source") && name === "srcset" && !beforeTransform && !isWellFormedSrcset(decoded)) return "";
       if (tag === "img" && name === "srcset") {
@@ -1140,6 +1148,9 @@ function sanitizeHtml(html, options) {
       if (name === "data-href" && !isSafeNavValue(decoded)) return "";
       if (name === "id") {
         if (!ID_WHITELIST.test(decoded)) return "";
+      }
+      if (isWhiteAttr && name === "href") {
+        return xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
         return `${name}="${escapeAttr(decoded)}"`;
