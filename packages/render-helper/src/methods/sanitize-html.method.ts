@@ -87,10 +87,13 @@ const RENDER_HELPER_RELS = new Set(['nofollow ugc noopener', 'noopener'])
 // import breaks the ESM build under Node (`Named export 'safeAttrValue' not found`).
 const xssSafeAttrValue = (xss as unknown as { safeAttrValue: SafeAttrValueHandler }).safeAttrValue
 
-// The schemes a() writes on a link (a.method.ts), plus tel: a()'s scheme check
-// accepts it and xss allows it, so the sanitize-only paths (chat, paste, the
-// fallback) keep telephone links as before.
+// The schemes a() writes on a link (a.method.ts), including tel: and web+
+// handlers, which a()'s scheme check accepts and keeps as written (#2107).
 const HREF_SCHEMES = new Set(['http', 'https', 'mailto', 'tel', 'hive', 'steem', 'esteem', 'ecency'])
+const isHrefScheme = (scheme: string): boolean => {
+  const lower = scheme.toLowerCase()
+  return HREF_SCHEMES.has(lower) || /^web\+[a-z0-9.+-]+$/.test(lower)
+}
 
 export interface SanitizeHtmlOptions {
   /**
@@ -210,12 +213,14 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // tab/LF/CR removed anywhere. The value is then written out below exactly
       // as checked, never re-read by xss (it decodes `&colon` without a
       // semicolon, and decodes a second time).
+      let hrefSchemeAllowed = false;
       if (name === 'href') {
         const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(
           decoded.replace(/^[\s\u0000-\u0020\ufffd]+/, '').replace(/[\t\n\r]/g, '')
         );
         // A bare `href`, as xss writes a refused one: the link keeps its look, goes nowhere.
-        if (scheme && !HREF_SCHEMES.has(scheme[1].toLowerCase())) return isWhiteAttr ? 'href' : '';
+        if (scheme && !isHrefScheme(scheme[1])) return isWhiteAttr ? 'href' : '';
+        hrefSchemeAllowed = !!scheme;
       }
       // Positive-whitelist: only http(s) is accepted. Any other scheme
       // (javascript:, data:, vbscript:, file:, etc.) is rejected by the
@@ -344,10 +349,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // with control characters turned into spaces (`.\n.` validated as `..`
       // and loaded as `.%20.`). Always emit exactly the string that was
       // validated.
-      // An href passes xss's own link rule too (it refuses `java script:`,
-      // `%6a...:` and other non-links), applied to the value as checked above.
+      // An href with an allowed scheme is kept as checked above. One without a
+      // scheme passes xss's own link rule too (it refuses `java script:`,
+      // `%6a...:` and other non-links). xss's rule is case-sensitive and knows
+      // neither web+ nor the hive schemes, so it is not the judge of a scheme
+      // already checked (#2107: `TEL:` and `web+foo:` came out as a bare href).
       if (isWhiteAttr && name === 'href') {
-        return xssSafeAttrValue(tag, name, decoded, undefined as never) ? `href="${escapeAttr(decoded)}"` : 'href';
+        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, undefined as never)
+          ? `href="${escapeAttr(decoded)}"`
+          : 'href';
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
         return `${name}="${escapeAttr(decoded)}"`;
