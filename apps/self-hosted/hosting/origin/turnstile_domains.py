@@ -157,7 +157,10 @@ def reconcile(wanted: Iterable[str], config: Config, http: Http, log: Log, dry_r
         if not updated.get("success"):
             log(f"TURNSTILE FAILED adding {', '.join(missing)}: {_errors(updated)}")
             return []
-        after = http("GET", url, config.token)
+        try:
+            after = http("GET", url, config.token)
+        except Exception as e:  # the write went through; only the check failed
+            after = {"success": False, "errors": [{"code": type(e).__name__, "message": str(e)}]}
         if not after.get("success"):
             # The write was accepted; only the check failed. Say that, rather
             # than report every hostname on the widget as lost.

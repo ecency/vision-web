@@ -167,7 +167,10 @@ describe('uploadEditorImage', () => {
       convert: async (f) => f,
     });
     expect(url).toBe('https://images.ecency.com/DQm/a.png');
-    expect(upload).toHaveBeenCalledWith(png, 'hs-token', undefined);
+    expect(upload).toHaveBeenCalledWith(png, 'hs-token', expect.any(AbortSignal));
+    // The time limit covers the request only, so it starts after the wallet.
+    const signal = (upload.mock.calls[0] as unknown[])[2] as AbortSignal;
+    expect(signal.aborted).toBe(false);
   });
 
   it('forgets a signed code the image service says is invalid, so the next try signs afresh', async () => {

@@ -74,25 +74,63 @@ function describe(e: unknown): string {
 
 /**
  * Insert one uploaded image at `at` (or the selection) and return the position
- * after it, or null when it cannot go there or at the end of the post.
+ * after it, or null when it cannot go there or at the end of the post. The
+ * author's caret stays where it is unless it was at the insertion point: an
+ * upload finishing while they type elsewhere must not move it.
  */
 function place(editor: Editor, src: string, file: File, at: number | undefined): number | null {
   const node = { type: 'image', attrs: { src, alt: file.name.replace(/\.[^.]+$/, '') } };
   const size = () => editor.state.doc.content.size;
-  for (const where of [Math.min(at ?? editor.state.selection.to, size()), size()]) {
+  const before = editor.state.selection;
+  for (const where of [Math.min(at ?? before.to, size()), size()]) {
+    // The caret, carried through the insert so it can be put back.
+    let from = before.from;
+    let to = before.to;
+    const follow = ({ transaction }: { transaction: { mapping: { map: (p: number, assoc?: number) => number } } }) => {
+      from = transaction.mapping.map(from, -1);
+      to = transaction.mapping.map(to, -1);
+    };
+    editor.on('transaction', follow);
+    let inserted = false;
     try {
       // insertContentAt leaves the selection right after what it inserted,
       // including when an inline image had to be wrapped in a new paragraph.
-      if (editor.chain().insertContentAt(where, node).run()) return editor.state.selection.to;
+      inserted = editor.chain().insertContentAt(where, node).run();
     } catch {
       // A position the schema cannot take: try the end of the post.
+    } finally {
+      editor.off('transaction', follow);
     }
+    if (!inserted) continue;
+    const after = editor.state.selection.to;
+    const caretWasHere = before.empty && before.from === where;
+    if (!caretWasHere) {
+      try {
+        editor.commands.setTextSelection({ from, to });
+      } catch {
+        // The old selection no longer fits the document: leave it after the image.
+      }
+    }
+    return after;
   }
   return null;
 }
 
 async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: File[], pos: number) {
   const storage = editor.storage.imageUpload;
+  // Uploads of this batch still counted in the global pending total. Released
+  // as each finishes, all at once when the editor closes (its results are
+  // discarded, so they must not hold Publish in another editor), and whatever
+  // is left if anything throws.
+  let remaining = files.length;
+  const release = (n: number) => {
+    const count = Math.min(n, remaining);
+    if (count <= 0) return;
+    remaining -= count;
+    addPending(-count);
+  };
+  const onDestroy = () => release(remaining);
+  editor.on('destroy', onDestroy);
   // Keep the insertion point on the same spot while uploads run: every edit
   // made in the meantime (typing elsewhere, another image landing) moves it
   // with them, for a drop and for the cursor of a pick or paste alike.
@@ -105,10 +143,7 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
   try {
     for (const file of files) {
       // The post was closed: do not upload (or ask a wallet) for the rest.
-      if (editor.isDestroyed) {
-        addPending(-1);
-        continue;
-      }
+      if (editor.isDestroyed) break;
       let src: string | null = null;
       try {
         src = await upload(file);
@@ -123,8 +158,8 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
           at = after;
         }
       }
-      storage.pending -= 1;
-      addPending(-1);
+      if (!editor.isDestroyed) storage.pending -= 1;
+      release(1);
       // Add to the error rather than replace it: another upload running at the
       // same time may already have reported a failure.
       if (problems.length) {
@@ -133,7 +168,11 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
       notify(editor);
     }
   } finally {
+    // Whatever is left: the editor closed, or something above threw.
+    if (!editor.isDestroyed) storage.pending -= remaining;
+    release(remaining);
     editor.off('transaction', track);
+    editor.off('destroy', onDestroy);
   }
 }
 
@@ -158,6 +197,7 @@ export const ImageUpload = Extension.create<ImageUploadOptions, ImageUploadState
 
   addOptions() {
     return {
+      // uploadEditorImage puts a time limit on the request itself.
       upload: (file: File) => uploadEditorImage(file, { user: authenticationStore.getState().user ?? null }),
     };
   },
@@ -180,7 +220,9 @@ export const ImageUpload = Extension.create<ImageUploadOptions, ImageUploadState
           if (storage.pending === 0) storage.error = null;
           storage.pending += images.length;
           addPending(images.length);
-          void run(editor as Editor, this.options.upload, images, pos ?? editor.state.selection.to);
+          run(editor as Editor, this.options.upload, images, pos ?? editor.state.selection.to).catch(() => {
+            // Counts are released in run's finally; a throw here has nowhere to go.
+          });
           return true;
         },
     };

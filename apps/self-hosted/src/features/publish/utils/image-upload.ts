@@ -31,8 +31,8 @@ const STORAGE_KEY = IMAGE_UPLOAD_CODE_KEY;
  * How long a signed code is reused. The image service does not check the
  * code's timestamp, so this is hygiene rather than a deadline: a code is a
  * standing upload credential until the posting key changes, and re-signing
- * weekly bounds how long a copied one stays useful to the cache. Logout clears
- * it (auth-actions.ts).
+ * weekly bounds how long a copied one stays useful to the cache. It is cleared
+ * whenever a session ends (clearUser in features/auth/storage.ts).
  */
 export const CODE_LIFETIME_MS = 6 * 24 * 60 * 60 * 1000;
 
@@ -253,7 +253,10 @@ export async function uploadEditorImage(
   const prepared = await prepareImageFile(file, convert);
   const token = await getImageUploadToken(user, deps);
   try {
-    const { url } = await upload(prepared, token, signal);
+    // Started here, after the wallet answered: a slow approval must not use up
+    // the request's time. A stalled request gives up instead of holding the
+    // upload (and Publish) forever.
+    const { url } = await upload(prepared, token, signal ?? timeoutSignal(UPLOAD_TIMEOUT_MS));
     return url;
   } catch (e) {
     const reason = serviceErrorName(e);
@@ -281,4 +284,15 @@ export async function uploadEditorImage(
 function serviceErrorName(e: unknown): string | null {
   const name = (e as { data?: { error?: { name?: unknown } } })?.data?.error?.name;
   return typeof name === 'string' && name ? name : null;
+}
+
+/** Long enough for a large photo on a slow line. */
+const UPLOAD_TIMEOUT_MS = 120_000;
+
+/** AbortSignal.timeout, with a fallback for browsers that predate it. */
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
 }

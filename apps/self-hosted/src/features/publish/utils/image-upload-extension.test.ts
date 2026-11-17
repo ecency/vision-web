@@ -203,6 +203,8 @@ describe('ImageUpload', () => {
     await flush();
     expect(editor.state.doc.child(1).firstChild?.type.name).toBe('image');
     expect(editor.state.doc.child(0).textContent).toBe('typed first');
+    // The caret stays where the author is typing, not after the image.
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(0));
     editor.destroy();
   });
 
@@ -237,6 +239,27 @@ describe('ImageUpload', () => {
     expect(pendingImageUploads()).toBe(2);
     release();
     for (let i = 0; i < 4; i++) await flush();
+    expect(pendingImageUploads()).toBe(0);
+    editor.destroy();
+  });
+
+  it('stops counting a closed editor\'s uploads at once, so another editor can publish', async () => {
+    const never = new Promise<string>(() => {});
+    const editor = makeEditor(() => never); // e.g. a wallet prompt nobody answers
+    editor.commands.uploadImages([png('a.png'), png('b.png')]);
+    expect(pendingImageUploads()).toBe(2);
+    editor.destroy();
+    expect(pendingImageUploads()).toBe(0);
+  });
+
+  it('releases the whole batch when something throws midway', async () => {
+    const editor = makeEditor(async (file) => `https://images.ecency.com/u/${file.name}`);
+    editor.commands.uploadImages([png('a.png'), png('b.png')]);
+    // A misbehaving listener, from here on: every later transaction throws.
+    editor.on('transaction', () => {
+      throw new Error('listener bug');
+    });
+    for (let i = 0; i < 6; i++) await flush().catch(() => {});
     expect(pendingImageUploads()).toBe(0);
     editor.destroy();
   });

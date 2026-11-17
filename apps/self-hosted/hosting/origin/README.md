@@ -65,7 +65,8 @@ the second between the sync's read and its write would be lost; add hostnames by
 through the snippet below, which does the same read-and-append, and not while the sync runs.
 A widget holds at most 10
 hostnames: the sync adds what fits and names the rest in a `TURNSTILE FAILED` line, since a
-custom domain beyond the tenth needs a second widget. A `www.` and a bare domain take two.
+custom domain beyond the tenth needs a second widget. Wanted names covered by another wanted name are left out, so a bare domain and its `www.`
+take one slot when both arrive in the same run.
 
 ### By hand
 

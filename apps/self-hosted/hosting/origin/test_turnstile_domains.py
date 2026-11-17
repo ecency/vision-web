@@ -185,6 +185,21 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue(any("could not be checked" in line for line in logs))
         self.assertFalse(any("lacks" in line for line in logs))
 
+    def test_a_read_back_that_raises_still_reports_the_write(self):
+        api, logs = FakeApi(WIDGET), Logs()
+        real = api.__call__
+        calls = {"get": 0}
+
+        def flaky(method, url, token, body=None):
+            if method == "GET":
+                calls["get"] += 1
+                if calls["get"] == 2:
+                    raise OSError("timed out")
+            return real(method, url, token, body)
+
+        self.assertEqual(td.reconcile(["blog.example.org"], CONFIG, flaky, logs), ["blog.example.org"])
+        self.assertTrue(any("could not be checked" in line for line in logs))
+
     def test_an_api_exception_is_logged_not_raised(self):
         def broken(*args, **kwargs):
             raise OSError("connection refused")
