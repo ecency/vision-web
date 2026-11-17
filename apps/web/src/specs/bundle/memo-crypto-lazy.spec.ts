@@ -19,15 +19,37 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+// Any static import or re-export of memo-crypto: named, multiline, bare
+// (side-effect) or `export ... from`. A dynamic `import("...")` is not one.
+const TARGET = String.raw`(?:@\/utils\/memo-crypto|\.\.?\/(?:[^"']*\/)?memo-crypto)`;
+const STATIC_FORMS = [
+  new RegExp(String.raw`(?:^|[;\n])\s*(?:import|export)\b[^;"'()]*?\bfrom\s*["']${TARGET}["']`, "m"),
+  new RegExp(String.raw`(?:^|[;\n])\s*import\s*["']${TARGET}["']`, "m")
+];
+function importsStatically(code: string): boolean {
+  return STATIC_FORMS.some((re) => re.test(code));
+}
+
 describe("memo-crypto", () => {
   it("is never imported statically, only loaded on demand", () => {
-    // Any quote style, with or without a semicolon, and re-exports too.
-    const staticImport = /(?:^|\n)\s*(?:import|export)[^;\n]*?from\s*["'](?:@\/utils\/memo-crypto|\.\.?\/(?:[^"']*\/)?memo-crypto)["']/;
     const offenders = sourceFiles(SRC)
       .filter((file) => !file.endsWith(join("utils", "memo-crypto.ts")))
-      .filter((file) => staticImport.test(readFileSync(file, "utf8")))
+      .filter((file) => importsStatically(readFileSync(file, "utf8")))
       .map((file) => relative(SRC, file));
     expect(offenders).toEqual([]);
+  });
+
+  it("recognises every static form, so the guard cannot be slipped past", () => {
+    for (const code of [
+      'import { decryptMemo } from "@/utils/memo-crypto";',
+      "import {\n  encryptMemo,\n  decryptMemo\n} from '@/utils/memo-crypto'",
+      'import "@/utils/memo-crypto";',
+      'export * from "./memo-crypto";',
+      'export { encryptMemo } from "../utils/memo-crypto"'
+    ]) {
+      expect(importsStatically(code), code).toBe(true);
+    }
+    expect(importsStatically('const { decryptMemo } = await import("@/utils/memo-crypto");')).toBe(false);
   });
 
   it("is still loaded by both callers", () => {
