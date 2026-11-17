@@ -92,18 +92,48 @@ describe('ImageUpload', () => {
 
   it('leaves a rich paste alone even when the clipboard also carries a picture of it', async () => {
     // Excel, Word and PowerPoint put text/html, text/plain AND a PNG rendering
-    // on the clipboard. The content is the HTML.
+    // on the clipboard. The content is the text.
     const upload = vi.fn(async () => 'https://images.ecency.com/u/x.png');
     const editor = makeEditor(upload);
     const { handlePaste } = plugin(editor);
-    const clipboard = (html: string) => ({
-      clipboardData: { files: [png('image.png')], getData: (type: string) => (type === 'text/html' ? html : '') },
+    const clipboard = (text: string, html: string) => ({
+      clipboardData: {
+        files: [png('image.png')],
+        getData: (type: string) => (type === 'text/plain' ? text : type === 'text/html' ? html : ''),
+      },
       preventDefault: vi.fn(),
     });
-    expect(handlePaste(editor.view, clipboard('<table><tr><td>1</td></tr></table>'))).toBe(false);
+    expect(handlePaste(editor.view, clipboard('1\t2', '<table><tr><td>1</td><td>2</td></tr></table>'))).toBe(false);
     expect(upload).not.toHaveBeenCalled();
-    // A copied image arrives with HTML that is only that image: upload it.
-    expect(handlePaste(editor.view, clipboard('<meta charset="utf-8"><img src="https://x.test/a.png">'))).toBe(true);
+    // "Copy image" from a page: HTML holding the image, no text. Upload it.
+    expect(handlePaste(editor.view, clipboard('', '<meta charset="utf-8"><img src="https://x.test/a.png">'))).toBe(true);
+    editor.destroy();
+  });
+
+  it('uploads when the text only names the image, and keeps real text', () => {
+    const editor = makeEditor(vi.fn(async () => 'https://images.ecency.com/u/x.png'));
+    const { handlePaste } = plugin(editor);
+    const paste = (text: string, files = [png('photo.png')]) =>
+      handlePaste(editor.view, {
+        clipboardData: { files, getData: (type: string) => (type === 'text/plain' ? text : '') },
+        preventDefault: vi.fn(),
+      });
+    // Finder and Linux file managers put the file name(s) or path(s) in the text.
+    expect(paste('photo.png')).toBe(true);
+    expect(paste('/home/me/Pictures/photo.png')).toBe(true);
+    expect(paste('a.png\nb.png', [png('a.png'), png('b.png')])).toBe(true);
+    // Finder joins several names with a carriage return.
+    expect(paste('a.png\rb.png', [png('a.png'), png('b.png')])).toBe(true);
+    // A non-image copied alongside is named too: still only names.
+    expect(paste('a.png\rnotes.pdf', [png('a.png'), new File(['x'], 'notes.pdf', { type: 'application/pdf' })])).toBe(true);
+    // macOS may hand the name over decomposed (NFD).
+    expect(paste('cafe\u0301.png', [png('caf\u00e9.png')])).toBe(true);
+    // Safari "Copy Image" carries the image URL.
+    expect(paste('https://example.com/img/photo.png')).toBe(true);
+    expect(paste('   \n ')).toBe(true);
+    // Office: the text is the content.
+    expect(paste('Revenue\t2026\nQ1\t10')).toBe(false);
+    expect(paste('A paragraph from Word')).toBe(false);
     editor.destroy();
   });
 

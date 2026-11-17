@@ -177,15 +177,22 @@ async function run(editor: Editor, upload: ImageUploadOptions['upload'], files: 
 }
 
 /**
- * True when pasted HTML is nothing but images. Office apps put a PNG rendering
- * of a table or text on the clipboard next to its HTML; that paste is the HTML.
+ * True when pasted text is empty or every line is just a pasted file's name,
+ * path or URL. Lines may be split by \r (Finder) as well as \n, and macOS may
+ * hand a name over decomposed, so both sides are normalised.
  */
-function htmlIsOnlyImages(html: string): boolean {
-  // Parsed, not pattern-matched: the HTML only decides whether to take the
-  // paste, and a parser cannot be fooled by nested or odd markup.
-  const body = new DOMParser().parseFromString(html, 'text/html').body;
-  return body.querySelector('img') !== null && (body.textContent ?? '').trim() === ''
-    && body.querySelector('table, video, iframe, svg') === null;
+function textOnlyNamesImages(text: string, files: File[]): boolean {
+  const names = files.map((file) => file.name.normalize('NFC')).filter(Boolean);
+  return text
+    .normalize('NFC')
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .every(
+      (line) =>
+        /^(?:https?|file|blob|data):\S+$/i.test(line) ||
+        names.some((name) => line === name || line.endsWith(`/${name}`) || line.endsWith(`\\${name}`)),
+    );
 }
 
 function imageFiles(list: FileList | File[] | null | undefined): File[] {
@@ -251,8 +258,13 @@ export const ImageUpload = Extension.create<ImageUploadOptions, ImageUploadState
             if (!editor.isEditable) return false;
             const files = imageFiles(event.clipboardData?.files);
             if (files.length === 0) return false;
-            const html = event.clipboardData?.getData?.('text/html') ?? '';
-            if (html && !htmlIsOnlyImages(html)) return false;
+            // Office apps put a PNG rendering of a table or text on the
+            // clipboard next to that text: then the paste is the text. Text
+            // that only names the image is not content: a file manager puts
+            // the file name or path there, Safari's Copy Image the URL.
+            const text = event.clipboardData?.getData?.('text/plain') ?? '';
+            // Every pasted file, images or not, may be named in the text.
+            if (!textOnlyNamesImages(text, Array.from(event.clipboardData?.files ?? []))) return false;
             event.preventDefault();
             return editor.commands.uploadImages(files);
           },
