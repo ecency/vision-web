@@ -194,6 +194,15 @@ export class RPCError extends Error {
 }
 
 /**
+ * The node already knows this exact signed transaction: a retry or a failover
+ * after a node accepted it and its answer was lost. Shared by every broadcast
+ * path that treats that as accepted.
+ */
+export function isDuplicateTransactionError(error: unknown): boolean {
+  return error instanceof RPCError && error.message.includes('Duplicate transaction check failed')
+}
+
+/**
  * Transport-level error thrown by jsonRPCCall for HTTP status errors (429, 503).
  * Carries node identity and rate-limit info so callers can record health
  * exactly once without double-counting.

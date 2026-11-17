@@ -45,7 +45,8 @@ export const SignByKey = ({ onKey, onBack, isLoading }: Props) => {
     }
     setKey(key);
     onKey(pKey);
-    setSigningKey(key);
+    // The store keeps the derived key, never a typed master password.
+    setSigningKey(pKey.toString());
   };
 
   return (

@@ -95,10 +95,12 @@ export function WalletOperationsTransfer({
     ...getHiveEngineBalancesWithUsdQueryOptions(username, dynamicProps),
     enabled: isEngineToken && !!username
   });
-  const precision = useMemo(
+  const knownPrecision = useMemo(
     () => operationAssetPrecision(isEngineToken, engineBalances, asset),
     [asset, engineBalances, isEngineToken]
   );
+  // Until an engine token's precision is known, nothing can be submitted.
+  const precision = knownPrecision ?? 3;
   const step = amountStep(precision);
   const liquidBalance = useMemo(() => {
     const balance = accountWallet?.parts?.find((part) =>
@@ -387,7 +389,9 @@ export function WalletOperationsTransfer({
     operation === AssetOperation.Delegate &&
     Boolean(existingDelegationHp && existingDelegationHp > 0);
   const isSubmitDisabled =
-    !hasValidRecipient || (maxAmount <= 0 && !allowSubmitWithoutBalance);
+    knownPrecision === null ||
+    !hasValidRecipient ||
+    (maxAmount <= 0 && !allowSubmitWithoutBalance);
 
   return (
     <div className="grid">
@@ -431,7 +435,10 @@ export function WalletOperationsTransfer({
             // in the shared Transfer dialog.
             let memo = data.memo ?? "";
             try {
-              memo = await prepareOperationMemo(memo, username, sanitizedTo);
+              // Only operations that carry a memo on chain (showMemo).
+              if (showMemo) {
+                memo = await prepareOperationMemo(memo, username, sanitizedTo);
+              }
             } catch (e) {
               showError(...formatError(e));
               return;

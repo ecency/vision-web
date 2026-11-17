@@ -66,7 +66,12 @@ export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
   // suggestion comes from lookup_accounts and needs no second check.
   const submit = methods.handleSubmit(async ({ username }) => {
     try {
-      if (!(await accountExists(queryClient, username))) {
+      const exists = await accountExists(queryClient, username);
+      // The user may have changed the name while it was being checked.
+      if (methods.getValues("username") !== username) {
+        return;
+      }
+      if (!exists) {
         methods.setError("username", { message: i18next.t("validation.account-not-found") });
         return;
       }

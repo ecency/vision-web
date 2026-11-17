@@ -62,6 +62,18 @@ describe("useDebounceTransferAccountData", () => {
     expect(setAmount).toHaveBeenCalledWith("5000");
   });
 
+  it("does not replace an amount the user typed with the existing delegation (#2123)", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const { setAmount } = run("delegate", "120.000");
+    expect(setAmount).not.toHaveBeenCalled();
+  });
+
+  it("fills the existing delegation over the dialog's default amount", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const { setAmount } = run("delegate", "0.001");
+    expect(setAmount).toHaveBeenCalledWith("5000");
+  });
+
   it("keeps the amount it was given when there is no delegation (#2123)", () => {
     h.delegations = [];
     const { setAmount } = run("transfer", "100.000");

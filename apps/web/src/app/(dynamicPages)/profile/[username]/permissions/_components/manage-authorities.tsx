@@ -109,7 +109,13 @@ export function ManageAuthorities() {
           <KeyOrHot
             inProgress={isPending}
             onKey={(key) => revoke({ type: "key", accountName: revokingAccount, key })}
-            onHot={() => revoke({ type: "hivesigner", accountName: revokingAccount })}
+            onHot={() =>
+              // HiveSigner's page takes over from here; nothing is signed yet,
+              // so no success, but this dialog has done its part.
+              revoke({ type: "hivesigner", accountName: revokingAccount }).then(() =>
+                setKeyDialog(false)
+              )
+            }
             onKc={() =>
               revoke({
                 type: "keychain",

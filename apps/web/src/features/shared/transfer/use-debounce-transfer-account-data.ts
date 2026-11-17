@@ -18,7 +18,7 @@ import { parseAsset, vestsToHp } from "@/utils";
 export function useDebounceTransferAccountData() {
   const { activeUser, account } = useActiveAccount();
 
-  const { to, mode, setAmount, setTo } = useTransferSharedState();
+  const { to, mode, amount: currentAmount, setAmount, setTo } = useTransferSharedState();
 
   const [toDebounce, setToDebounce] = useState<string>();
   const [vestingDelegationUsername, setVestingDelegationUsername] = useState<string>();
@@ -99,11 +99,14 @@ export function useDebounceTransferAccountData() {
     [to, setTo, setToWarning, setToDebounce]
   );
 
+  // Only over the dialog's untouched default: an amount the user typed (and
+  // kept through Next and Back) is never replaced (#2123).
+  const untouched = !currentAmount || ["0", "0.000", "0.001"].includes(currentAmount);
   useEffect(() => {
-    if (mode === "delegate" && amount !== null) {
+    if (mode === "delegate" && amount !== null && untouched) {
       setAmount(amount);
     }
-  }, [amount, mode, setAmount]);
+  }, [amount, mode, setAmount, untouched]);
 
   useEffect(() => {
     if (activeUser && activeUser.username && mode === "delegate") {

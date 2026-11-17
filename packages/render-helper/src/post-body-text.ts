@@ -1,4 +1,4 @@
-import { decodeEntities, makeEntryCacheKey, stripHtmlTags } from './helper'
+import { decodeEntities, makeEntryCacheKey } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods/clean-reply.method'
@@ -38,13 +38,13 @@ function markdownToText(source: string): string {
       // Reference definitions are not shown.
       .replace(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S[^\n]*$/gm, '')
       // Images render as <img>, which has no text.
-      .replace(/!\[[^\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '')
-      .replace(/!\[[^\]\n]*\]\[[^\]\n]*\]/g, '')
+      .replace(/!\[[^[\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '')
+      .replace(/!\[[^[\]\n]*\]\[[^[\]\n]*\]/g, '')
       // Links keep their label.
       .replace(/\[([^[\]\n]*)\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '$1')
       .replace(/\[([^[\]\n]*)\]\[[^[\]\n]*\]/g, '$1')
       // Autolinks are URLs, removed below with the rest.
-      .replace(/<((?:https?|ftp):\/\/[^>\s]+)>/gi, '$1')
+      .replace(/<((?:https?|ftp):\/\/[^<>\s]+)>/gi, '$1')
       // Block markers at the start of a line: quotes, headings, list items.
       .replace(/^[ \t]*(?:>[ \t]?)+/gm, '')
       .replace(/^[ \t]*#{1,6}(?:[ \t]+|$)/gm, '')
@@ -65,6 +65,28 @@ function markdownToText(source: string): string {
       // Escaped characters show as themselves.
       .replace(ESCAPE_SLOT, (_m, i: string) => escaped[Number(i)] ?? '')
   )
+}
+
+/**
+ * HTML comments and tag-shaped text removed, nothing else: a `<` that opens no
+ * tag (`a < b`, `<3`) is text, as the renderer shows it. Comments are found
+ * with indexOf, one pass; an unclosed one hides the rest, as in a browser.
+ */
+function stripTags(text: string): string {
+  let out = ''
+  let at = 0
+  for (;;) {
+    const open = text.indexOf('<!--', at)
+    if (open === -1) {
+      out += text.slice(at)
+      break
+    }
+    out += text.slice(at, open)
+    const close = text.indexOf('-->', open + 4)
+    if (close === -1) break
+    at = close + 3
+  }
+  return out.replace(/<\/?[A-Za-z][^<>]*>/g, '')
 }
 
 const joint = (arr: string[], limit = 200) => {
@@ -94,7 +116,7 @@ function postBodyText(body: string, length: number): string {
   const escaped = markdownToText(cleanReply(body))
     .replace(/&(?!#?[A-Za-z0-9]+;)/g, '&amp;')
     .replace(/"/g, '&quot;')
-  let text = stripHtmlTags(escaped)
+  let text = stripTags(escaped)
     .replace(/\r?\n|\r/g, ' ')
     .replace(/(?:https?|ftp):\/\/[\n\S]+/g, '')
     .trim()

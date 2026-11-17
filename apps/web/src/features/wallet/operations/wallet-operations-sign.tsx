@@ -40,6 +40,8 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
   const hasKeyChain = useGlobalStore((state) => state.hasKeyChain);
   const signingKey = useGlobalStore((state) => state.signingKey);
   const setSigningKey = useGlobalStore((state) => state.setSigningKey);
+  // What is typed stays in this field; the store only ever gets the derived key.
+  const [typedKey, setTypedKey] = useState<string | null>(null);
   const useKcMobile = shouldUseKeychainMobile(activeUser?.username);
   const isMetaMaskUser = activeUser && getLoginType(activeUser.username) === "metamask";
 
@@ -120,20 +122,23 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
   }, [isSuccess, onSignSuccess]);
 
   const signKey = useCallback(() => {
-    if (!signingKey || !activeUser) {
+    const typed = typedKey ?? signingKey;
+    if (!typed || !activeUser) {
       return;
     }
 
     let key: PrivateKey;
-    if (isWif(signingKey)) {
-      key = PrivateKey.fromString(signingKey);
+    if (isWif(typed)) {
+      key = PrivateKey.fromString(typed);
     } else {
-      key = PrivateKey.fromLogin(activeUser.username, signingKey);
+      key = PrivateKey.fromLogin(activeUser.username, typed);
     }
+    // The store keeps the derived key, never a typed master password.
+    setSigningKey(key.toString());
     signMethodRef.current = { method: "key", key };
     sign(data as any);
     setStep("signing");
-  }, [signingKey, activeUser, sign, data]);
+  }, [typedKey, signingKey, activeUser, sign, data, setSigningKey]);
 
   const username = activeUser?.username;
 
@@ -225,10 +230,10 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
                   }
                 >
                   <FormControl
-                    value={signingKey ?? ""}
+                    value={typedKey ?? signingKey ?? ""}
                     type="password"
                     placeholder="Key"
-                    onChange={(e) => setSigningKey(e.target.value)}
+                    onChange={(e) => setTypedKey(e.target.value)}
                   />
                 </InputGroup>
               </div>

@@ -39,6 +39,8 @@ describe('getPostBodyText', () => {
     'Ampersand & quote " and entity &amp; in text.',
     '<center>Centered <b>html</b> text</center>',
     'A URL https://e.com/page in prose is dropped.',
+    'Comparisons stay: a < b and c > d, I <3 this.',
+    'Hidden <!-- a comment --> text and <b>bold</b> tags.',
     'Word '.repeat(80)
   ])('matches the rendered summary for %j', (body) => {
     expect(getPostBodyText(body, 200)).toBe(getPostBodySummary(body, 200))
@@ -60,7 +62,10 @@ describe('getPostBodyText', () => {
     ['link openers', (k: number) => '[a]('.repeat(k)],
     ['unclosed brackets', (k: number) => '['.repeat(k)],
     ['fence-like runs', (k: number) => '`'.repeat(k)],
-    ['table separator runs', (k: number) => '|-'.repeat(k)]
+    ['table separator runs', (k: number) => '|-'.repeat(k)],
+    ['image openers', (k: number) => '!['.repeat(k)],
+    ['image openers with text', (k: number) => '![a'.repeat(k)],
+    ['autolink openers', (k: number) => '<http://x'.repeat(k)]
   ])('stays linear on %s', (_label, make) => {
     // Growth, not wall-clock time: four times the input, about four times the cost.
     const time = (k: number) => {
@@ -73,8 +78,9 @@ describe('getPostBodyText', () => {
       }
       return Math.max(best, 1)
     }
-    time(2000)
-    expect(time(80_000) / time(20_000)).toBeLessThan(10)
+    // Large enough that each render takes milliseconds, not timer noise.
+    time(20_000)
+    expect(time(320_000) / time(80_000)).toBeLessThan(10)
   })
 })
 

@@ -2,6 +2,7 @@
  * How long a key entered to sign stays in memory unused: the same sliding
  * window as the session active key (utils/session-active-key.ts). It caps how
  * long an unattended tab keeps signing power, instead of the life of the page.
+ * Each signing sets the key again, which restarts the window.
  */
 export const SIGNING_KEY_IDLE_MS = 2 * 60 * 60 * 1000;
 
