@@ -128,6 +128,20 @@ describe('POST /activate config publication', () => {
     expect(await inactiveResponse.json()).toEqual({ error: 'activation_failed' });
   });
 
+  it('acknowledges a new payment for a suspended tenant without publishing it', async () => {
+    // The payment is committed and the term extended; the suspension stays,
+    // so there is nothing to publish, and the caller must not retry.
+    mocks.getByUsername.mockResolvedValueOnce({
+      username: 'alice',
+      subscriptionStatus: 'suspended',
+    });
+
+    const response = await activate();
+
+    expect(response.status).toBe(200);
+    expect(mocks.generateConfigFile).not.toHaveBeenCalled();
+  });
+
   it('acknowledges an expired duplicate without extending or republishing it', async () => {
     mocks.transaction.mockResolvedValueOnce({
       status: 200,

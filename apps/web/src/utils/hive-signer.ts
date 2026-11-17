@@ -9,29 +9,44 @@ export { decodeToken };
 
 const HS_LOGIN_STATE_KEY = "hs_login_state";
 
-/** A one-time value for this tab's login, which the /auth callback must bring back. */
+const HS_LOGIN_STATE_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * A one-time value for a login this browser started, which the /auth callback
+ * must bring back. Kept in localStorage, not per tab, so a login that HiveSigner
+ * finishes in another tab or window of this site still completes.
+ */
 function issueHsLoginState(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const state = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   try {
-    sessionStorage.setItem(HS_LOGIN_STATE_KEY, state);
+    localStorage.setItem(HS_LOGIN_STATE_KEY, JSON.stringify({ state, at: Date.now() }));
   } catch {
     // No storage: the callback then refuses, and the user signs in again.
   }
   return state;
 }
 
-/** True when `state` is the value this tab issued, consuming it either way. */
+/**
+ * True when `state` is the pending value this browser issued (and not older
+ * than 30 minutes). A match uses it up; anything else leaves a pending login
+ * as it is.
+ */
 export function consumeHsLoginState(state: string | null | undefined): boolean {
-  let expected: string | null = null;
+  if (!state) {
+    return false;
+  }
   try {
-    expected = sessionStorage.getItem(HS_LOGIN_STATE_KEY);
-    sessionStorage.removeItem(HS_LOGIN_STATE_KEY);
+    const pending = JSON.parse(localStorage.getItem(HS_LOGIN_STATE_KEY) ?? "null");
+    if (!pending || pending.state !== state) {
+      return false;
+    }
+    localStorage.removeItem(HS_LOGIN_STATE_KEY);
+    return typeof pending.at === "number" && Date.now() - pending.at <= HS_LOGIN_STATE_TTL_MS;
   } catch {
     return false;
   }
-  return !!expected && !!state && expected === state;
 }
 
 export function getAuthUrl(app: string, redir: string = `${window.location.origin}/auth`) {

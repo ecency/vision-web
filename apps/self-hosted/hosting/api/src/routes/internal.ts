@@ -259,9 +259,12 @@ internalRoutes.post('/activate', async (c) => {
       if (tenant.subscriptionStatus === 'active') {
         await ConfigService.generateConfigFile(tenant);
         publication = 'published';
-      } else if (!result.duplicate) {
+      } else if (!result.duplicate && tenant.subscriptionStatus !== 'suspended') {
         throw new Error(`Activated tenant ${username} is not active for config generation`);
       } else {
+        // A duplicate is history; a suspended tenant keeps its suspension
+        // while the payment is credited. Neither is published, and both are
+        // acknowledged: the payment is recorded.
         publication = 'skipped';
       }
     } catch (e) {

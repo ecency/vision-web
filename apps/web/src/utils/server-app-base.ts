@@ -50,7 +50,8 @@ export const getServerAppBase = async (): Promise<string> => {
       }
 
       const proto = getForwardedProto(headersList);
-      return `${proto}://${host}`;
+      // The host name only: a port in a request header is not the site's.
+      return `${proto}://${host.replace(/:\d+$/, "")}`;
     }
   } catch (e) {
     // headers() is only available within request/route handlers and server components

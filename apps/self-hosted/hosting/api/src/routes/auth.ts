@@ -18,7 +18,6 @@ import {
 } from '../utils/auth';
 import { challengeStore, handoffStore } from '../utils/redis';
 import { AuditService, parseClientIp } from '../services/audit-service';
-import { HIVESIGNER_APP_ACCOUNT } from '../services/hivesigner-registry';
 
 export const authRoutes = new Hono();
 
@@ -163,9 +162,9 @@ async function resolveHivesignerUsername(
   | { ok: true; username: string }
   | { ok: false; status: 401 | 503; error: string }
 > {
-  // HiveSigner's /api/me accepts any valid token, whatever app it was issued
-  // to and whatever kind. A hosting login takes only an access token issued
-  // to this app, for one account.
+  // HiveSigner's /api/me accepts any valid token, whatever kind. A hosting
+  // login takes only an access token, for the one account HiveSigner names.
+  // Any app: a blog may sign in through its own HiveSigner app.
   const author = ecencyAccessTokenAuthor(accessToken);
   if (!author) {
     return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
@@ -208,8 +207,8 @@ async function resolveHivesignerUsername(
 }
 
 /**
- * The account an access token issued to this app names, or null for anything
- * else: another app's token, a code, a refresh token, or not a token.
+ * The account an access token names, or null for anything else: a code, a
+ * refresh token, a login message, or not a token.
  */
 function ecencyAccessTokenAuthor(token: string): string | null {
   try {
@@ -221,7 +220,6 @@ function ecencyAccessTokenAuthor(token: string): string | null {
     const authors = message?.authors;
     if (
       message?.signed_message?.type !== 'posting' ||
-      message.signed_message.app !== HIVESIGNER_APP_ACCOUNT ||
       !Array.isArray(authors) ||
       authors.length !== 1 ||
       typeof authors[0] !== 'string'

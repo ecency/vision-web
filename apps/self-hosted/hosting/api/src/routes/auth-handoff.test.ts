@@ -95,13 +95,17 @@ describe('handoff mint and exchange', () => {
   });
 
   it.each([
-    ['another app', hsToken('alice', 'other.app')],
     ['a code', hsToken('alice', 'ecency.app', 'code')],
     ['not a token', 'z'.repeat(32)],
   ])('refuses %s token without asking HiveSigner', async (_label, accessToken) => {
     const response = await post('/handoff', { accessToken });
     expect(response.status).toBe(401);
     expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts an access token from a blog's own HiveSigner app", async () => {
+    const response = await post('/handoff', { accessToken: hsToken('alice', 'alice.blog') });
+    expect(response.status).toBe(200);
   });
 
   it('refuses a token whose author is not the account HiveSigner names', async () => {

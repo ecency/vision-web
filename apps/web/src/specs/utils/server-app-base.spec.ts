@@ -26,7 +26,8 @@ afterEach(() => {
 describe("getServerAppBase", () => {
   it.each([
     [{ host: "ecency.com" }, "https://ecency.com"],
-    [{ "x-forwarded-host": "alpha.ecency.com", "x-forwarded-proto": "https" }, "https://alpha.ecency.com"]
+    [{ "x-forwarded-host": "alpha.ecency.com", "x-forwarded-proto": "https" }, "https://alpha.ecency.com"],
+    [{ host: "ECENCY.com:9999" }, "https://ecency.com"]
   ])("uses the site's own host %j", async (headers, base) => {
     h.headers = headers;
     await expect(getServerAppBase()).resolves.toBe(base);

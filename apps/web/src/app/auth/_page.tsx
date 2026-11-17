@@ -26,6 +26,7 @@ export function AuthPage() {
   const addUser = useGlobalStore((state) => state.addUser);
   const setActiveUser = useGlobalStore((s) => s.setActiveUser);
   const toggleUiProp = useGlobalStore((s) => s.toggleUiProp);
+  const activeUser = useGlobalStore((s) => s.activeUser);
 
   const { mutateAsync: recordActivity } = useRecordUserActivity();
   const { mutateAsync: hsTokenRenew } = useHsLoginRefresh();
@@ -42,7 +43,10 @@ export function AuthPage() {
 
     if (!code || !isValidToken || !startedHere) {
       router.push("/");
-      toggleUiProp("login");
+      // Back or reload after signing in lands here too: no dialog then.
+      if (!activeUser) {
+        toggleUiProp("login");
+      }
       return;
     }
 
@@ -70,6 +74,7 @@ export function AuthPage() {
       completing = null;
     }
   }, [
+    activeUser,
     addUser,
     hsTokenRenew,
     recordActivity,
