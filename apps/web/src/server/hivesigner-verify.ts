@@ -6,6 +6,9 @@
  * `https://hivesigner.com/api/me`. This module centralizes that logic.
  */
 
+import { EcencyConfigManager } from "@/config";
+import { decodeToken } from "@/utils/hs-token";
+
 export type HsVerifyResult =
   | { ok: true; username: string }
   | { ok: false; reason: "invalid" | "unavailable" };
@@ -14,6 +17,21 @@ export async function verifyHsAccessToken(
   token: string,
   signal?: AbortSignal
 ): Promise<HsVerifyResult> {
+  // HiveSigner's /api/me accepts any valid token, whatever app it was issued
+  // to and whatever kind (a code, a refresh token). Identity for this app
+  // comes only from an access token issued to this app, for one account.
+  const message = decodeToken(token);
+  const author = message?.authors?.[0];
+  if (
+    message?.signed_message?.type !== "posting" ||
+    message.signed_message.app !== EcencyConfigManager.CONFIG.service.hsClientId ||
+    !Array.isArray(message.authors) ||
+    message.authors.length !== 1 ||
+    typeof author !== "string"
+  ) {
+    return { ok: false, reason: "invalid" };
+  }
+
   const timeoutSignal = AbortSignal.timeout(8_000);
   const mergedSignal = signal
     ? AbortSignal.any([signal, timeoutSignal])
@@ -45,7 +63,7 @@ export async function verifyHsAccessToken(
   try {
     const data = await res.json();
     const username = data?.account?.name ?? data?.user;
-    if (typeof username !== "string") {
+    if (typeof username !== "string" || username !== author) {
       return { ok: false, reason: "invalid" };
     }
     return { ok: true, username };

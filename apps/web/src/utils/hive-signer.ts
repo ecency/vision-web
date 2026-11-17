@@ -7,13 +7,40 @@ import { HiveSignerMessage } from "@/types";
 
 export { decodeToken };
 
+const HS_LOGIN_STATE_KEY = "hs_login_state";
+
+/** A one-time value for this tab's login, which the /auth callback must bring back. */
+function issueHsLoginState(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const state = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    sessionStorage.setItem(HS_LOGIN_STATE_KEY, state);
+  } catch {
+    // No storage: the callback then refuses, and the user signs in again.
+  }
+  return state;
+}
+
+/** True when `state` is the value this tab issued, consuming it either way. */
+export function consumeHsLoginState(state: string | null | undefined): boolean {
+  let expected: string | null = null;
+  try {
+    expected = sessionStorage.getItem(HS_LOGIN_STATE_KEY);
+    sessionStorage.removeItem(HS_LOGIN_STATE_KEY);
+  } catch {
+    return false;
+  }
+  return !!expected && !!state && expected === state;
+}
+
 export function getAuthUrl(app: string, redir: string = `${window.location.origin}/auth`) {
   const scope =
     "vote,comment,delete_comment,comment_options,custom_json,claim_reward_balance,offline";
 
   return `https://hivesigner.com/oauth2/authorize?client_id=${app}&redirect_uri=${encodeURIComponent(
     redir
-  )}&response_type=code&scope=${encodeURIComponent(scope)}`;
+  )}&response_type=code&scope=${encodeURIComponent(scope)}&state=${issueHsLoginState()}`;
 }
 
 export function getTokenUrl(code: string, secret: string) {
