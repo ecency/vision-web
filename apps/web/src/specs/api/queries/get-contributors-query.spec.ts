@@ -98,5 +98,14 @@ describe('getContributorsQueryOptions', () => {
     it('should have non-empty contributors list', () => {
       expect(contributors.length).toBeGreaterThan(0);
     });
+
+    it('should list each account once, with no padding in the name', () => {
+      const names = contributors.map((c) => c.name);
+
+      // A padded name links to a profile that does not exist, and a repeated one
+      // renders twice under the same React key.
+      expect(names.filter((n) => n !== n.trim())).toEqual([]);
+      expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
+    });
   });
 });
