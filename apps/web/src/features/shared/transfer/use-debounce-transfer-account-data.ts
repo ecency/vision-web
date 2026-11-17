@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { error } from "@/features/shared";
 import { formatError } from "@/api/format-error";
 import { useTransferSharedState } from "./transfer-shared-state";
@@ -99,14 +99,28 @@ export function useDebounceTransferAccountData() {
     [to, setTo, setToWarning, setToDebounce]
   );
 
-  // Only over the dialog's untouched default: an amount the user typed (and
-  // kept through Next and Back) is never replaced (#2123).
-  const untouched = !currentAmount || ["0", "0.000", "0.001"].includes(currentAmount);
+  // Filled once per recipient and delegation, and only over the dialog's
+  // untouched default: an amount the user typed (kept through Next and Back)
+  // is never replaced (#2123), and clearing the field or typing a 0 later
+  // does not bring the delegation back. The live amount is read through a
+  // ref, so editing it never re-runs this.
+  const currentAmountRef = useRef(currentAmount);
+  currentAmountRef.current = currentAmount;
+  const filledFor = useRef<string | null>(null);
   useEffect(() => {
-    if (mode === "delegate" && amount !== null && untouched) {
+    if (mode !== "delegate" || amount === null) {
+      return;
+    }
+    const key = `${to}|${amount}`;
+    if (filledFor.current === key) {
+      return;
+    }
+    filledFor.current = key;
+    const typed = currentAmountRef.current;
+    if (!typed || ["0", "0.000", "0.001"].includes(typed)) {
       setAmount(amount);
     }
-  }, [amount, mode, setAmount, untouched]);
+  }, [amount, mode, setAmount, to]);
 
   useEffect(() => {
     if (activeUser && activeUser.username && mode === "delegate") {

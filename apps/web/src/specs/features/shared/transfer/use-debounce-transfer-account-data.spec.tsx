@@ -74,6 +74,26 @@ describe("useDebounceTransferAccountData", () => {
     expect(setAmount).toHaveBeenCalledWith("5000");
   });
 
+  it("lets the user clear the field or type a 0 after the fill: no second fill", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const setAmount = vi.fn();
+    const state = { amount: "0.001" };
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ to: "ecency", mode: "delegate", amount: state.amount, setAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    const { rerender } = renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(setAmount).toHaveBeenCalledTimes(1);
+    for (const typed of ["5000", "", "0", "0.5"]) {
+      state.amount = typed;
+      rerender();
+    }
+    expect(setAmount).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the amount it was given when there is no delegation (#2123)", () => {
     h.delegations = [];
     const { setAmount } = run("transfer", "100.000");
