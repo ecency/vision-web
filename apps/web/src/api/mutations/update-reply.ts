@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import * as ss from "@/utils/session-storage";
 import { isBlankBody } from "@/utils";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { CommentOptions, Entry, MetaData } from "@/entities";
@@ -66,7 +65,6 @@ export function useUpdateReply(
       updateEntryInCache(entry.author, entry.permlink, { body: text, json_metadata: jsonMeta });
 
       // Fire blockchain broadcast in background using SDK mutation
-      const draftKey = `reply_draft_${entry.author}_${entry.permlink}`;
 
       // Convert web CommentOptions to SDK format
       const sdkOptions = options ? {
@@ -96,8 +94,6 @@ export function useUpdateReply(
           await onSuccess?.();
         } catch (e) {}
 
-        // Only remove draft after blockchain confirms
-        ss.remove(draftKey);
         success(i18next.t("g.updated"));
       }).catch((err) => {
         // Blockchain failed - revert to original entry (web + SDK cache keys)

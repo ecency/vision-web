@@ -316,7 +316,7 @@ export function ProfileWalletTokensListItem({ asset, username }: Props) {
               </div>
             </div>
             <div className="hidden sm:block">
-              {formattedApr && <Badge>{formattedApr}% APR</Badge>}
+              {formattedApr && <Badge>{formattedApr}% {i18next.t("profile-wallet.summary-apr")}</Badge>}
             </div>
             <div className="text-sm text-gray-500 dark:text-gray-400">
               <FormattedCurrency value={data?.price ?? 0} fixAt={3} skipConversion />

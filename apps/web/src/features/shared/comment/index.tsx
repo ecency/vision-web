@@ -9,7 +9,7 @@ import { handleEditorShortcut } from "@/features/shared/editor-toolbar/shortcuts
 import { TextareaAutocomplete } from "@/features/shared/textarea-autocomplete";
 import * as ls from "@/utils/local-storage";
 import { PREFIX } from "@/utils/local-storage";
-import { failedDeclineKey } from "./failed-decline";
+import { failedDeclineKey, failedTextKey } from "./failed-decline";
 import { createReplyPermlink, isBlankBody, makeJsonMetaDataReply } from "@/utils";
 import appPackage from "../../../../package.json";
 import { setProxyBase } from "@ecency/render-helper";
@@ -101,21 +101,37 @@ function CommentForm({
   const { selection, setSelection } = useContext(EntryPageContext);
 
   const [text, setText] = useLocalStorage(
-    PREFIX + `_reply_text_${entry.author}_${entry.permlink}`,
-    failedReply?.text ?? ""
+    // The edit form keeps its own text: on mount it loads the post body, which
+    // used to land on the reply key and wipe an unsent reply to that post.
+    PREFIX + `_${isEdit ? "edit" : "reply"}_text_${entry.author}_${entry.permlink}`,
+    // A held failure seeds the form only for the account that sent it.
+    (failedReply && failedReply.username === activeUser?.username ? failedReply.text : undefined) ?? ""
   );
   // Not stored while composing: it belongs to this form and this account. A reply
   // whose broadcast fails comes back through `failedReply` with the choice it was
   // sent with. A failed DECLINED reply is the one thing stored, until it is posted:
   // its exact text, under this account and parent, so closing the form or reloading
-  // brings the draft back declined. It applies only while the draft is that text.
+  // brings the draft back declined. It applies only while the draft is that text,
+  // and follows the writer's own edits of it (below). The edit form has no
+  // decline (comment_options cannot be set again), so it never touches one.
   const [declinePayout, setDeclinePayout] = useState(false);
-  const pendingDeclineKey = activeUser?.username
+  const pendingDeclineKey = !isEdit && activeUser?.username
     ? failedDeclineKey(activeUser.username, entry.author, entry.permlink)
     : null;
   const forgetPendingDecline = useCallback(() => {
     if (pendingDeclineKey) ls.remove(pendingDeclineKey);
   }, [pendingDeclineKey]);
+  // The stored decline, or null. A blank one is dropped, never applied: every new
+  // reply form starts blank, so it would pre-check an unrelated reply.
+  const readPendingDecline = (key: string): string | null => {
+    const value = ls.get(key);
+    if (value === null) return null;
+    if (typeof value !== "string" || isBlankBody(value)) {
+      ls.remove(key);
+      return null;
+    }
+    return value;
+  };
   const isMobile = useIsMobile();
   const boxRef = useRef<HTMLDivElement>(null);
   const [inputHeight, setInputHeight] = useState(0);
@@ -163,7 +179,9 @@ function CommentForm({
 
   useEffect(() => {
     if (selection) {
-      setText((prev) => `${selection}${prev ?? ""}`);
+      // From the current text, not a functional update: react-use's setter sees
+      // the state from when its key was set, so `prev` dropped what was typed since.
+      setText(`${selection}${text ?? ""}`);
       const el = (inputRef as any)?.current as HTMLTextAreaElement | null;
 
       // Enhanced validation to ensure element is fully initialized
@@ -256,25 +274,87 @@ function CommentForm({
   // shared draft meanwhile, and a declined payout cannot be undone on chain.
   const lastPendingDeclineKey = useRef(pendingDeclineKey);
   useEffect(() => {
+    // A reply that failed while this account was not the one signed in was kept
+    // for it alone (failed-decline.ts). It comes back into a blank form now, as
+    // the form opens or this account becomes active; a newer draft wins over it.
+    // A held failure of this account comes first: it carries its own choice, and
+    // its restore (above) has just run. A kept copy of the same reply goes; a kept
+    // different reply waits, and never lands under the held reply's decline.
+    let current = text;
+    const user = activeUser?.username;
+    if (pendingDeclineKey && user) {
+      const keptKey = failedTextKey(user, entry.author, entry.permlink);
+      const kept = ls.get(keptKey);
+      const heldOwn = !!failedReply && failedReply.username === user;
+      if (kept !== null && heldOwn) {
+        if (kept === failedReply!.text) ls.remove(keptKey);
+      } else if (kept !== null) {
+        if (typeof kept === "string" && !isBlankBody(kept) && (isBlankBody(text) || text === kept)) {
+          // Left in storage until the text has landed in the form (the effect
+          // below removes it), so a second run of this effect (StrictMode) sees
+          // the same restore and no state outlives it. Already there: nothing has
+          // to land, so it goes now.
+          if (text === kept) {
+            ls.remove(keptKey);
+          } else {
+            setText(kept);
+          }
+          current = kept;
+        } else {
+          ls.remove(keptKey);
+          if (ls.get(pendingDeclineKey) === kept) forgetPendingDecline();
+        }
+      }
+    }
     if (lastPendingDeclineKey.current !== pendingDeclineKey) {
       lastPendingDeclineKey.current = pendingDeclineKey;
       if (!restoredThisCommit.current) {
         const ownFailure =
           !!failedReply && failedReply.username === activeUser?.username && !!pendingDeclineKey;
-        const pending = ownFailure ? ls.get(pendingDeclineKey!) : null;
-        setDeclinePayout(ownFailure && failedReply!.declinePayout && pending !== null && pending === text);
-        if (pending !== null && pending !== text) forgetPendingDecline();
+        const pending = ownFailure ? readPendingDecline(pendingDeclineKey!) : null;
+        setDeclinePayout(ownFailure && failedReply!.declinePayout && pending !== null && pending === current);
+        if (pending !== null && pending !== current) forgetPendingDecline();
       }
     }
-    if (failedReply || isEdit || !pendingDeclineKey) return;
-    const pending = ls.get(pendingDeclineKey);
+    // Only this account's own held failure decides the box (its restore did); a
+    // held failure of another account is not in this form and changes nothing.
+    if ((failedReply && failedReply.username === activeUser?.username) || isEdit || !pendingDeclineKey) return;
+    const pending = readPendingDecline(pendingDeclineKey);
     if (pending === null) return;
-    if (pending === text) {
+    if (pending === current) {
       setDeclinePayout(true);
     } else {
       forgetPendingDecline();
     }
   }, [pendingDeclineKey]);
+  // A pending decline follows the writer's edits of the failed reply (#2103):
+  // whenever the draft changes from the text the decline was stored for, the
+  // decline moves to the new text. Only from that exact text, so a decline stored
+  // for some other text is never adopted (the checks above drop that one), and
+  // whatever changed the draft (typing, the toolbar, a quote) is covered alike.
+  const lastText = useRef(text);
+  useEffect(() => {
+    const previous = lastText.current;
+    lastText.current = text;
+    // A kept failure restored into the form is done once its text has landed.
+    // Reply forms only: the edit form has no decline key and never consumes one.
+    if (pendingDeclineKey && activeUser?.username && !isBlankBody(text)) {
+      const keptKey = failedTextKey(activeUser.username, entry.author, entry.permlink);
+      if (ls.get(keptKey) === text) ls.remove(keptKey);
+    }
+    if (previous === text || !pendingDeclineKey) return;
+    // A failure restored in this same commit wrote its own decline: the text
+    // change here is the submit's clear landing with it, not the writer's edit.
+    if (restoredThisCommit.current) return;
+    if (ls.get(pendingDeclineKey) !== previous) return;
+    // Cleared to blank: the failed reply is gone, and so is its decline.
+    if (isBlankBody(text)) {
+      forgetPendingDecline();
+    } else {
+      ls.set(pendingDeclineKey, text);
+    }
+  }, [text]);
+
   // Runs last in every commit: the restore flag above only spans the commit it ran in.
   useEffect(() => {
     restoredThisCommit.current = false;
@@ -305,10 +385,7 @@ function CommentForm({
       }
       setText(text);
       setInputHeight(scHeight);
-      if (pendingDeclineKey && ls.get(pendingDeclineKey) !== null && ls.get(pendingDeclineKey) !== text) {
-        forgetPendingDecline();
-      }
-    }, [setText, pendingDeclineKey, forgetPendingDecline]);
+    }, [setText]);
 
     // Nothing to broadcast without a body: the chain op requires one, and the
     // SDK builder throws `[SDK][buildCommentOp] Missing required parameters`

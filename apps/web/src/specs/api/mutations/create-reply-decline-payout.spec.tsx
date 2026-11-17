@@ -27,6 +27,12 @@ vi.mock("@/core/caches", () => ({
 }));
 
 vi.mock("@/features/shared", () => ({ error: vi.fn(), success: vi.fn() }));
+
+// The account signed in when the failure lands (the sender, unless switched).
+const signedIn = vi.hoisted(() => ({ username: "bob" as string | undefined }));
+vi.mock("@/core/global-store", () => ({
+  useGlobalStore: { getState: () => ({ activeUser: signedIn.username ? { username: signedIn.username } : null }) }
+}));
 vi.mock("@/utils/refresh-quests", () => ({ scheduleQuestsRefresh: vi.fn() }));
 
 vi.mock("@ecency/sdk", async () => ({
@@ -128,8 +134,111 @@ describe("useCreateReply: decline payout", () => {
     await act(async () => {
       failA(err);
     });
+    // Handed back on the next task, after the composer's submit has finished.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
     expect(onBlockchainError).toHaveBeenCalledTimes(1);
     expect(onBlockchainError).toHaveBeenCalledWith("reply A", err, { declinePayout: true, username: "bob" });
+  });
+});
+
+// #2104: the composer clears its draft on submit, so a broadcast that fails after
+// the reader left the post (the box unmounted, no callback to restore into) used
+// to lose the text. The failure itself puts the text back into the post's reply
+// draft, with the payout choice it was sent with, for whichever box opens next.
+describe("useCreateReply: a failed reply is kept for the post", () => {
+  const draft = () => window.localStorage.getItem("ecency_reply_text_alice_post-1");
+  const decline = () => window.localStorage.getItem("ecency_reply_failed_decline_bob_alice_post-1");
+
+  // The next macrotask: the failure is handed back after the composer's submit
+  // has finished (and cleared its draft).
+  const nextTick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  async function failWith(declinePayout: boolean, text = "a reply") {
+    sdkComment.mockRejectedValueOnce(new Error("rc"));
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, text, declinePayout });
+    });
+    await nextTick();
+  }
+
+  // CodeRabbit (#2106): a broadcast that rejects at once used to put the text back
+  // before the composer's submit continuation cleared its draft, so the clear
+  // erased it. The composer clears right after the mutation resolves.
+  it("keeps the text when the composer clears its draft right after submitting", async () => {
+    sdkComment.mockRejectedValueOnce(new Error("rc"));
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, text: "a reply", declinePayout: false });
+      // What the composer's submit does once the mutation resolves.
+      window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify(""));
+    });
+    await nextTick();
+    expect(draft()).toBe(JSON.stringify("a reply"));
+  });
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    sdkComment.mockReset();
+    signedIn.username = "bob";
+  });
+
+  // The reply draft is per post, shared by every account on this browser: the
+  // sender's text must not land in another account's composer.
+  it("does not put the text into the shared draft once another account is signed in", async () => {
+    signedIn.username = "carol";
+    await failWith(true);
+    expect(draft()).toBeNull();
+    // Kept for the sender alone, with the decline it was sent with.
+    expect(window.localStorage.getItem("ecency_reply_failed_text_bob_alice_post-1")).toBe(JSON.stringify("a reply"));
+    expect(decline()).toBe(JSON.stringify("a reply"));
+  });
+
+  // Two declined replies to the same post fail out of order: the newer draft is
+  // kept, and so must its decline be; the older failure must not replace it.
+  it("leaves the kept draft's decline alone when another failure is dropped", async () => {
+    window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("reply B"));
+    window.localStorage.setItem("ecency_reply_failed_decline_bob_alice_post-1", JSON.stringify("reply B"));
+    await failWith(true, "reply A");
+    expect(draft()).toBe(JSON.stringify("reply B"));
+    expect(decline()).toBe(JSON.stringify("reply B"));
+  });
+
+  it("puts the text back into the post's reply draft with no box mounted", async () => {
+    await failWith(false);
+    expect(draft()).toBe(JSON.stringify("a reply"));
+    expect(decline()).toBeNull();
+  });
+
+  it("keeps a declined reply declined for its sender", async () => {
+    await failWith(true);
+    expect(draft()).toBe(JSON.stringify("a reply"));
+    expect(decline()).toBe(JSON.stringify("a reply"));
+  });
+
+  it("a later undeclined failure of the same text drops the decline", async () => {
+    await failWith(true);
+    await failWith(false);
+    expect(decline()).toBeNull();
+  });
+
+  // A newer draft the writer started meanwhile (another box, another account) is
+  // theirs: the failed text goes back only into a blank draft or its own text.
+  it("does not overwrite a newer draft for the post", async () => {
+    window.localStorage.setItem("ecency_reply_text_alice_post-1", JSON.stringify("a newer draft"));
+    await failWith(true);
+    expect(draft()).toBe(JSON.stringify("a newer draft"));
+  });
+
+  it("writes nothing on success", async () => {
+    sdkComment.mockResolvedValue({ id: "tx" });
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ ...base, declinePayout: true });
+    });
+    await act(async () => {});
+    expect(draft()).toBeNull();
+    expect(decline()).toBeNull();
   });
 });

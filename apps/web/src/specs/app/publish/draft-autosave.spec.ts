@@ -18,6 +18,11 @@ vi.mock("@/app/publish/_hooks/use-draft-tab-coordinator", () => ({
   useDraftTabCoordinator: () => ({ isActiveTab: isActiveTab.current })
 }));
 
+const activeUsername = vi.hoisted(() => ({ current: "alice" as string | undefined }));
+vi.mock("@/core/hooks/use-active-username", () => ({
+  useActiveUsername: () => activeUsername.current
+}));
+
 const { useDraftAutosave } = await import("@/app/publish/_hooks/use-draft-autosave");
 
 async function advance(ms: number) {
@@ -40,6 +45,7 @@ describe("useDraftAutosave", () => {
     saveToDraft.mockReset();
     saveToDraft.mockResolvedValue(undefined);
     isActiveTab.current = true;
+    activeUsername.current = "alice";
   });
 
   afterEach(() => {
@@ -337,6 +343,169 @@ describe("useDraftAutosave", () => {
     expect(targets).toEqual([undefined, undefined]);
   });
 
+  // #2102: the draft a save created belongs to the account that was signed in.
+  // Switching accounts with the composer open is a fresh start, like a clear: the
+  // next account creates its own draft instead of writing into the first one's.
+  it("starts a new draft for the next account after an account switch", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : undefined;
+    });
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(result.current.draftId).toBe("d1");
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "b", content: "bob's post" } });
+    expect(result.current.draftId).toBeUndefined();
+    expect(result.current.lastSaved).toBeNull();
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // The composer still holds the text after a switch: it has to reach the new
+  // account's own draft even when nothing is typed afterwards.
+  it("saves the unchanged composer as the new account's draft after a switch", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : "d2";
+    });
+    const snapshot = { title: "a", content: "the same text" };
+    const { result, rerender } = renderAutosave(snapshot);
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+    expect(result.current.draftId).toBe("d2");
+  });
+
+  // The draft editor route supplies its own draft id: an account switch there must
+  // not save untouched content into that draft on its own (tracked in #2105).
+  it("does not re-save a route draft after an account switch with nothing typed", async () => {
+    const calls: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      calls.push(`${activeUsername.current}:${options?.draftId}`);
+      return undefined;
+    });
+    const snapshot = { title: "a", content: "route draft" };
+    const { rerender } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ draftId: "route-1", enabled: true, snapshot }),
+      { initialProps: { snapshot } }
+    );
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(calls).toEqual(["alice:route-1"]);
+  });
+
+  // CodeRabbit (#2106): the failure breaker belongs to the binding that tripped
+  // it. The next account's composer starts with a clean slate.
+  it("does not carry the previous account's failure cooldown into the next account", async () => {
+    saveToDraft.mockRejectedValue(new Error("drafts-add 406"));
+    const { rerender } = renderAutosave({ title: "a", content: "body 0" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    for (let i = 1; i < AUTOSAVE_FAIL_THRESHOLD; i++) {
+      rerender({ snapshot: { title: "a", content: `body ${i}` } });
+      await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    }
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD);
+
+    saveToDraft.mockResolvedValue("d-bob");
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: `body ${AUTOSAVE_FAIL_THRESHOLD - 1}` } });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    expect(saveToDraft).toHaveBeenCalledTimes(AUTOSAVE_FAIL_THRESHOLD + 1);
+  });
+
+  // Fable (#2106): a retry armed under the previous account must not fire into
+  // the route's draft under the next one.
+  it("drops a pending retry when the account changes on a route draft", async () => {
+    const calls: string[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      calls.push(`${activeUsername.current}:${options?.draftId}`);
+      return undefined;
+    });
+    const { rerender } = renderHook(
+      ({ snapshot }: { snapshot: Record<string, unknown> }) =>
+        useDraftAutosave({ draftId: "route-1", enabled: true, snapshot }),
+      { initialProps: { snapshot: { title: "a", content: "one" } } }
+    );
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+    // An edit inside the minimum interval arms a retry. The composer memoizes its
+    // snapshot, so unchanged content keeps the same object across the switch.
+    const edited = { title: "a", content: "two" };
+    rerender({ snapshot: edited });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: edited });
+    await advance(AUTOSAVE_MIN_INTERVAL_MS * 2);
+
+    expect(calls).toEqual(["alice:route-1"]);
+  });
+
+  it("switching back does not resume writing into the first account's draft", async () => {
+    const targets: (string | undefined)[] = [];
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return targets.length === 1 ? "d1" : undefined;
+    });
+    const { rerender } = renderAutosave({ title: "a", content: "one" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "one" } });
+    activeUsername.current = "alice";
+    rerender({ snapshot: { title: "a", content: "two" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
+  // The first account's create can still be on the wire when the switch lands.
+  // Its result must not bind the next account's composer to that draft, nor
+  // report a save (the resume pointer is written from lastSaved).
+  it("drops a create from the previous account that lands after the switch", async () => {
+    const targets: (string | undefined)[] = [];
+    let resolveCreate: ((id: string) => void) | undefined;
+    saveToDraft.mockImplementationOnce((options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return new Promise<string>((resolve) => {
+        resolveCreate = resolve;
+      });
+    });
+    saveToDraft.mockImplementation(async (options: { draftId?: string }) => {
+      targets.push(options?.draftId);
+      return undefined;
+    });
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+    await advance(AUTOSAVE_DEBOUNCE_MS);
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
+    await act(async () => {
+      resolveCreate?.("d1");
+    });
+
+    expect(result.current.draftId).toBeUndefined();
+    expect(result.current.lastSaved).toBeNull();
+
+    rerender({ snapshot: { title: "b", content: "bob's post" } });
+    await advance(AUTOSAVE_DEBOUNCE_MS + AUTOSAVE_MIN_INTERVAL_MS);
+    expect(targets).toEqual([undefined, undefined]);
+  });
+
   // A caller can hold a flush across an await - useOpenAutosavedDraft holds one
   // while it waits for image uploads. A clear during that wait must invalidate
   // the retained flush, or it reads the *new* generation, passes the stale-work
@@ -353,6 +522,21 @@ describe("useDraftAutosave", () => {
     const retainedFlush = result.current.flush;
 
     rerender({ snapshot: { title: "post B", content: "body B" }, resetKey: 1 });
+
+    await expect(retainedFlush()).rejects.toThrow(/belonged to is gone/i);
+    expect(saveToDraft).not.toHaveBeenCalled();
+  });
+
+  // Alice -> Bob -> Alice leaves the binding looking like Alice's again, but the
+  // composer Alice's flush was made for is gone: it must still reject.
+  it("rejects a flush retained across switching away and back", async () => {
+    const { result, rerender } = renderAutosave({ title: "a", content: "alice's post" });
+    const retainedFlush = result.current.flush;
+
+    activeUsername.current = "bob";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
+    activeUsername.current = "alice";
+    rerender({ snapshot: { title: "a", content: "alice's post" } });
 
     await expect(retainedFlush()).rejects.toThrow(/belonged to is gone/i);
     expect(saveToDraft).not.toHaveBeenCalled();

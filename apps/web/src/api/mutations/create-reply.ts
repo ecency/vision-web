@@ -6,7 +6,8 @@ import { isBlankBody, makeCommentOptions, tempEntry } from "@/utils";
 import { SortOrder } from "@/enums";
 import { error, success } from "@/features/shared";
 import { ErrorTypes } from "@/enums";
-import * as ss from "@/utils/session-storage";
+import { keepFailedReply } from "@/features/shared/comment/failed-decline";
+import { useGlobalStore } from "@/core/global-store";
 import i18next from "i18next";
 import { getAccountRcQueryOptions, addOptimisticDiscussionEntry, removeOptimisticDiscussionEntry } from "@ecency/sdk";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -113,7 +114,6 @@ export function useCreateReply(
       applyPayoutTerms(optimisticEntry, commentOptions);
 
       // Fire blockchain broadcast in background without blocking
-      const draftKey = `reply_draft_${entry.author}_${entry.permlink}`;
 
       // Build SDK comment payload
       const commentPayload: CommentPayload = {
@@ -164,9 +164,6 @@ export function useCreateReply(
 
           updateEntryQueryData([optimisticEntry]);
 
-          // Only remove draft after blockchain confirms
-          ss.remove(draftKey);
-
           // Note: SDK handles cache invalidations (RC, discussions, entry)
           // IMPORTANT: We rely on SDK's invalidation which marks queries as stale
           // The discussions query will refetch in background but preserve optimistic entries
@@ -188,16 +185,25 @@ export function useCreateReply(
           activeUser?.username ?? "", permlink, root.author, root.permlink, queryClient
         );
 
-        // Notify parent component to restore text to input
-        if (onBlockchainError) {
-          onBlockchainError(text, err, {
+        // Handed back on the next task, never before the composer's submit has
+        // finished: a broadcast that rejects at once would otherwise put the text
+        // back before the submit clears its draft, and the clear would erase it.
+        setTimeout(() => {
+          // The form cleared its draft on submit: put the text back for this
+          // post, with its payout choice, whether or not a box is still there to
+          // restore it. The reply draft is shared by every account on this
+          // browser, so it goes back only while the sender is still signed in.
+          keepFailedReply(activeUser.username, entry.author, entry.permlink, text, !!declinePayout, {
+            senderSignedIn: useGlobalStore.getState().activeUser?.username === activeUser.username
+          });
+
+          // Notify parent component to restore text to input
+          onBlockchainError?.(text, err, {
             declinePayout: !!declinePayout,
             username: activeUser.username
           });
-        }
+        }, 0);
 
-        // Keep draft in storage so user can retry by clicking Reply again
-        // Draft is still available from before, just don't delete it
         const [errorMsg, errorType] = formatError(err);
 
         if (errorType === ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS) {

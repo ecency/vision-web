@@ -6,6 +6,7 @@ import { useDebounce } from "react-use";
 import { useSaveDraftApi } from "../_api";
 import type { SaveDraftOptions } from "../_api/use-save-draft";
 import { useDraftTabCoordinator } from "./use-draft-tab-coordinator";
+import { useActiveUsername } from "@/core/hooks/use-active-username";
 import {
   AUTOSAVE_DEBOUNCE_MS,
   AUTOSAVE_MIN_INTERVAL_MS,
@@ -52,6 +53,12 @@ interface Options {
  * copies of every bug in it.
  */
 export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Options) {
+  // A draft belongs to the account that created it. Switching accounts with the
+  // composer open drops the binding exactly as a clear does (#2102): the next
+  // account creates its own draft, and a save still on the wire for the previous
+  // account can neither bind this composer nor report itself as saved.
+  const username = useActiveUsername();
+  const bindingKey = `${resetKey ?? ""}|${username ?? ""}`;
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [createdDraftId, setCreatedDraftId] = useState<string>();
 
@@ -71,17 +78,24 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
   // returns so a queued write behind it targets the new draft rather than
   // creating another. The state copy exists only to drive re-renders.
   const createdDraftIdRef = useRef<string | undefined>(undefined);
-  const resetKeyRef = useRef(resetKey);
+  const bindingKeyRef = useRef(bindingKey);
   // Bumped by every reset. Each write captures it and abandons itself if it no
   // longer matches, so work belonging to a post that has been cleared away can
   // neither be sent nor write its result back.
   const generationRef = useRef(0);
-  // Assigned during render, so it always holds the newest resetKey - unlike
-  // resetKeyRef, which the effect below updates a commit later. Callbacks
-  // capture the resetKey of the render that produced them and compare against
+  // Assigned during render, so it always holds the newest binding - unlike
+  // bindingKeyRef, which the effect below updates a commit later. Callbacks
+  // capture the binding of the render that produced them and compare against
   // this, which is what makes a *retained* callback detectable.
-  const latestResetKeyRef = useRef(resetKey);
-  latestResetKeyRef.current = resetKey;
+  // Counted, not compared by value: Alice -> Bob -> Alice brings the same key back,
+  // and a flush Alice's first composer handed out must stay stale.
+  const bindingEpochRef = useRef(0);
+  const seenBindingKeyRef = useRef(bindingKey);
+  if (seenBindingKeyRef.current !== bindingKey) {
+    seenBindingKeyRef.current = bindingKey;
+    bindingEpochRef.current += 1;
+  }
+  const bindingEpoch = bindingEpochRef.current;
 
   /**
    * The only path that writes this draft. Every caller queues behind whatever
@@ -258,7 +272,7 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
       // generation and sail through the stale-work guard, after which the
       // caller navigates to the previous draft over the new composer state.
       // Rejecting keeps the caller's existing catch effective.
-      if (latestResetKeyRef.current !== resetKey) {
+      if (bindingEpochRef.current !== bindingEpoch) {
         throw new Error(STALE_DRAFT_ACTION);
       }
 
@@ -294,31 +308,48 @@ export function useDraftAutosave({ draftId, enabled, snapshot, resetKey }: Optio
         created: !!id
       };
     },
-    [draftId, enabled, resetKey, save, snapshot]
+    [draftId, enabled, bindingEpoch, save, snapshot]
   );
 
   // Drop everything tied to the post that was just cleared away. Without this
   // the engine keeps writing the *next* post into the previous post's draft.
   useEffect(() => {
-    if (resetKeyRef.current === resetKey) {
+    if (bindingKeyRef.current === bindingKey) {
       return;
     }
 
-    resetKeyRef.current = resetKey;
+    bindingKeyRef.current = bindingKey;
     generationRef.current += 1;
     createdDraftIdRef.current = undefined;
     prevSnapshotRef.current = null;
     lastAttemptAtRef.current = 0;
+    // The failure breaker belongs to the binding that tripped it, and so does a
+    // retry armed for it: it would write the previous binding's edit.
+    consecutiveFailsRef.current = 0;
+    cooldownUntilRef.current = 0;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     setCreatedDraftId(undefined);
     setLastSaved(null);
-  }, [resetKey]);
+  }, [bindingKey]);
 
   // Keep the retry timer pointed at the newest closure, so a deferred save
   // writes the latest content rather than whatever was current when it was
   // scheduled.
   attemptRef.current = attempt;
 
-  useDebounce(() => attemptRef.current(), AUTOSAVE_DEBOUNCE_MS, [snapshot, enabled, isActiveTab]);
+  // bindingKey too: after a clear or an account switch the composer may hold the
+  // same content, and it still has to reach the new binding's own draft. Not on the
+  // draft editor route, whose id comes from the route: untouched content there must
+  // not be written into that draft under another account on its own (#2105).
+  useDebounce(() => attemptRef.current(), AUTOSAVE_DEBOUNCE_MS, [
+    snapshot,
+    enabled,
+    isActiveTab,
+    draftId ? undefined : bindingKey
+  ]);
 
   useEffect(
     () => () => {

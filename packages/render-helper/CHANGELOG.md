@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.47
+
+### Patch Changes
+
+- Reply drafts and decline payout follow-ups, autosave account switch, notification ids, fallback href schemes (#2106)
+
 ## 2.5.46
 
 ### Patch Changes
