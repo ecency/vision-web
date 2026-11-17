@@ -582,5 +582,25 @@
   {
     "name": "roswelborges",
     "contributes": ["Guest Curator"]
+  },
+  {
+    "name": "zoe01",
+    "contributes": ["Curator"]
+  },
+  {
+    "name": "intishar",
+    "contributes": ["Curator"]
+  },
+  {
+    "name": "vvodjiu",
+    "contributes": ["Curator"]
+  },
+  {
+    "name": "rayhanhiveman",
+    "contributes": ["Curator"]
+  },
+  {
+    "name": "xuwi",
+    "contributes": ["Curator"]
   }
 ]
