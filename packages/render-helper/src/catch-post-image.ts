@@ -1,6 +1,6 @@
 import { proxifyImageSrc } from './proxify-image-src'
 import { markdown2Html } from './markdown-2-html'
-import { createDoc, hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, stripHtmlTags } from './helper'
+import { createDoc, hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -546,13 +546,83 @@ function findFirstImageUrl(body: string, includeBareUrls = false): string | null
   return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null
 }
 
+/**
+ * Whether the render turns `[label](href)` into an image: a.method compares
+ * the href as the DOM reads it with the label's serialized HTML, `&amp;` read
+ * as `&` on both sides. Both were written as markdown, so both hold the text
+ * with complete references decoded; the label is then serialized again, which
+ * escapes `&`, `<` and `>` (#2098: `&amp;amp;` and `&lt;` labels stay links).
+ */
+function promotesToImage(label: string, href: string): boolean {
+  const deAmp = (value: string) => value.replace(/&amp;/g, '&')
+  const serialized = decodeCompleteReferences(label.trim())
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return deAmp(decodeCompleteReferences(href.trim())) === deAmp(serialized)
+}
+
+// A control character the destination decodes to (`&Tab;`): the render reads
+// it its own way, and a guessed preload is a wasted download.
+const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/
+
+/**
+ * A URL in markdown text without the trailing sentence punctuation the
+ * autolinker leaves out, after a query or fragment too (verified against the
+ * render). A `;` that closes a reference (`&copy;`) belongs to the URL: the
+ * parser reads the reference before the autolinker sees the text, and a URL
+ * in a reference definition or a raw anchor's text is not autolinked at all.
+ */
+function withoutTrailingPunctuation(url: string): string {
+  let end = url.length
+  while (end > 0) {
+    const c = url[end - 1]
+    if (c === ';' && /&#?[a-z\d]+$/i.test(url.slice(Math.max(0, end - 34), end - 1))) break
+    if (!'.,;:!?'.includes(c)) break
+    end--
+  }
+  return url.slice(0, end)
+}
+
+// The render's own linkify token (linkify.method), for text in an HTML block,
+// which the markdown parser leaves raw and the DOM then decodes.
+const HTML_TEXT_URL_RE = /^https?:\/\/(?:[^\s<>"'&]|&(?!lt;|gt;))+/i
+
+/**
+ * The image URL a bare URL at `pos` inside an HTML block renders as: the DOM
+ * decodes the text with HTML text rules (`&times=2` is `×=2`, `\&copy;` is
+ * `\©`), then linkify reads its token from the decoded text (parentheses
+ * included). Null when that token is not an image.
+ */
+function htmlTextImageUrl(body: string, pos: number): string | null {
+  let end = pos
+  while (end < body.length && !/[\s<]/.test(body[end])) end++
+  const token = HTML_TEXT_URL_RE.exec(decodeEntities(body.slice(pos, end)))?.[0]
+  if (!token) return null
+  const urlEnd = imageUrlEnd(token)
+  return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd))
+}
+
 // The first body image as the render will proxy it: decoded by where it came
-// from, an HTML attribute or a markdown destination (#2092).
+// from, an HTML attribute, a markdown destination, HTML block text or markdown
+// text (#2092, #2098). Null rather than a guess where the render differs.
 function firstBodyImageRawUrl(body: string): string | null {
   const candidate = findFirstImageCandidate(prepareBody(body), true).candidate
   if (!candidate) return null
   if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url))
-  return decodeRawBodyImageSrc(candidate.url, !!candidate.destination, !hasAmpSentinel(body))
+  const ampEscapes = !hasAmpSentinel(body)
+  if (candidate.destination) {
+    const url = decodeRawBodyImageSrc(candidate.url, true, ampEscapes)
+    return CONTROL_CHAR_RE.test(url) ? null : url
+  }
+  // A bare URL: raw text of an HTML block, or markdown text. The line model
+  // reads the lowercased body; a body whose lowercase changes length (a few
+  // non-ASCII letters) has no reliable offsets, so it gets no preload.
+  const lower = body.toLowerCase()
+  if (lower.length !== body.length) return null
+  if (markLines(lower).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
+  const url = withoutTrailingPunctuation(candidate.url)
+  return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
 }
 
 function stripCodeRegions(body: string): string {
@@ -758,12 +828,11 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
     // `[url](url)` image-link form: a markdown link the renderer promotes to an
     // image (a.method) — href is an image URL and the label text equals it.
     // Skip `![...]()` images (preceding `!`). Take the earliest such link.
-    const deAmp = (s: string) => s.trim().replace(/&amp;/g, '&')
     for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
       const href = m[2]
-      if (href && isImageHref(href) && deAmp(m[1]) === deAmp(href)) {
+      if (href && isImageHref(href) && promotesToImage(m[1], href)) {
         candidates.push({ url: href, pos: idx, destination: true })
         break
       }
