@@ -220,9 +220,12 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         );
         // A bare `href`, as xss writes a refused one: the link keeps its look, goes nowhere.
         if (scheme && !isHrefScheme(scheme[1])) return isWhiteAttr ? 'href' : '';
-        // http(s) still goes through xss below: it wants `//`, and a slash-less
-        // `http:host` would otherwise ship live with none of the link rel policy.
-        hrefSchemeAllowed = !!scheme && !/^https?$/i.test(scheme[1]);
+        // Only tel:, mailto: and web+ handlers skip xss's rule below (#2107). http(s)
+        // still goes through it: it wants `//`, and a slash-less `http:host` would
+        // ship live with none of the link rel policy. So do the app deep-link
+        // schemes, which stay dead in a body as before: `hive://sign/...` is a
+        // one-click wallet signing request.
+        hrefSchemeAllowed = !!scheme && /^(?:tel|mailto|web\+[a-z0-9.+-]+)$/i.test(scheme[1]);
       }
       // Positive-whitelist: only http(s) is accepted. Any other scheme
       // (javascript:, data:, vbscript:, file:, etc.) is rejected by the
@@ -351,11 +354,10 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // with control characters turned into spaces (`.\n.` validated as `..`
       // and loaded as `.%20.`). Always emit exactly the string that was
       // validated.
-      // An href with an allowed non-http scheme is kept as checked above. Any
-      // other passes xss's own link rule too (it refuses `java script:`,
-      // `%6a...:` and other non-links). xss's rule is case-sensitive and knows
-      // neither web+ nor the hive schemes, so it is not the judge of a scheme
-      // already checked (#2107: `TEL:` and `web+foo:` came out as a bare href).
+      // A tel:, mailto: or web+ href is kept as checked above: xss's rule is
+      // case-sensitive and does not know web+ (#2107: `TEL:` and `web+foo:` came
+      // out as a bare href). Any other passes xss's own link rule too (it refuses
+      // `java script:`, `%6a...:` and other non-links).
       if (isWhiteAttr && name === 'href') {
         return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, undefined as never)
           ? `href="${escapeAttr(decoded)}"`

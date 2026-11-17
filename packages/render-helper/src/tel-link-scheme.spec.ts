@@ -57,3 +57,20 @@ describe('sanitize-only paths keep accepted schemes and still refuse malformed h
     }
   })
 })
+
+// Fable (#2107 second pass): only tel:, mailto: and web+ skip xss's own rule.
+// The app deep-link schemes stay dead in rendered bodies, as on develop: a
+// `hive://sign/...` link is a one-click wallet signing request.
+describe('app deep-link schemes stay dead in bodies (#2107)', () => {
+  it.each(['hive://sign/op/abc', 'steem://sign/op/abc', 'esteem://x', 'ecency://transfer?to=x', 'HIVE://sign/op/abc'])(
+    '%s',
+    (href) => {
+      const live = new RegExp(`href="${href.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`, 'i')
+      expect(markdown2Html(`[x](${href})`, false, false)).not.toMatch(live)
+      expect(markdown2Html(`<a href="${href}">x</a>`, false, false)).not.toMatch(live)
+      for (const untransformed of [true, false]) {
+        expect(sanitizeHtml(`<a href="${href}">x</a>`, { untransformed })).not.toMatch(live)
+      }
+    }
+  )
+})
