@@ -1,4 +1,29 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { defineConfig } from "tsup";
+
+/**
+ * Every buildable source file, in a STABLE order, for the browser build's
+ * per-file entries. Same shape and reason as `sourceEntries` in packages/sdk:
+ * glob order is not stable, and entry order feeds esbuild's chunk names, so an
+ * unsorted list turns every release into an arbitrary dist diff. Specs, type
+ * declarations and the test fixtures under src/test are not shipped.
+ */
+export function sourceEntries(dir = "src"): string[] {
+    const walk = (from: string): string[] => {
+        const found: string[] = [];
+        for (const entry of readdirSync(from, { withFileTypes: true })) {
+            const path = join(from, entry.name);
+            if (entry.isDirectory()) {
+                if (path !== join(dir, "test")) found.push(...walk(path));
+            } else if (/\.ts$/.test(entry.name) && !/\.(spec|test|d)\.ts$/.test(entry.name)) {
+                found.push(path);
+            }
+        }
+        return found;
+    };
+    return walk(dir).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
 
 /**
  * Where the two builds are written. `dist` in normal use; the plain-node guard
@@ -65,10 +90,19 @@ const shared = {
 } as const;
 
 export default defineConfig([
-    // Browser build
+    // Browser build: a module per source file, with shared code split into
+    // chunks, so a consumer's bundler can drop what it does not import
+    // (vision-web#1804). As one pre-bundled file it was a single module to
+    // webpack, and a page that only proxified an image URL carried the whole
+    // markdown and sanitize stack. `sideEffects: false` in package.json is what
+    // lets the bundler drop the unused files. Same layout as @ecency/sdk (#1834).
+    // The public entry and its types stay at dist/browser/index.js.
     {
         ...shared,
+        entry: sourceEntries(),
+        splitting: true,
         dts: {
+            entry: "src/index.ts",
             resolve: true,
         },
         format: ["esm"],
