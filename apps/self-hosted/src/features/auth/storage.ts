@@ -103,3 +103,17 @@ export function clearHiveAuthSession(): void {
     console.error('Failed to clear HiveAuth session:', error);
   }
 }
+
+/**
+ * The signed image-upload code (features/publish/utils/image-upload.ts, #1462).
+ * Kept here so logout can drop it without the auth feature importing the editor.
+ */
+export const IMAGE_UPLOAD_CODE_KEY = 'ecency_image_upload_code';
+
+export function clearImageUploadCode(): void {
+  try {
+    localStorage.removeItem(IMAGE_UPLOAD_CODE_KEY);
+  } catch {
+    // storage unavailable: nothing was cached
+  }
+}

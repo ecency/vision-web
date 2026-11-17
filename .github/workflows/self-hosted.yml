@@ -116,6 +116,8 @@ jobs:
       # unittest only, so this needs no more than the python3 already on the runner.
       - name: Run hosting script tests
         run: cd apps/self-hosted/hosting/scripts && python3 -m unittest discover -p 'test_*.py'
+      - name: Run origin sync tests
+        run: cd apps/self-hosted/hosting/origin && python3 -m unittest discover -p 'test_*.py'
 
       # The unit tests never compile the app, so a bundle that only fails at
       # load used to reach production uncompiled. This is also what runs

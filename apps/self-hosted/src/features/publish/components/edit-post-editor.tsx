@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { UilArrowLeft } from "@tooni/iconscout-unicons-react";
 import { t } from "@/core";
 import { LINK_EXTENSION, STARTER_KIT_EXTENSION } from "../utils/editor-extensions";
+import { ImageUpload } from "../utils/image-upload-extension";
 import {
   hasUnsupportedMarkup,
   htmlToMarkdown,
@@ -64,6 +65,7 @@ export function EditPostEditor({
       TableHeader,
       TableCell,
       Image.configure({ inline: true }),
+      ImageUpload,
     ],
     onUpdate({ editor }) {
       const html = editor.getHTML();

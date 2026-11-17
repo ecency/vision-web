@@ -14,10 +14,13 @@ import {
   UilParagraph,
   UilLink,
   UilLinkBroken,
+  UilImage,
 } from "@tooni/iconscout-unicons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/core";
 import { PublishEditorTableToolbar } from "./publish-editor-table-toolbar";
+import { IMAGE_ACCEPT } from "../utils/image-upload";
+import { imageUploadState } from "../utils/image-upload-extension";
 
 interface Props {
   editor: Editor | null;
@@ -29,6 +32,7 @@ export function PublishEditorToolbar({ editor }: Props) {
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [isFocusingTable, setIsFocusingTable] = useState(false);
   const headingMenuRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Close heading menu when clicking outside
   useEffect(() => {
@@ -102,6 +106,10 @@ export function PublishEditorToolbar({ editor }: Props) {
   if (!editor) {
     return null;
   }
+
+  // Re-read on every render: the editor re-renders on each transaction, and the
+  // upload extension dispatches one whenever its progress changes.
+  const upload = editor.storage.imageUpload ? imageUploadState(editor) : null;
 
   return (
     <>
@@ -270,6 +278,30 @@ export function PublishEditorToolbar({ editor }: Props) {
         </button>
       )}
 
+      {/* Image upload (#1462): picker here, drop and paste in the editor. */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          // Reset so picking the same file again still fires change.
+          e.target.value = "";
+          if (files.length) editor.chain().focus().uploadImages(files).run();
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => imageInputRef.current?.click()}
+        className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+        title={t("editor_image_upload")}
+        aria-label={t("editor_image_upload")}
+      >
+        <UilImage className="size-5" aria-hidden="true" />
+      </button>
+
       <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
 
       {/* Lists */}
@@ -307,6 +339,16 @@ export function PublishEditorToolbar({ editor }: Props) {
       </button>
     </div>
     {isFocusingTable && <PublishEditorTableToolbar editor={editor} />}
+    {upload && upload.pending > 0 && (
+      <p className="px-2 py-1 text-sm text-gray-600 dark:text-gray-300" role="status">
+        {t("editor_image_uploading")}
+      </p>
+    )}
+    {upload?.error && (
+      <p className="px-2 py-1 text-sm text-red-600 dark:text-red-400" role="alert">
+        {upload.error}
+      </p>
+    )}
     </>
   );
 }

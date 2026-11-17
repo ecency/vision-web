@@ -5,3 +5,6 @@ origin-ips
 # Runtime state written next to the script on the origin.
 state.json
 *.log
+
+# Cloudflare Turnstile credentials for the widget sync (see turnstile_domains.py).
+turnstile.env
