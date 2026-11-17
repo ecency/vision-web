@@ -7,20 +7,15 @@ import {
   getSimilarEntriesQueryOptions
 } from "@ecency/sdk";
 import { initI18next } from "@/features/i18n";
-import i18next from "i18next";
-import { EntryRelatedRow } from "./entry-related-row";
-import {
-  RelatedColumn,
-  SimilarRow,
-  relatedItemFromEntry,
-  relatedItemFromSimilar,
-  selectRelatedColumns
-} from "./entry-related-item";
-import { resolveRelatedSource, isLinkableRelated } from "./entry-related-source";
+import { SimilarRow } from "./entry-related-item";
+import { resolveRelatedSource } from "./entry-related-source";
+import { RELATED_FETCH_LIMIT, buildRelatedColumns } from "./entry-related-columns";
+import { EntryRelatedFooterView } from "./entry-related-footer-view";
+import { EntryRelatedFooterRefill } from "./entry-related-footer-refill";
 
-const FETCH_LIMIT = 12; // over-fetch so filtering still leaves 4
-const PER_COLUMN = 4;
-const MIN_COLUMN = 2; // a lone link looks sparse — hide the column below this
+// The similar query only reads an excerpt of the body (3000 characters after
+// markdown is stripped); the browser refill gets no more of it than this.
+const REFILL_BODY_LIMIT = 6000;
 
 interface Props {
   entry: Entry;
@@ -32,6 +27,11 @@ interface Props {
  * feeds are fetched in parallel (each SSR-timeout-bounded) and rendered as
  * server HTML, so every link is crawlable. Wrapped in <Suspense> by the page so
  * it never gates the post body. Renders nothing for comments or when empty.
+ *
+ * It streams after the page head, so a failed feed can no longer keep the page
+ * out of the cache: the feeds do not mark the response degraded (that only
+ * counted it as `late`, #1881). A failed column is fetched again in the browser
+ * instead (EntryRelatedFooterRefill).
  */
 export async function EntryRelatedFooter({ entry }: Props) {
   if (entry.parent_author) {
@@ -39,6 +39,7 @@ export async function EntryRelatedFooter({ entry }: Props) {
   }
 
   const source = resolveRelatedSource(entry);
+  const noMark = { mark: false };
 
   // i18n init is independent of the feeds — kick it off alongside them so its
   // cost isn't tacked onto the critical path after the network round-trip.
@@ -52,7 +53,8 @@ export async function EntryRelatedFooter({ entry }: Props) {
         title: entry.title,
         body: entry.body,
         json_metadata: { tags: entry.json_metadata?.tags }
-      })
+      }),
+      noMark
     ),
     // A row is an author, a permlink, a title and a thumbnail. There is no vote
     // button, payout or count anywhere in this footer, so both feeds are fetched
@@ -60,84 +62,57 @@ export async function EntryRelatedFooter({ entry }: Props) {
     // what these two pages would otherwise retain (#1559). The similar-entries
     // query above already answers with narrow rows.
     fetchQuery(
-      withCardOnlyPageEntries(getAccountPostsQueryOptions(entry.author, "posts", "", "", FETCH_LIMIT))
+      withCardOnlyPageEntries(
+        getAccountPostsQueryOptions(entry.author, "posts", "", "", RELATED_FETCH_LIMIT)
+      ),
+      noMark
     ),
     source
       ? fetchQuery(
           withCardOnlyPageEntries(
-            getPostsRankedQueryOptions("created", "", "", FETCH_LIMIT, source.tag)
-          )
+            getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source.tag)
+          ),
+          noMark
         )
       : Promise.resolve(undefined)
   ]);
 
   // SDK/web Entry split is deliberately deferred — cross the boundary once here.
-  const similar = (similarRaw as SimilarRow[] | undefined) ?? [];
-  const authorPosts = (authorRaw as unknown as Entry[] | undefined) ?? [];
-  const communityPosts = (communityRaw as unknown as Entry[] | undefined) ?? [];
+  // fetchQuery answers undefined only when the feed failed or timed out.
+  const feeds = {
+    similar: (similarRaw as SimilarRow[] | undefined) ?? [],
+    authorPosts: (authorRaw as unknown as Entry[] | undefined) ?? [],
+    communityPosts: (communityRaw as unknown as Entry[] | undefined) ?? []
+  };
+  const failed = {
+    similar: similarRaw === undefined,
+    author: authorRaw === undefined,
+    community: !!source && communityRaw === undefined
+  };
 
   await i18nReady;
 
-  // Ordered candidate sources (each pre-filtered). selectRelatedColumns dedups
-  // across them, caps each at PER_COLUMN, and DROPS any column with < MIN_COLUMN
-  // items — so e.g. a brand-new author's "From @author" simply doesn't render
-  // and the grid collapses to the columns that do have content.
-  // The similar backend already excludes the source author, spam and nsfw.
-  const sources: RelatedColumn[] = [
-    {
-      title: i18next.t("similar-entries.title"),
-      items: similar.map(relatedItemFromSimilar).filter((x): x is NonNullable<typeof x> => x !== null)
-    },
-    {
-      title: i18next.t("related-posts.more-from-author", { username: entry.author }),
-      items: authorPosts
-        .filter((p) => p.author === entry.author && isLinkableRelated(p))
-        .map(relatedItemFromEntry)
-    }
-  ];
-  if (source) {
-    sources.push({
-      title: i18next.t("related-posts.more-in", { section: source.section }),
-      items: communityPosts
-        .filter((p) => p.author !== entry.author && isLinkableRelated(p))
-        .map(relatedItemFromEntry)
-    });
+  if (failed.similar || failed.author || failed.community) {
+    const tags = entry.json_metadata?.tags;
+    return (
+      <EntryRelatedFooterRefill
+        author={entry.author}
+        permlink={entry.permlink}
+        source={source}
+        failed={failed}
+        initial={feeds}
+        similarInput={
+          failed.similar
+            ? {
+                title: entry.title ?? "",
+                body: (entry.body ?? "").slice(0, REFILL_BODY_LIMIT),
+                tags: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : []
+              }
+            : undefined
+        }
+      />
+    );
   }
 
-  const columns = selectRelatedColumns(sources, {
-    perColumn: PER_COLUMN,
-    minColumn: MIN_COLUMN,
-    excludeKey: `${entry.author}/${entry.permlink}`
-  });
-
-  if (columns.length === 0) {
-    return null;
-  }
-
-  // Static class strings (Tailwind can't see interpolated ones).
-  const colsClass =
-    columns.length === 1
-      ? "md:grid-cols-1"
-      : columns.length === 2
-        ? "md:grid-cols-2"
-        : "md:grid-cols-3";
-
-  return (
-    <div className="entry-related-footer reading-surface rounded-xl my-4 lg:mb-8 p-3 md:p-4 border border-[--border-color]">
-      <div className={`grid grid-cols-1 ${colsClass} gap-x-8 gap-y-4`}>
-        {columns.map((col) => (
-          <div key={col.title} className="min-w-0">
-            <div className="text-[15px] font-semibold text-gray-800 dark:text-gray-200 mb-2 pb-1.5 border-b border-[--border-color]">
-              {col.title}
-            </div>
-            <div>
-              {col.items.map((it) => (
-                <EntryRelatedRow key={`${it.author}/${it.permlink}`} item={it} />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  return <EntryRelatedFooterView columns={buildRelatedColumns(entry, source, feeds)} />;
 }
