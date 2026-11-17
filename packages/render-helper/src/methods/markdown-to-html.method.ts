@@ -199,6 +199,10 @@ const isSpace = (line: string, at: number) => line.charCodeAt(at) === 0x20
 function readContainers(line: string): { containers: number[]; at: number } {
   const containers: number[] = []
   let at = 0
+  // Columns, not characters: a tab after a list marker indents to the next
+  // multiple of four, as the parser counts it. Containers hold content widths
+  // in columns, which insideContainers strips the same way.
+  let column = 0
   for (;;) {
     let indent = 0
     while (indent < 4 && isSpace(line, at + indent)) indent++
@@ -208,7 +212,11 @@ function readContainers(line: string): { containers: number[]; at: number } {
     if (c === '>') {
       containers.push(QUOTE)
       at = markerAt + 1
-      if (isSpace(line, at)) at++
+      column += indent + 1
+      if (isSpace(line, at)) {
+        at++
+        column++
+      }
       continue
     }
     let markerLength = 0
@@ -220,14 +228,24 @@ function readContainers(line: string): { containers: number[]; at: number } {
       if (d > markerAt && (line[d] === '.' || line[d] === ')')) markerLength = d - markerAt + 1
     }
     if (markerLength === 0) break
-    let gap = 0
-    while (gap < 5 && isSpace(line, markerAt + markerLength + gap)) gap++
-    if (gap === 0) break
-    // Five or more spaces after the marker: the content starts one space in,
-    // and the rest is an indented code block.
-    const width = indent + markerLength + (gap >= 5 ? 1 : gap)
+    const afterMarker = column + indent + markerLength
+    let gapColumns = 0
+    let gapChars = 0
+    while (gapColumns < 5) {
+      const g = line[markerAt + markerLength + gapChars]
+      if (g === ' ') gapColumns++
+      else if (g === '\t') gapColumns += 4 - ((afterMarker + gapColumns) % 4)
+      else break
+      gapChars++
+    }
+    if (gapChars === 0) break
+    // Five or more columns after the marker: the content starts one column
+    // in, and the rest is an indented code block.
+    const wide = gapColumns >= 5
+    const width = indent + markerLength + (wide ? 1 : gapColumns)
     containers.push(width)
-    at += width
+    at = markerAt + markerLength + (wide ? 1 : gapChars)
+    column += width
   }
   return { containers, at }
 }

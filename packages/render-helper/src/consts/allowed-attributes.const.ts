@@ -150,11 +150,13 @@ export function authorClasses(value: string): string {
 /**
  * An author-written id, namespaced so it can never equal an id the page uses
  * (`modal-dialog-container`) or a window global it reads by name (`nws`).
- * Same-document `#fragment` links get the same prefix (namespacedFragment).
+ * Always prefixed, so two author ids never collapse into one (`x` and
+ * `user-content-x` stay apart); the caller applies it once per render. Same-
+ * document `#fragment` links to a declared id get the same prefix.
  */
 export const AUTHOR_ID_PREFIX = 'user-content-'
 export function namespacedId(id: string): string {
-  return id.startsWith(AUTHOR_ID_PREFIX) ? id : AUTHOR_ID_PREFIX + id
+  return AUTHOR_ID_PREFIX + id
 }
 
 // The only sandbox tokens iframe() and a() ever grant an embed. An author's

@@ -185,6 +185,15 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
   // `data-id` anchor, which the web resolves by script) is left alone. A
   // false hit only points a link at a name nothing has.
   const declaredIds = new Set<string>()
+  const declaredFragment = (fragment: string): string | null => {
+    let candidates = [fragment];
+    try {
+      candidates = [fragment, decodeURIComponent(fragment)];
+    } catch {
+      // a malformed escape: only the fragment as written can match
+    }
+    return candidates.find((id) => declaredIds.has(id) && ID_WHITELIST.test(id)) ?? null;
+  };
   for (const m of regexMatches(html, /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
     declaredIds.add(decodeAttributeEntities((m[1] ?? m[2] ?? m[3] ?? '').trim()))
   }
@@ -365,12 +374,16 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         if (!ID_WHITELIST.test(decoded)) return '';
         // render-helper writes no id of its own: every one is the author's (or
         // the markdown stage's footnotes), namespaced away from the page's.
-        if (isWhiteAttr) return `id="${escapeAttr(namespacedId(decoded))}"`;
+        // Not in the pass before the transforms: the final pass always follows
+        // it, and the prefix must be applied exactly once.
+        if (isWhiteAttr && !beforeTransform) return `id="${escapeAttr(namespacedId(decoded))}"`;
       }
       // A same-document link follows the namespaced id it points at (the
-      // app render carries it as data-href).
-      if (isWhiteAttr && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#') && declaredIds.has(decoded.slice(1)) && ID_WHITELIST.test(decoded.slice(1))) {
-        return `${name}="#${escapeAttr(namespacedId(decoded.slice(1)))}"`;
+      // app render carries it as data-href), matched as a browser matches a
+      // fragment: as written, or percent-decoded.
+      if (isWhiteAttr && !beforeTransform && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#')) {
+        const target = declaredFragment(decoded.slice(1));
+        if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
       // Every URL check above ran on the value decoded once. Left to itself,
       // xss would emit its own reading of the raw value: decoded again by the

@@ -24,11 +24,17 @@ export function MdHandler() {
       // keep the hash as written
     }
     if (!id) return;
-    const base = id.startsWith(AUTHOR_ID_PREFIX) ? id.slice(AUTHOR_ID_PREFIX.length) : id;
-    const byDataId = Array.from(document.querySelectorAll<HTMLElement>("[data-id]")).find(
-      (el) => el.dataset.id === base
-    );
-    const target = byDataId ?? document.getElementById(AUTHOR_ID_PREFIX + base);
+    const byDataId = (value: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-id]")).find((el) => el.dataset.id === value);
+    // The fragment as written first (a namespaced post id, or an author's own
+    // data-id), then a pre-namespacing link (`#x` for `user-content-x`), and
+    // last a prefixed link to an unprefixed data-id anchor.
+    const stripped = id.startsWith(AUTHOR_ID_PREFIX) ? id.slice(AUTHOR_ID_PREFIX.length) : null;
+    const target =
+      document.getElementById(id) ??
+      byDataId(id) ??
+      document.getElementById(AUTHOR_ID_PREFIX + id) ??
+      (stripped ? byDataId(stripped) : undefined);
     target?.scrollIntoView({ behavior: "smooth" });
   };
 

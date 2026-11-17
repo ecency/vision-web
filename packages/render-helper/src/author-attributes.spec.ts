@@ -87,10 +87,26 @@ describe('author id attributes', () => {
     expect(html).toContain('data-href="#user-content-sec"')
   })
 
-  it('does not namespace twice', () => {
-    const html = render('<div id="user-content-x">x</div>\n\n[go](#user-content-x)')
+  it('keeps two author ids apart even when one already carries the prefix', () => {
+    const html = render('<div id="x">a</div>\n\n<div id="user-content-x">b</div>\n\n[1](#x) [2](#user-content-x)')
     expect(html).toContain('id="user-content-x"')
+    expect(html).toContain('id="user-content-user-content-x"')
     expect(html).toContain('href="#user-content-x"')
+    expect(html).toContain('href="#user-content-user-content-x"')
+  })
+
+  it.each([false, true])('prefixes exactly once on the fallback paths too (forApp %s)', (forApp) => {
+    // An unclosed tag in a block takes the htmlparser2 repair path, which
+    // sanitizes before the transforms and again after them.
+    const html = render('<div id="sec"><b>x</div>\n\n[go](#sec)', forApp)
+    expect(html).toContain('id="user-content-sec"')
+    expect(html).toMatch(/(?:data-)?href="#user-content-sec"/)
+    expect(html).not.toContain('user-content-user-content-sec')
+  })
+
+  it('follows a percent-encoded fragment to its id', () => {
+    const html = render('<div id="sec">x</div>\n\n[go](#%73ec)')
+    expect(html).toContain('href="#user-content-sec"')
   })
 
   it('applies to simple markdown too', () => {
