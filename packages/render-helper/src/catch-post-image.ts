@@ -640,9 +640,16 @@ function firstBodyImageRawUrl(body: string): string | null {
   // A bare URL: raw text of an HTML block, or markdown text. Lines are read
   // with code already blanked (a `<div>` inside a fence opens no block); the
   // blanking keeps every offset.
-  if (markLines(asciiLower(prepared.cleaned)).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
+  if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
   const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4))
   return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
+}
+
+// Fenced blocks and inline code blanked, offsets kept, nothing else touched:
+// a comment, <style> or <script> line still opens an HTML block for the line
+// model, while a tag inside code does not.
+function codeBlanked(body: string): string {
+  return blankMatches(blankMatches(blankMatches(body, BACKTICK_FENCE_RE), TILDE_FENCE_RE), INLINE_CODE_RE)
 }
 
 function stripCodeRegions(body: string): string {

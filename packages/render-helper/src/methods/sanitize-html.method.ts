@@ -367,9 +367,10 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
         // the markdown stage's footnotes), namespaced away from the page's.
         if (isWhiteAttr) return `id="${escapeAttr(namespacedId(decoded))}"`;
       }
-      // A same-document link follows the namespaced id it points at.
-      if (isWhiteAttr && tag === 'a' && name === 'href' && decoded.startsWith('#') && declaredIds.has(decoded.slice(1)) && ID_WHITELIST.test(decoded.slice(1))) {
-        return `href="#${escapeAttr(namespacedId(decoded.slice(1)))}"`;
+      // A same-document link follows the namespaced id it points at (the
+      // app render carries it as data-href).
+      if (isWhiteAttr && tag === 'a' && (name === 'href' || name === 'data-href') && decoded.startsWith('#') && declaredIds.has(decoded.slice(1)) && ID_WHITELIST.test(decoded.slice(1))) {
+        return `${name}="#${escapeAttr(namespacedId(decoded.slice(1)))}"`;
       }
       // Every URL check above ran on the value decoded once. Left to itself,
       // xss would emit its own reading of the raw value: decoded again by the

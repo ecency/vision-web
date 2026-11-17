@@ -369,7 +369,10 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
     if (tpostMatch[1].indexOf('/') === 0) {
       // Internal path like /ecency/@user/post. Not `//host/...` nor
       // `/\host/...`, which a browser reads as another site (isInSiteHref).
-      isValidDomain = isInSiteHref(href);
+      // On the app render an entity in the href is still a placeholder
+      // (\u200B…\u200B) here and is restored after this check, so the href
+      // cannot be judged yet: not in-site (`/&#47;host` reads as `//host`).
+      isValidDomain = !href.includes('\u200B') && isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
       const domain = tpostMatch[1]

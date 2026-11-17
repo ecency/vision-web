@@ -114,7 +114,9 @@ export function stripMarkdownClasses(value: string): string {
 // stylesheet would apply. The page's utility classes (`fixed inset-0 z-[...]`)
 // would otherwise let a post cover the whole viewport or hide parts of the app.
 const AUTHOR_CLASSES: ReadonlySet<string> = new Set([
-  'pull-right', 'pull-left', 'text-justify', 'text-rtl', 'text-center', 'text-right', 'videoWrapper', 'phishy'
+  'pull-right', 'pull-left', 'text-justify', 'text-rtl', 'text-center', 'text-right', 'videoWrapper', 'phishy',
+  // A pasted tweet embed's blockquote, centred by the entry stylesheet.
+  'twitter-tweet'
 ])
 // The editor's text colour (web publish, TEXT_COLOR_CLASS_PREFIX): one class
 // per palette colour, styled by the app's renderer stylesheet.

@@ -32,7 +32,8 @@ describe('author class attributes', () => {
     'pull-right',
     'phishy',
     'videoWrapper',
-    'ecency-text-color-dc2626'
+    'ecency-text-color-dc2626',
+    'twitter-tweet'
   ])('keeps the post formatting class %s', (cls) => {
     expect(classesOf(render(`<div class="${cls} fixed">text</div>`))).toEqual(expect.arrayContaining([cls]))
     expect(classesOf(render(`<div class="${cls} fixed">text</div>`))).not.toContain('fixed')
@@ -80,6 +81,12 @@ describe('author id attributes', () => {
     expect(html).toContain('href="#WhatHive"')
   })
 
+  it('rewrites the app render\'s data-href fragment the same way', () => {
+    const html = render('<div id="sec">x</div>\n\n[go](#sec)', true)
+    expect(html).toContain('id="user-content-sec"')
+    expect(html).toContain('data-href="#user-content-sec"')
+  })
+
   it('does not namespace twice', () => {
     const html = render('<div id="user-content-x">x</div>\n\n[go](#user-content-x)')
     expect(html).toContain('id="user-content-x"')
@@ -100,6 +107,15 @@ describe('a protocol-relative link with an invalid permlink', () => {
     const html = render(body)
     expect(html).toContain('rel="nofollow ugc noopener"')
     expect(html).not.toMatch(/markdown-(post|profile)-link/)
+  })
+
+  it.each([
+    '[x](/&#47;evil.example/@alice/X_y)',
+    '<a href="/&sol;evil.example/@alice/X_y">x</a>',
+    '[x](/&#92;evil.example/@alice/X_y)'
+  ])('%s is not an internal link in the app render either', (body) => {
+    expect(render(body, true)).not.toMatch(/markdown-(post|profile)-link/)
+    expect(render(body, false)).not.toMatch(/markdown-(post|profile)-link/)
   })
 
   it('a valid in-site post link is still internal', () => {

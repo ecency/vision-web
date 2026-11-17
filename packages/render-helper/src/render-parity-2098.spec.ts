@@ -50,11 +50,18 @@ describe('fenced code inside list items, app render', () => {
   it('stays linear on a long line of list markers', () => {
     // A backtracking pattern hung here. Growth, not wall-clock time: four
     // times the markers costs about four times as long on a linear scan.
+    let run = 0
+    // Best of three, each a fresh body (the render caches): one GC pause must
+    // not decide the ratio.
     const time = (markers: number) => {
-      const body = '- '.repeat(markers) + `~~~\n&amp; ${markers}\n`
-      const started = performance.now()
-      render(body, true)
-      return Math.max(performance.now() - started, 1)
+      let best = Infinity
+      for (let k = 0; k < 3; k++) {
+        const body = '- '.repeat(markers) + `~~~\n&amp; ${run++}\n`
+        const started = performance.now()
+        render(body, true)
+        best = Math.min(best, performance.now() - started)
+      }
+      return Math.max(best, 1)
     }
     time(500)
     expect(time(20000) / time(5000)).toBeLessThan(10)
@@ -106,6 +113,9 @@ describe('the LCP preload names the image the render shows, or none', () => {
     // The autolinker keeps a `.` before `)`; a raw anchor's text is not autolinked.
     '(see https://e.com/a.png?w=600.)',
     '<a href="https://e.com/i.png?x=1.">https://e.com/i.png?x=1.</a>',
+    // A comment line opens an HTML block (no autolinker there).
+    '<!-- c -->\nhttps://e.com/i.png?x=1.',
+    '<style>p{}</style>\nhttps://e.com/i.png?x=1.',
     // An HTML tag inside a fenced code block opens no HTML block.
     '```\n<div>\n```\nhttps://e.com/i.png?a=1&copy',
     // Kept as before.
