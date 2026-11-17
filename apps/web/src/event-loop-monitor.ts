@@ -49,7 +49,7 @@ import os from "node:os";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import v8 from "node:v8";
 import { Worker } from "node:worker_threads";
-import { HEAP_PRESSURE_RATIO, heapPressureLine } from "./heap-pressure";
+import { heapPressureLine, nextHeapMark } from "./heap-pressure";
 
 type ActiveRequest = {
   id: number;
@@ -340,7 +340,7 @@ export function initEventLoopMonitor(): void {
     // new high-water mark until the heap drops back under the threshold.
     const heap = v8.getHeapStatistics();
     const heapRatio = heap.heap_size_limit > 0 ? heap.used_heap_size / heap.heap_size_limit : 0;
-    if (heapRatio < HEAP_PRESSURE_RATIO) lastHeapPressureRatio = 0;
+    lastHeapPressureRatio = nextHeapMark(heapRatio, lastHeapPressureRatio);
     const heapLine = heapPressureLine({
       usedBytes: heap.used_heap_size,
       limitBytes: heap.heap_size_limit,

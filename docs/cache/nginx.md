@@ -20,7 +20,9 @@ proxy_cache_path /var/cache/nginx/ssr levels=1:2
 - `inactive` — entries not read within this window are evicted regardless of
   s-maxage. The live value is in the host's `nginx.conf`, which is not tracked,
   and it was raised from the 2h this page used to show. It does not bound how
-  long a page that keeps being read stays cached: that is its s-maxage.
+  long a page that keeps being read stays cached. Its s-maxage is how long it is
+  fresh; after that, `proxy_cache_use_stale` can still serve it while a refresh
+  runs or when the app errors, so an expired page can outlive its s-maxage.
 
 ## Per-host config
 

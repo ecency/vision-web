@@ -31,7 +31,9 @@
 # Typical workflow (DMCA takedown), see docs/cache/README.md:
 #   1. Edit apps/web/public/dmca/dmca-*.json
 #   2. Commit, merge, let CI deploy
-#   3. Run this script with --post for each affected post to drop the
+#   3. On each origin host, delete the files `--origin-files --post ...` lists,
+#      so the edge cannot refill from the pre-takedown copy
+#   4. Run this script with --post for each affected post to drop the
 #      pre-DMCA copies from the CF edge cache
 #
 set -euo pipefail
@@ -113,7 +115,8 @@ while [[ $# -gt 0 ]]; do
       # A mistyped flag must not reach Cloudflare as a URL.
       echo "Error: unknown option $1" >&2
       exit 1 ;;
-    *) urls+=("$1"); shift ;;
+    # A fragment never reaches a server or a cache key.
+    *) urls+=("${1%%#*}"); shift ;;
   esac
 done
 

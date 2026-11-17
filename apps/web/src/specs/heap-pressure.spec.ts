@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { heapPressureLine } from "@/heap-pressure";
+import { heapPressureLine, nextHeapMark } from "@/heap-pressure";
 
 // #2043: replicas abort at the V8 heap cap under load, and the crashed
 // container (with its fatal log) is pruned by the deploy job. The event-loop
@@ -58,5 +58,13 @@ describe("heapPressureLine", () => {
 
   it("ignores a missing heap limit", () => {
     expect(heapPressureLine({ ...base, limitBytes: 0, usedBytes: 3000 * MB, active: [] })).toBeNull();
+  });
+
+  it("keeps the high-water mark while the heap swings around the threshold", () => {
+    // used_heap_size includes uncollected garbage, so a replica near the cap
+    // reads 0.87 after a collection and 0.92 before the next. Only a real drop
+    // clears the mark; otherwise every swing would log again.
+    expect(nextHeapMark(0.87, 0.93)).toBe(0.93);
+    expect(nextHeapMark(0.84, 0.93)).toBe(0);
   });
 });

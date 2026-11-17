@@ -107,4 +107,12 @@ describe("purge-cache.sh --post", () => {
       "https://ecency.com/api/oembed?url=https%3A%2F%2Fecency.com%2FHive-123%2F%40alice%2FOld_Post&format=json"
     );
   });
+
+  it("ignores a URL fragment, which never reaches a cache", () => {
+    const withFragment = run("--origin-files", "https://ecency.com/@alice/bad-post#comments");
+    const without = run("--origin-files", "https://ecency.com/@alice/bad-post");
+    expect(withFragment.stdout).toBe(without.stdout);
+    const dry = run("--dry-run", "https://ecency.com/@alice/bad-post#comments");
+    expect(urls(dry.stdout)).toEqual(["https://ecency.com/@alice/bad-post"]);
+  });
 });

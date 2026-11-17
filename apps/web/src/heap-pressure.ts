@@ -16,6 +16,12 @@
  */
 
 export const HEAP_PRESSURE_RATIO = 0.9;
+/**
+ * The mark clears only below this, not on any sample under the threshold:
+ * used_heap_size includes uncollected garbage, so a replica near the cap swings
+ * across 0.90 with every collection and would otherwise log on each swing.
+ */
+export const HEAP_PRESSURE_RESET = 0.85;
 export const HEAP_PRESSURE_STEP = 0.02;
 export const HEAP_PRESSURE_INTERVAL_MS = 60_000;
 const MAX_ACTIVE = 20;
@@ -65,4 +71,9 @@ export function heapPressureLine(input: {
       active: all.slice(0, MAX_ACTIVE)
     })
   );
+}
+
+/** The high-water mark after a sample: kept until the heap really drops. */
+export function nextHeapMark(ratio: number, lastRatio: number): number {
+  return ratio < HEAP_PRESSURE_RESET ? 0 : lastRatio;
 }

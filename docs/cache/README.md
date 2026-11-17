@@ -151,7 +151,10 @@ See [purge script](../../scripts/purge-cache.sh).
 Without steps 2 and 3, a post page older than 30 days can be served for its
 2-day `s-maxage` at the origin, and then for up to its `s-maxage` again at the
 edge from a copy taken just before the origin's expired, so about 4 days, plus
-a stale answer while it re-renders (#1505). Newer posts expire sooner. The
+a stale answer while it re-renders (#1505). Newer posts expire sooner. That is
+the case when re-renders succeed. The origin serves an expired copy while a
+refresh fails (`proxy_cache_use_stale`), so if renders of the page keep failing
+it can be served for longer: do steps 2 and 3, and do not count on expiry. The
 machine-readable forms and oEmbed expire within about a day, and the sitemap
 within about a day plus its regeneration. `--post` does not cover the sitemap,
 RSS, other pages that list the post (profiles, feeds), or a copy cached under
