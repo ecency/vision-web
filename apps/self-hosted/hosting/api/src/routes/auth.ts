@@ -18,6 +18,7 @@ import {
 } from '../utils/auth';
 import { challengeStore, handoffStore } from '../utils/redis';
 import { AuditService, parseClientIp } from '../services/audit-service';
+import { HIVESIGNER_APP_ACCOUNT } from '../services/hivesigner-registry';
 
 export const authRoutes = new Hono();
 
@@ -36,6 +37,22 @@ const loginVerifySchema = z.object({
 });
 
 // POST /v1/auth/challenge - Get login challenge
+/** Where a login challenge is stored: per challenge, not per account. */
+function challengeKey(username: string, nonce: string): string {
+  return `${username.toLowerCase()}:${nonce}`;
+}
+
+/**
+ * The nonce of a challenge issued to `username`
+ * (`ecency-hosting-login:<username>:<time>:<nonce>`), or null when it was not.
+ */
+function challengeNonce(challenge: string, username: string): string | null {
+  const parts = challenge.split(':');
+  if (parts.length !== 4 || parts[0] !== 'ecency-hosting-login') return null;
+  if (parts[1].toLowerCase() !== username.toLowerCase()) return null;
+  return /^[A-Za-z0-9_-]{16}$/.test(parts[3]) ? parts[3] : null;
+}
+
 authRoutes.post(
   '/challenge',
   zValidator('json', loginChallengeSchema),
@@ -49,12 +66,14 @@ authRoutes.post(
     }
 
     // Generate challenge
-    const challenge = `ecency-hosting-login:${username}:${Date.now()}:${nanoid(16)}`;
+    const nonce = nanoid(16);
+    const challenge = `ecency-hosting-login:${username}:${Date.now()}:${nonce}`;
     const ttlSeconds = 5 * 60; // 5 minutes
     const expiresAt = Date.now() + ttlSeconds * 1000;
 
-    // Store challenge in Redis
-    await challengeStore.set(username, challenge, ttlSeconds);
+    // Each challenge has its own key, so issuing another for the same account
+    // never voids one that is still being signed.
+    await challengeStore.set(challengeKey(username, nonce), challenge, ttlSeconds);
 
     return c.json({
       username,
@@ -73,14 +92,17 @@ authRoutes.post(
   async (c) => {
     const { username, signature, challenge } = c.req.valid('json');
 
-    // Check challenge exists and not expired (from Redis)
-    const storedChallenge = await challengeStore.get(username);
-    if (!storedChallenge || storedChallenge.challenge !== challenge) {
+    // The challenge names the account it was issued to and the key it is
+    // stored under; one for another account is not looked up at all.
+    const nonce = challengeNonce(challenge, username);
+    const key = nonce ? challengeKey(username, nonce) : null;
+    const storedChallenge = key ? await challengeStore.get(key) : null;
+    if (!key || !storedChallenge || storedChallenge.challenge !== challenge) {
       return c.json({ error: 'Invalid or expired challenge' }, 400);
     }
 
     if (storedChallenge.expiresAt < Date.now()) {
-      await challengeStore.delete(username);
+      await challengeStore.delete(key);
       return c.json({ error: 'Challenge expired' }, 400);
     }
 
@@ -100,8 +122,8 @@ authRoutes.post(
       return c.json({ error: 'Invalid signature' }, 401);
     }
 
-    // Clean up challenge from Redis
-    await challengeStore.delete(username);
+    // Clean up challenge from Redis (a challenge is good for one login)
+    await challengeStore.delete(key);
 
     // Generate proper JWT token using shared utility
     const expiresInMs = 24 * 60 * 60 * 1000; // 24 hours
@@ -141,6 +163,14 @@ async function resolveHivesignerUsername(
   | { ok: true; username: string }
   | { ok: false; status: 401 | 503; error: string }
 > {
+  // HiveSigner's /api/me accepts any valid token, whatever app it was issued
+  // to and whatever kind. A hosting login takes only an access token issued
+  // to this app, for one account.
+  const author = ecencyAccessTokenAuthor(accessToken);
+  if (!author) {
+    return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
+  }
+
   let res: Response;
   try {
     res = await fetch('https://hivesigner.com/api/me', {
@@ -166,11 +196,42 @@ async function resolveHivesignerUsername(
     return { ok: false, status: 503, error: 'Auth service unavailable' };
   }
 
-  if (typeof username !== 'string' || !/^[a-z][a-z0-9.-]{2,15}$/.test(username)) {
+  if (
+    typeof username !== 'string' ||
+    !/^[a-z][a-z0-9.-]{2,15}$/.test(username) ||
+    username !== author
+  ) {
     return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
   }
 
   return { ok: true, username };
+}
+
+/**
+ * The account an access token issued to this app names, or null for anything
+ * else: another app's token, a code, a refresh token, or not a token.
+ */
+function ecencyAccessTokenAuthor(token: string): string | null {
+  try {
+    const json = Buffer.from(
+      token.replace(/-/g, '+').replace(/_/g, '/').replace(/\./g, '='),
+      'base64',
+    ).toString('utf8');
+    const message = JSON.parse(json);
+    const authors = message?.authors;
+    if (
+      message?.signed_message?.type !== 'posting' ||
+      message.signed_message.app !== HIVESIGNER_APP_ACCOUNT ||
+      !Array.isArray(authors) ||
+      authors.length !== 1 ||
+      typeof authors[0] !== 'string'
+    ) {
+      return null;
+    }
+    return authors[0];
+  } catch {
+    return null;
+  }
 }
 
 authRoutes.post(
