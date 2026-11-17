@@ -50,6 +50,11 @@ describe('getPostBodyText', () => {
     expect(getPostBodyText('\\*literal asterisks\\* and more', 200)).toBe('*literal asterisks* and more')
   })
 
+  it('leaves no tag opener behind when tags are nested inside each other', () => {
+    const text = getPostBodyText('a <scr<b>ipt>x</scr</b>ipt> b <<i>img src=x> c', 200)
+    expect(text).not.toMatch(/<[A-Za-z/!]/)
+  })
+
   it('returns the whole text with length 0', () => {
     const body = 'word '.repeat(100)
     expect(getPostBodyText(body, 0)).toBe(getPostBodySummary(body, 0))
@@ -70,7 +75,7 @@ describe('getPostBodyText', () => {
     // Growth, not wall-clock time: four times the input, about four times the cost.
     const time = (k: number) => {
       let best = Infinity
-      for (let r = 0; r < 3; r++) {
+      for (let r = 0; r < 5; r++) {
         const body = `${make(k)} ${r}`
         const t = performance.now()
         getPostBodyText(body, 200)
@@ -78,9 +83,11 @@ describe('getPostBodyText', () => {
       }
       return Math.max(best, 1)
     }
-    // Large enough that each render takes milliseconds, not timer noise.
+    // Large enough that each render takes milliseconds, not timer noise, and
+    // eight times apart: linear grows about 8x, quadratic about 64x, so a
+    // noisy CI runner stays well inside the limit.
     time(20_000)
-    expect(time(320_000) / time(80_000)).toBeLessThan(10)
+    expect(time(320_000) / time(40_000)).toBeLessThan(24)
   })
 })
 

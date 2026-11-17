@@ -20,3 +20,12 @@ export async function prepareOperationMemo(memo: string, from: string, to: strin
   const { encryptMemo } = await import("@/utils/memo-crypto");
   return encryptMemo(getLoginType(from), from, to, memo.slice(1));
 }
+
+// AssetOperation values whose chain operation has a memo field. Delegation,
+// staking and the like have none, so their memo is never encrypted.
+const MEMO_OPERATIONS = new Set(["transfer", "transfer-saving", "withdraw-saving", "gift"]);
+
+/** True when the operation sends a memo on chain. */
+export function operationCarriesMemo(operation: string): boolean {
+  return MEMO_OPERATIONS.has(operation);
+}

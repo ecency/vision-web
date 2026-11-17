@@ -28,6 +28,12 @@ describe("operationAssetPrecision", () => {
     expect(operationAssetPrecision(true, undefined, "SWAP.BTC")).toBeNull();
   });
 
+  it("is unknown (null) when the token's metadata did not load, whatever precision it shows", () => {
+    expect(
+      operationAssetPrecision(true, [{ symbol: "NOMETA", precision: 0, precisionKnown: false }], "NOMETA")
+    ).toBeNull();
+  });
+
   it("takes a real precision of 0", () => {
     expect(operationAssetPrecision(true, [{ symbol: "WHOLE", precision: 0 }], "WHOLE")).toBe(0);
   });

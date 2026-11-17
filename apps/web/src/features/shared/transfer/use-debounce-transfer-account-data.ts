@@ -18,7 +18,15 @@ import { parseAsset, vestsToHp } from "@/utils";
 export function useDebounceTransferAccountData() {
   const { activeUser, account } = useActiveAccount();
 
-  const { to, mode, amount: currentAmount, setAmount, setTo } = useTransferSharedState();
+  const {
+    to,
+    mode,
+    amount: currentAmount,
+    setAmount,
+    setTo,
+    autoFilledAmount,
+    setAutoFilledAmount
+  } = useTransferSharedState();
 
   const [toDebounce, setToDebounce] = useState<string>();
   const [vestingDelegationUsername, setVestingDelegationUsername] = useState<string>();
@@ -107,11 +115,20 @@ export function useDebounceTransferAccountData() {
   const currentAmountRef = useRef(currentAmount);
   currentAmountRef.current = currentAmount;
   const filledFor = useRef<string | null>(null);
-  // The value this hook last put in the field: still showing it means the
-  // user has not typed, so a new recipient's delegation (or the default when
-  // it has none) may replace it.
-  const autoFilled = useRef<string | null>(null);
+  // The value this hook last put in the field (kept in the dialog's shared
+  // state, since this step unmounts on Next): still showing it means the user
+  // has not typed, so a new recipient's delegation (or the default when it
+  // has none) may replace it.
+  const autoFilledRef = useRef(autoFilledAmount ?? null);
+  if (setAutoFilledAmount) {
+    autoFilledRef.current = autoFilledAmount ?? null;
+  }
   useEffect(() => {
+    const autoFilled = autoFilledRef;
+    const remember = (value: string | null) => {
+      autoFilled.current = value;
+      setAutoFilledAmount?.(value);
+    };
     if (mode !== "delegate") {
       return;
     }
@@ -120,7 +137,7 @@ export function useDebounceTransferAccountData() {
       !typed || ["0", "0.000", "0.001"].includes(typed) || typed === autoFilled.current;
     if (amount === null) {
       if (autoFilled.current !== null && typed === autoFilled.current) {
-        autoFilled.current = null;
+        remember(null);
         filledFor.current = null;
         setAmount("0.001");
       }
@@ -132,10 +149,10 @@ export function useDebounceTransferAccountData() {
     }
     filledFor.current = key;
     if (untouched) {
-      autoFilled.current = amount;
+      remember(amount);
       setAmount(amount);
     }
-  }, [amount, mode, setAmount, to]);
+  }, [amount, mode, setAmount, setAutoFilledAmount, to]);
 
   useEffect(() => {
     if (activeUser && activeUser.username && mode === "delegate") {

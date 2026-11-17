@@ -13,7 +13,7 @@ vi.mock("@ecency/sdk", async () => {
   return { isWif: actual.isWif };
 });
 
-import { isKeyInMemo, prepareOperationMemo } from "@/features/wallet/operations/operation-memo";
+import { isKeyInMemo, operationCarriesMemo, prepareOperationMemo } from "@/features/wallet/operations/operation-memo";
 
 describe("isKeyInMemo", () => {
   it("spots a private key typed into the memo", () => {
@@ -38,5 +38,15 @@ describe("prepareOperationMemo", () => {
     encryptMemo.mockClear();
     await expect(prepareOperationMemo("hello", "alice", "bob")).resolves.toBe("hello");
     expect(encryptMemo).not.toHaveBeenCalled();
+  });
+});
+
+describe("operationCarriesMemo", () => {
+  it.each(["transfer", "transfer-saving", "withdraw-saving", "gift"])("is true for %s", (op) => {
+    expect(operationCarriesMemo(op)).toBe(true);
+  });
+
+  it.each(["delegate", "power-up", "stake"])("is false for %s, which has no memo on chain", (op) => {
+    expect(operationCarriesMemo(op)).toBe(false);
   });
 });

@@ -140,6 +140,19 @@ describe("KeyInput.handleSign contract", () => {
     expect(h.errorSpy).not.toHaveBeenCalled();
   });
 
+  it.each(["memo", "posting", "owner"] as const)(
+    "keeps a %s key out of the shared signing-key slot (it holds active keys only)",
+    async (keyType) => {
+      mockIsWif.mockReturnValue(true);
+      mockFromString.mockReturnValue({ toString: () => "PVT_OTHER" } as unknown as PrivateKey);
+      const { ref } = setup("5JvalidWifKey", keyType);
+      await act(async () => {
+        await ref.current!.handleSign();
+      });
+      expect(h.setSigningKey).not.toHaveBeenCalled();
+    }
+  );
+
   it("still rejects for the anonymous-user invariant", async () => {
     h.activeUser = null;
     const { ref } = setup("anything");

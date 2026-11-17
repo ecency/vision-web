@@ -69,7 +69,8 @@ function markdownToText(source: string): string {
 
 /**
  * HTML comments and tag-shaped text removed, nothing else: a `<` that opens no
- * tag (`a < b`, `<3`) is text, as the renderer shows it. Comments are found
+ * tag (`a < b`, `<3`) is text, as the renderer shows it. The result is plain
+ * text for a text node, never HTML. Comments are found
  * with indexOf, one pass; an unclosed one hides the rest, as in a browser.
  */
 function stripTags(text: string): string {
@@ -86,7 +87,10 @@ function stripTags(text: string): string {
     if (close === -1) break
     at = close + 3
   }
-  return out.replace(/<\/?[A-Za-z][^<>]*>/g, '')
+  // One pass removes the tags; a tag split by another (`<scr<b>ipt>`) can
+  // leave an opener behind, so any `<` that still starts a tag goes too. Two
+  // linear passes, never a loop until nothing changes.
+  return out.replace(/<\/?[A-Za-z][^<>]*>/g, '').replace(/<(?=[A-Za-z/!])/g, '')
 }
 
 const joint = (arr: string[], limit = 200) => {

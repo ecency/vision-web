@@ -7,7 +7,9 @@ const DEFAULT_PRECISION = 3;
 
 export function operationAssetPrecision(
   isEngineToken: boolean,
-  engineBalances: ReadonlyArray<{ symbol: string; precision?: number }> | undefined,
+  engineBalances:
+    | ReadonlyArray<{ symbol: string; precision?: number; precisionKnown?: boolean }>
+    | undefined,
   asset: string
 ): number | null {
   if (!isEngineToken) {
@@ -15,7 +17,8 @@ export function operationAssetPrecision(
   }
   // Unknown until the token is found: guessing 3 would cut an 8-decimal
   // amount, so the dialog waits (null) instead.
-  const precision = engineBalances?.find((token) => token.symbol === asset)?.precision;
+  const token = engineBalances?.find((t) => t.symbol === asset);
+  const precision = token?.precisionKnown === false ? undefined : token?.precision;
   return typeof precision === "number" && Number.isInteger(precision) && precision >= 0 && precision <= 8
     ? precision
     : null;

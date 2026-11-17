@@ -117,6 +117,27 @@ describe("useDebounceTransferAccountData", () => {
     expect(state.amount).toBe("0.001");
   });
 
+  it("remembers its own fill across Next and Back (step 1 unmounts)", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const state: any = { amount: "0.001", to: "ecency", autoFilledAmount: null };
+    const setAmount = vi.fn((v: string) => (state.amount = v));
+    const setAutoFilledAmount = vi.fn((v: string | null) => (state.autoFilledAmount = v));
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ ...state, mode: "delegate", setAmount, setAutoFilledAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    renderHook(() => useDebounceTransferAccountData(), { wrapper }).unmount();
+    expect(state.amount).toBe("5000");
+    // Back, then another recipient with a delegation of its own.
+    h.delegations = [{ delegator: "alice", delegatee: "bob", vesting_shares: "400000.000000 VESTS" }];
+    state.to = "bob";
+    renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(state.amount).toBe("200");
+  });
+
   it("keeps the amount it was given when there is no delegation (#2123)", () => {
     h.delegations = [];
     const { setAmount } = run("transfer", "100.000");

@@ -20,7 +20,7 @@ import { formatNumber } from "@/utils";
 import { callRPC } from "@ecency/sdk";
 import { hpToVests } from "@/features/shared/transfer/hp-to-vests";
 import { amountStep, operationAssetPrecision, truncateAmount } from "./operation-amount";
-import { isKeyInMemo, prepareOperationMemo } from "./operation-memo";
+import { isKeyInMemo, operationCarriesMemo, prepareOperationMemo } from "./operation-memo";
 import { error as showError } from "@/features/shared";
 import { formatError } from "@/api/format-error";
 
@@ -435,8 +435,8 @@ export function WalletOperationsTransfer({
             // in the shared Transfer dialog.
             let memo = data.memo ?? "";
             try {
-              // Only operations that carry a memo on chain (showMemo).
-              if (showMemo) {
+              // Only operations that carry a memo on chain.
+              if (showMemo && operationCarriesMemo(operation)) {
                 memo = await prepareOperationMemo(memo, username, sanitizedTo);
               }
             } catch (e) {

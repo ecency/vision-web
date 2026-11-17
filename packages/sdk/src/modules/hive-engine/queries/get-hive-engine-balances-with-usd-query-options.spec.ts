@@ -40,6 +40,19 @@ describe("getHiveEngineBalancesWithUsdQueryOptions", () => {
     mockMarket.mockResolvedValue([]);
   });
 
+  it("says whether a token's precision came from its metadata", async () => {
+    mockBalances.mockResolvedValue([balance("KNOWN", "1"), balance("WHOLE", "1"), balance("MISSING", "1")]);
+    mockMetadata.mockResolvedValue([
+      { symbol: "KNOWN", name: "Known", precision: 8, metadata: "{}" },
+      { symbol: "WHOLE", name: "Whole", precision: 0, metadata: "{}" },
+    ]);
+    const result = await runQuery(getHiveEngineBalancesWithUsdQueryOptions("alice", dynamicProps, []));
+    const by = (s: string) => result.find((t: any) => t.symbol === s)!;
+    expect([by("KNOWN").precision, by("KNOWN").precisionKnown]).toEqual([8, true]);
+    expect([by("WHOLE").precision, by("WHOLE").precisionKnown]).toEqual([0, true]);
+    expect(by("MISSING").precisionKnown).toBe(false);
+  });
+
   it("prices a held token from the metrics the caller supplied", async () => {
     mockBalances.mockResolvedValue([balance("LEO", "100")]);
 
