@@ -345,7 +345,7 @@
   },
   {
     "name": "mypathtofire",
-    "contributes": ["Guest Curator"]
+    "contributes": ["Guest Curator", "Thought Leader", "Discord Moderator"]
   },
   {
     "name": "underlock",
@@ -372,10 +372,6 @@
     "contributes": ["Thought Leader"]
   },
   {
-    "name": "luizeba",
-    "contributes": ["Guest Curator"]
-  },
-  {
     "name": "palomap3",
     "contributes": ["Curator", "Discord Moderator"]
   },
@@ -388,7 +384,7 @@
     "contributes": ["Guest Curator"]
   },
   {
-    "name": "pravesh0 ",
+    "name": "pravesh0",
     "contributes": ["Guest Curator", "Discord Live show host"]
   },
   {
@@ -464,7 +460,7 @@
     "contributes": ["Guest Curator"]
   },
   {
-    "name": "allentaylor ",
+    "name": "allentaylor",
     "contributes": ["Guest Curator"]
   },
   {
@@ -488,10 +484,6 @@
     "contributes": ["Translation (Arabian)"]
   },
   {
-    "name": "mypathtofire ",
-    "contributes": ["Thought Leader", "Discord Moderator"]
-  },
-  {
     "name": "gamingumar",
     "contributes": ["Developer (Mobile)"]
   },
@@ -511,35 +503,31 @@
     "name": "sirenahippie",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "ahmedhayat",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "edwing357",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "mysteriousroad",
     "contributes": ["Guest Curator"]
   },
-   {
-    "name": "djbravo",
-    "contributes": ["Guest Curator"]
-  },
-   {
+  {
     "name": "mnurhiver",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "damarysvibra",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "idayrus",
     "contributes": ["Guest Curator"]
   },
-   {
+  {
     "name": "curamax",
     "contributes": ["Guest Curator"]
   },
@@ -564,10 +552,6 @@
     "contributes": ["Guest Curator"]
   },
   {
-    "name": "ydaiznfts",
-    "contributes": ["Guest Curator"]
-  },
-  {
     "name": "reachdreams",
     "contributes": ["Guest Curator"]
   },
@@ -581,6 +565,22 @@
   },
   {
     "name": "sahi1",
+    "contributes": ["Guest Curator"]
+  },
+  {
+    "name": "mayt",
+    "contributes": ["Guest Curator"]
+  },
+  {
+    "name": "mrdani12",
+    "contributes": ["Guest Curator"]
+  },
+  {
+    "name": "cagolistic",
+    "contributes": ["Guest Curator"]
+  },
+  {
+    "name": "roswelborges",
     "contributes": ["Guest Curator"]
   }
 ]
