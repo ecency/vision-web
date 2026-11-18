@@ -73,22 +73,25 @@ describe('getPostBodyText', () => {
     ['image openers with text', (k: number) => '![a'.repeat(k)],
     ['autolink openers', (k: number) => '<http://x'.repeat(k)]
   ])('stays linear on %s', (_label, make) => {
-    // Growth, not wall-clock time: four times the input, about four times the cost.
+    // Growth, not wall-clock time: eight times the input should cost about
+    // eight times as much (linear), not about 64 times (quadratic).
     const time = (k: number) => {
       let best = Infinity
-      for (let r = 0; r < 5; r++) {
+      for (let r = 0; r < 7; r++) {
         const body = `${make(k)} ${r}`
         const t = performance.now()
         getPostBodyText(body, 200)
         best = Math.min(best, performance.now() - t)
       }
-      return Math.max(best, 1)
+      return best
     }
-    // Large enough that each render takes milliseconds, not timer noise, and
-    // eight times apart: linear grows about 8x, quadratic about 64x, so a
-    // noisy CI runner stays well inside the limit.
-    time(10_000)
-    expect(time(160_000) / time(20_000)).toBeLessThan(24)
+    // The base size doubles until a render takes milliseconds, so a cheap
+    // case measures real work rather than timer noise.
+    let k = 20_000
+    while (time(k) < 5 && k < 2_560_000) k *= 2
+    // A shared CI runner has measured a linear case at 28x for reasons not
+    // known, so the limit sits between that and quadratic.
+    expect(time(8 * k) / time(k)).toBeLessThan(40)
     // Several rounds on large inputs: more than the default 5 s on a slow runner.
   }, 60_000)
 })
