@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.4
+
+### Patch Changes
+
+- Feed cards without the markdown renderer; broadcast and wallet fixes (#2133)
+
 ## 2.9.3
 
 ### Patch Changes

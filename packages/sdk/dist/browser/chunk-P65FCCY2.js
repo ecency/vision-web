@@ -1,0 +1,2 @@
+import {p as p$1}from'./chunk-QTEQXMX7.js';import {a}from'./chunk-PDIUUNDQ.js';import {m}from'./chunk-256XNI26.js';import {queryOptions}from'@tanstack/react-query';function p(s,e=5){let r=s.trim();return queryOptions({queryKey:a.search.account(r,e),queryFn:async()=>{let o=await m("condenser_api.lookup_accounts",[r,e]);return o.length===0?[]:p$1(o)},enabled:!!r})}export{p as a};//# sourceMappingURL=chunk-P65FCCY2.js.map
+//# sourceMappingURL=chunk-P65FCCY2.js.map

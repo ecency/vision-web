@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.51
+
+### Patch Changes
+
+- Feed cards without the markdown renderer; broadcast and wallet fixes (#2133)
+
 ## 2.5.50
 
 ### Patch Changes

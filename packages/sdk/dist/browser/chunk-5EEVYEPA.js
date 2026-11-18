@@ -1,0 +1,2 @@
+import {a}from'./chunk-B7Y6M2TR.js';import {b}from'./chunk-DCOPCSAE.js';import {queryOptions}from'@tanstack/react-query';function y(e){return queryOptions({queryKey:["assets","points","general-info",e],staleTime:6e4,refetchInterval:9e4,queryFn:async()=>(await b().prefetchQuery(a(e)),{name:"POINTS",title:"Ecency Points",price:.002,accountBalance:+(b().getQueryData(a(e).queryKey)?.points??0)})})}export{y as a};//# sourceMappingURL=chunk-5EEVYEPA.js.map
+//# sourceMappingURL=chunk-5EEVYEPA.js.map

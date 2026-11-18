@@ -1,0 +1,2 @@
+var e=Object.freeze({pendingExternalSignature:true});function t(n){return typeof n=="object"&&n!==null&&n.pendingExternalSignature===true}export{e as a,t as b};//# sourceMappingURL=chunk-UU6YQPHB.js.map
+//# sourceMappingURL=chunk-UU6YQPHB.js.map

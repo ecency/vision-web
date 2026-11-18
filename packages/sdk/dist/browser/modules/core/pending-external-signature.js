@@ -1,0 +1,2 @@
+export{a as PENDING_EXTERNAL_SIGNATURE,b as isPendingExternalSignature}from'../../chunk-UU6YQPHB.js';import'../../chunk-OS3FCYZY.js';//# sourceMappingURL=pending-external-signature.js.map
+//# sourceMappingURL=pending-external-signature.js.map

@@ -1,10 +1,355 @@
-import { DOMParser as DOMParser$1, XMLSerializer } from '@xmldom/xmldom';
 import { decodeHTMLAttribute, decodeHTML, decodeHTMLStrict } from 'entities';
+import { XMLSerializer, DOMParser as DOMParser$1 } from '@xmldom/xmldom';
 import xss from 'xss';
 import querystring from 'querystring';
 import { LRUCache } from 'lru-cache';
 import * as htmlparser2 from 'htmlparser2';
 import * as domSerializerModule from 'dom-serializer';
+
+// src/helper.ts
+var LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g;
+var LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi;
+var OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi;
+function guardNumericRefs(value) {
+  return value.replace(LEADING_ZEROS_DEC, "&#").replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3)).replace(OVERLONG_NUMERIC_REF, "\uFFFD");
+}
+function decodeEntities(value) {
+  const safe = guardNumericRefs(value);
+  try {
+    return decodeHTML(safe);
+  } catch {
+    return safe;
+  }
+}
+function decodeAttributeEntities(value) {
+  const safe = guardNumericRefs(value);
+  try {
+    return decodeHTMLAttribute(safe);
+  } catch {
+    return safe;
+  }
+}
+function decodeImageSrc(src) {
+  return decodeDomImageSrc(decodeEntities(src));
+}
+function decodeDomImageSrc(src) {
+  try {
+    return decodeURIComponent(src).trim();
+  } catch {
+    return src.trim();
+  }
+}
+var COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi;
+var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
+var TRAILING_PUNCTUATION = ".,;:!)]}*_~";
+function imageUrlEnd(token) {
+  let contentEnd = token.length;
+  if (!/[?#]/.test(token)) {
+    while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--;
+  }
+  IMAGE_EXT_G.lastIndex = 0;
+  let m;
+  while ((m = IMAGE_EXT_G.exec(token)) !== null) {
+    const at = m.index + m[0].length;
+    if (at > contentEnd) continue;
+    if (at < contentEnd && (/[a-z\d]/i.test(token[at]) || token[at] === "." && /[a-z]/i.test(token[at + 1] ?? ""))) continue;
+    return contentEnd;
+  }
+  return -1;
+}
+function decodeCompleteReferences(value) {
+  return value.replace(COMPLETE_REFERENCE, (reference) => {
+    try {
+      return decodeHTMLStrict(guardNumericRefs(reference));
+    } catch {
+      return reference;
+    }
+  });
+}
+function hasAmpSentinel(body) {
+  return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body);
+}
+var MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g;
+function decodeRawBodyImageSrc(src, destination = false, ampEscapes2 = true) {
+  const unescaped = destination ? src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c) : src.replace(/\\&/g, "&amp;");
+  return decodeDomImageSrc(decodeCompleteReferences(unescaped));
+}
+function escapeAttrValue(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\t/g, "&#9;").replace(/\n/g, "&#10;").replace(/\r/g, "&#13;");
+}
+function isSpaceChar(c) {
+  return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
+}
+function isAsciiLetter(c) {
+  return c >= 65 && c <= 90 || c >= 97 && c <= 122;
+}
+function isTagNameChar(c) {
+  return isAsciiLetter(c) || c >= 48 && c <= 57;
+}
+function isAttrNameChar(c) {
+  return isAsciiLetter(c) || c >= 48 && c <= 57 || c === 45 || c === 95 || c === 58 || c === 46;
+}
+function removeDuplicateAttributes(html) {
+  const n = html.length;
+  const lastGt = html.lastIndexOf(">");
+  const scanBudget = 4 * n + 4096;
+  let wasted = 0;
+  let out = "";
+  let i2 = 0;
+  while (i2 < n) {
+    const lt = html.indexOf("<", i2);
+    if (lt < 0) {
+      out += html.slice(i2);
+      break;
+    }
+    out += html.slice(i2, lt);
+    if (lt > lastGt) {
+      out += html.slice(lt);
+      break;
+    }
+    if (lt + 1 >= n || !isAsciiLetter(html.charCodeAt(lt + 1))) {
+      out += "<";
+      i2 = lt + 1;
+      continue;
+    }
+    let p2 = lt + 1;
+    while (p2 < n && isTagNameChar(html.charCodeAt(p2))) p2++;
+    const tagName = html.slice(lt + 1, p2);
+    if (p2 >= n || !isSpaceChar(html.charCodeAt(p2))) {
+      out += "<";
+      i2 = lt + 1;
+      continue;
+    }
+    const attrs = [];
+    const seen = /* @__PURE__ */ new Set();
+    let q = p2;
+    while (q < n) {
+      while (q < n && isSpaceChar(html.charCodeAt(q))) q++;
+      if (q >= n) break;
+      const ch = html.charCodeAt(q);
+      if (ch === 62) break;
+      if (ch === 47 && q + 1 < n && html.charCodeAt(q + 1) === 62) break;
+      const nameStart = q;
+      while (q < n && isAttrNameChar(html.charCodeAt(q))) q++;
+      if (q === nameStart) {
+        q++;
+        continue;
+      }
+      const attrName = html.slice(nameStart, q);
+      let r = q;
+      while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
+      let valueEnd = q;
+      let rawValue = null;
+      if (r < n && html.charCodeAt(r) === 61) {
+        r++;
+        while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
+        if (r < n) {
+          const v = html.charCodeAt(r);
+          if (v === 34 || v === 39) {
+            const quote = html[r];
+            const end = html.indexOf(quote, r + 1);
+            if (end < 0) {
+              const gt = html.indexOf(">", r + 1);
+              valueEnd = gt < 0 ? n : gt;
+            } else {
+              valueEnd = end + 1;
+              rawValue = html.slice(r + 1, end);
+            }
+          } else {
+            let s = r;
+            while (s < n) {
+              const k = html.charCodeAt(s);
+              if (isSpaceChar(k) || k === 62) break;
+              s++;
+            }
+            valueEnd = s;
+            rawValue = html.slice(r, s);
+          }
+        } else {
+          valueEnd = r;
+        }
+      }
+      const fullAttr = html.slice(nameStart, valueEnd);
+      q = valueEnd;
+      const key = attrName.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        const value = rawValue === null ? null : escapeAttrValue(decodeAttributeEntities(rawValue.replace(/\r\n?|[\n\t]/g, " ")));
+        attrs.push(
+          value === null || value === rawValue ? key + fullAttr.slice(attrName.length) : `${key}="${value}"`
+        );
+      }
+    }
+    let selfClose = false;
+    if (q < n && html.charCodeAt(q) === 47) {
+      selfClose = true;
+      q++;
+    }
+    if (q >= n || html.charCodeAt(q) !== 62) {
+      wasted += q - lt;
+      if (wasted > scanBudget) {
+        out += html.slice(lt);
+        break;
+      }
+      out += "<";
+      i2 = lt + 1;
+      continue;
+    }
+    q++;
+    const attrsJoined = attrs.length > 0 ? " " + attrs.join(" ") : "";
+    out += "<" + tagName + attrsJoined + (selfClose ? " /" : "") + ">";
+    i2 = q;
+  }
+  return out;
+}
+function hashBody(body) {
+  const s = typeof body === "string" ? body : "";
+  let h = 2166136261;
+  for (let i2 = 0; i2 < s.length; i2++) {
+    h ^= s.charCodeAt(i2);
+    h = Math.imul(h, 16777619);
+  }
+  return `${s.length}.${(h >>> 0).toString(36)}`;
+}
+var bodyHashes = /* @__PURE__ */ new WeakMap();
+function entryBodyHash(entry) {
+  const body = entry.body;
+  if (typeof body !== "string" || typeof entry !== "object" || entry === null) {
+    return hashBody(body);
+  }
+  const stored = bodyHashes.get(entry);
+  if (stored && stored.body === body) {
+    return stored.hash;
+  }
+  const hash = hashBody(body);
+  bodyHashes.set(entry, { body, hash });
+  return hash;
+}
+function makeEntryCacheKey(entry) {
+  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${entryBodyHash(entry)}`;
+}
+function stripHtmlTags(s) {
+  const n = s.length;
+  let out = "";
+  let i2 = 0;
+  while (i2 < n) {
+    const lt = s.indexOf("<", i2);
+    if (lt < 0) {
+      out += s.slice(i2);
+      break;
+    }
+    out += s.slice(i2, lt);
+    const gt = s.indexOf(">", lt + 1);
+    if (gt < 0) {
+      out += s.slice(lt);
+      break;
+    }
+    if (gt === lt + 1) {
+      out += s.slice(lt, gt + 1);
+      i2 = gt + 1;
+      continue;
+    }
+    i2 = gt + 1;
+  }
+  return out;
+}
+function trimTrailingSlash(s) {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end--;
+  return s.slice(0, end);
+}
+function stripQueryString(s) {
+  const q = s.indexOf("?");
+  return q >= 0 && q < s.length - 1 ? s.slice(0, q) : s;
+}
+function isHtmlWhitespace(c) {
+  return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
+}
+function moveBlockClosingTagOutOfParagraph(html, blockTags) {
+  const n = html.length;
+  let out = "";
+  let i2 = 0;
+  while (i2 < n) {
+    const pStart = html.indexOf("</p>", i2);
+    if (pStart < 0) {
+      out += html.slice(i2);
+      break;
+    }
+    if (pStart === i2 || html.charCodeAt(pStart - 1) !== 62) {
+      out += html.slice(i2, pStart + 4);
+      i2 = pStart + 4;
+      continue;
+    }
+    const closingStart = html.lastIndexOf("</", pStart - 2);
+    if (closingStart < i2) {
+      out += html.slice(i2, pStart + 4);
+      i2 = pStart + 4;
+      continue;
+    }
+    const tagName = html.slice(closingStart + 2, pStart - 1).toLowerCase();
+    if (!blockTags.has(tagName)) {
+      out += html.slice(i2, pStart + 4);
+      i2 = pStart + 4;
+      continue;
+    }
+    let k = closingStart;
+    while (k > i2 && isHtmlWhitespace(html.charCodeAt(k - 1))) k--;
+    if (k - 4 >= i2 && html.slice(k - 4, k).toLowerCase() === "<br>") {
+      k -= 4;
+      while (k > i2 && isHtmlWhitespace(html.charCodeAt(k - 1))) k--;
+    }
+    out += html.slice(i2, k) + "</p>" + html.slice(closingStart, pStart);
+    i2 = pStart + 4;
+  }
+  return out;
+}
+function extractYtStartTime(url) {
+  try {
+    const urlObj = new URL(url);
+    const params = new URLSearchParams(urlObj.search);
+    const m = /^(?:(\d{1,7})h)?(?:(\d{1,7})m)?(?:(\d{1,7})s?)?$/i.exec(params.get("t") || "");
+    if (m && (m[1] || m[2] || m[3])) {
+      const seconds = +(m[1] || 0) * 3600 + +(m[2] || 0) * 60 + +(m[3] || 0);
+      if (seconds <= 9999999) return "" + seconds;
+    }
+    const start = params.get("start") || "";
+    return /^\d{1,7}$/.test(start) ? "" + +start : "";
+  } catch (error) {
+    return "";
+  }
+}
+function youtubeVideoLinkClass(matchedUrl) {
+  const base = "markdown-video-link markdown-video-link-youtube";
+  return /youtube\.com\/shorts\//i.test(matchedUrl) ? `${base} markdown-video-link-youtube-portrait` : base;
+}
+function sanitizePermlink(permlink) {
+  if (!permlink || typeof permlink !== "string") {
+    return "";
+  }
+  const [withoutQuery] = permlink.split("?");
+  const [cleaned] = withoutQuery.split("#");
+  return cleaned;
+}
+function isValidPermlink(permlink) {
+  const sanitized = sanitizePermlink(permlink);
+  if (!sanitized) {
+    return false;
+  }
+  const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(sanitized);
+  const isCleanFormat = /^[a-z0-9-]+$/.test(sanitized);
+  return isCleanFormat && !isImage;
+}
+var LABEL_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+function isValidUsername(username) {
+  if (!username || typeof username !== "string") return false;
+  if (username.length > 16) return false;
+  const labels = username.split(".");
+  return labels.every((label) => {
+    return label.length >= 3 && label.length <= 16 && /^[a-z]/.test(label) && // must start with a letter
+    LABEL_REGEX.test(label) && // a-z0-9, hyphens, no start/end hyphen
+    !label.includes("..");
+  });
+}
 
 // src/consts/white-list.const.ts
 var WHITE_LIST = [
@@ -383,361 +728,7 @@ function createParser() {
     }
   });
 }
-var DOMParser = createParser();
-var LEADING_ZEROS_DEC = /&#0+(?=[0-9])/g;
-var LEADING_ZEROS_HEX = /&#x0+(?=[0-9a-f])/gi;
-var OVERLONG_NUMERIC_REF = /&#(?:x[0-9a-f]{256,}|[0-9]{309,});?/gi;
-function guardNumericRefs(value) {
-  return value.replace(LEADING_ZEROS_DEC, "&#").replace(LEADING_ZEROS_HEX, (m) => m.slice(0, 3)).replace(OVERLONG_NUMERIC_REF, "\uFFFD");
-}
-function decodeEntities(value) {
-  const safe = guardNumericRefs(value);
-  try {
-    return decodeHTML(safe);
-  } catch {
-    return safe;
-  }
-}
-function decodeAttributeEntities(value) {
-  const safe = guardNumericRefs(value);
-  try {
-    return decodeHTMLAttribute(safe);
-  } catch {
-    return safe;
-  }
-}
-function decodeImageSrc(src) {
-  return decodeDomImageSrc(decodeEntities(src));
-}
-function decodeDomImageSrc(src) {
-  try {
-    return decodeURIComponent(src).trim();
-  } catch {
-    return src.trim();
-  }
-}
-var COMPLETE_REFERENCE = /&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi;
-var IMAGE_EXT_G = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/gi;
-var TRAILING_PUNCTUATION = ".,;:!)]}*_~";
-function imageUrlEnd(token) {
-  let contentEnd = token.length;
-  if (!/[?#]/.test(token)) {
-    while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--;
-  }
-  IMAGE_EXT_G.lastIndex = 0;
-  let m;
-  while ((m = IMAGE_EXT_G.exec(token)) !== null) {
-    const at = m.index + m[0].length;
-    if (at > contentEnd) continue;
-    if (at < contentEnd && (/[a-z\d]/i.test(token[at]) || token[at] === "." && /[a-z]/i.test(token[at + 1] ?? ""))) continue;
-    return contentEnd;
-  }
-  return -1;
-}
-function decodeCompleteReferences(value) {
-  return value.replace(COMPLETE_REFERENCE, (reference) => {
-    try {
-      return decodeHTMLStrict(guardNumericRefs(reference));
-    } catch {
-      return reference;
-    }
-  });
-}
-function hasAmpSentinel(body) {
-  return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body);
-}
-var MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g;
-function decodeRawBodyImageSrc(src, destination = false, ampEscapes2 = true) {
-  const unescaped = destination ? src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c) : src.replace(/\\&/g, "&amp;");
-  return decodeDomImageSrc(decodeCompleteReferences(unescaped));
-}
-function escapeAttrValue(value) {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\t/g, "&#9;").replace(/\n/g, "&#10;").replace(/\r/g, "&#13;");
-}
-function isSpaceChar(c) {
-  return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
-}
-function isAsciiLetter(c) {
-  return c >= 65 && c <= 90 || c >= 97 && c <= 122;
-}
-function isTagNameChar(c) {
-  return isAsciiLetter(c) || c >= 48 && c <= 57;
-}
-function isAttrNameChar(c) {
-  return isAsciiLetter(c) || c >= 48 && c <= 57 || c === 45 || c === 95 || c === 58 || c === 46;
-}
-function removeDuplicateAttributes(html) {
-  const n = html.length;
-  const lastGt = html.lastIndexOf(">");
-  const scanBudget = 4 * n + 4096;
-  let wasted = 0;
-  let out = "";
-  let i2 = 0;
-  while (i2 < n) {
-    const lt = html.indexOf("<", i2);
-    if (lt < 0) {
-      out += html.slice(i2);
-      break;
-    }
-    out += html.slice(i2, lt);
-    if (lt > lastGt) {
-      out += html.slice(lt);
-      break;
-    }
-    if (lt + 1 >= n || !isAsciiLetter(html.charCodeAt(lt + 1))) {
-      out += "<";
-      i2 = lt + 1;
-      continue;
-    }
-    let p2 = lt + 1;
-    while (p2 < n && isTagNameChar(html.charCodeAt(p2))) p2++;
-    const tagName = html.slice(lt + 1, p2);
-    if (p2 >= n || !isSpaceChar(html.charCodeAt(p2))) {
-      out += "<";
-      i2 = lt + 1;
-      continue;
-    }
-    const attrs = [];
-    const seen = /* @__PURE__ */ new Set();
-    let q = p2;
-    while (q < n) {
-      while (q < n && isSpaceChar(html.charCodeAt(q))) q++;
-      if (q >= n) break;
-      const ch = html.charCodeAt(q);
-      if (ch === 62) break;
-      if (ch === 47 && q + 1 < n && html.charCodeAt(q + 1) === 62) break;
-      const nameStart = q;
-      while (q < n && isAttrNameChar(html.charCodeAt(q))) q++;
-      if (q === nameStart) {
-        q++;
-        continue;
-      }
-      const attrName = html.slice(nameStart, q);
-      let r = q;
-      while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
-      let valueEnd = q;
-      let rawValue = null;
-      if (r < n && html.charCodeAt(r) === 61) {
-        r++;
-        while (r < n && isSpaceChar(html.charCodeAt(r))) r++;
-        if (r < n) {
-          const v = html.charCodeAt(r);
-          if (v === 34 || v === 39) {
-            const quote = html[r];
-            const end = html.indexOf(quote, r + 1);
-            if (end < 0) {
-              const gt = html.indexOf(">", r + 1);
-              valueEnd = gt < 0 ? n : gt;
-            } else {
-              valueEnd = end + 1;
-              rawValue = html.slice(r + 1, end);
-            }
-          } else {
-            let s = r;
-            while (s < n) {
-              const k = html.charCodeAt(s);
-              if (isSpaceChar(k) || k === 62) break;
-              s++;
-            }
-            valueEnd = s;
-            rawValue = html.slice(r, s);
-          }
-        } else {
-          valueEnd = r;
-        }
-      }
-      const fullAttr = html.slice(nameStart, valueEnd);
-      q = valueEnd;
-      const key = attrName.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        const value = rawValue === null ? null : escapeAttrValue(decodeAttributeEntities(rawValue.replace(/\r\n?|[\n\t]/g, " ")));
-        attrs.push(
-          value === null || value === rawValue ? key + fullAttr.slice(attrName.length) : `${key}="${value}"`
-        );
-      }
-    }
-    let selfClose = false;
-    if (q < n && html.charCodeAt(q) === 47) {
-      selfClose = true;
-      q++;
-    }
-    if (q >= n || html.charCodeAt(q) !== 62) {
-      wasted += q - lt;
-      if (wasted > scanBudget) {
-        out += html.slice(lt);
-        break;
-      }
-      out += "<";
-      i2 = lt + 1;
-      continue;
-    }
-    q++;
-    const attrsJoined = attrs.length > 0 ? " " + attrs.join(" ") : "";
-    out += "<" + tagName + attrsJoined + (selfClose ? " /" : "") + ">";
-    i2 = q;
-  }
-  return out;
-}
-function createDoc(html) {
-  if (html.trim() === "") {
-    return null;
-  }
-  const cleanedHtml = removeDuplicateAttributes(html);
-  try {
-    return DOMParser.parseFromString(`<body>${cleanedHtml}</body>`, "text/html");
-  } catch {
-    return null;
-  }
-}
-function hashBody(body) {
-  const s = typeof body === "string" ? body : "";
-  let h = 2166136261;
-  for (let i2 = 0; i2 < s.length; i2++) {
-    h ^= s.charCodeAt(i2);
-    h = Math.imul(h, 16777619);
-  }
-  return `${s.length}.${(h >>> 0).toString(36)}`;
-}
-var bodyHashes = /* @__PURE__ */ new WeakMap();
-function entryBodyHash(entry) {
-  const body = entry.body;
-  if (typeof body !== "string" || typeof entry !== "object" || entry === null) {
-    return hashBody(body);
-  }
-  const stored = bodyHashes.get(entry);
-  if (stored && stored.body === body) {
-    return stored.hash;
-  }
-  const hash = hashBody(body);
-  bodyHashes.set(entry, { body, hash });
-  return hash;
-}
-function makeEntryCacheKey(entry) {
-  return `${entry.author}-${entry.permlink}-${entry.last_update}-${entry.updated}-${entryBodyHash(entry)}`;
-}
-function stripHtmlTags(s) {
-  const n = s.length;
-  let out = "";
-  let i2 = 0;
-  while (i2 < n) {
-    const lt = s.indexOf("<", i2);
-    if (lt < 0) {
-      out += s.slice(i2);
-      break;
-    }
-    out += s.slice(i2, lt);
-    const gt = s.indexOf(">", lt + 1);
-    if (gt < 0) {
-      out += s.slice(lt);
-      break;
-    }
-    if (gt === lt + 1) {
-      out += s.slice(lt, gt + 1);
-      i2 = gt + 1;
-      continue;
-    }
-    i2 = gt + 1;
-  }
-  return out;
-}
-function trimTrailingSlash(s) {
-  let end = s.length;
-  while (end > 0 && s.charCodeAt(end - 1) === 47) end--;
-  return s.slice(0, end);
-}
-function stripQueryString(s) {
-  const q = s.indexOf("?");
-  return q >= 0 && q < s.length - 1 ? s.slice(0, q) : s;
-}
-function isHtmlWhitespace(c) {
-  return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
-}
-function moveBlockClosingTagOutOfParagraph(html, blockTags) {
-  const n = html.length;
-  let out = "";
-  let i2 = 0;
-  while (i2 < n) {
-    const pStart = html.indexOf("</p>", i2);
-    if (pStart < 0) {
-      out += html.slice(i2);
-      break;
-    }
-    if (pStart === i2 || html.charCodeAt(pStart - 1) !== 62) {
-      out += html.slice(i2, pStart + 4);
-      i2 = pStart + 4;
-      continue;
-    }
-    const closingStart = html.lastIndexOf("</", pStart - 2);
-    if (closingStart < i2) {
-      out += html.slice(i2, pStart + 4);
-      i2 = pStart + 4;
-      continue;
-    }
-    const tagName = html.slice(closingStart + 2, pStart - 1).toLowerCase();
-    if (!blockTags.has(tagName)) {
-      out += html.slice(i2, pStart + 4);
-      i2 = pStart + 4;
-      continue;
-    }
-    let k = closingStart;
-    while (k > i2 && isHtmlWhitespace(html.charCodeAt(k - 1))) k--;
-    if (k - 4 >= i2 && html.slice(k - 4, k).toLowerCase() === "<br>") {
-      k -= 4;
-      while (k > i2 && isHtmlWhitespace(html.charCodeAt(k - 1))) k--;
-    }
-    out += html.slice(i2, k) + "</p>" + html.slice(closingStart, pStart);
-    i2 = pStart + 4;
-  }
-  return out;
-}
-function extractYtStartTime(url) {
-  try {
-    const urlObj = new URL(url);
-    const params = new URLSearchParams(urlObj.search);
-    const m = /^(?:(\d{1,7})h)?(?:(\d{1,7})m)?(?:(\d{1,7})s?)?$/i.exec(params.get("t") || "");
-    if (m && (m[1] || m[2] || m[3])) {
-      const seconds = +(m[1] || 0) * 3600 + +(m[2] || 0) * 60 + +(m[3] || 0);
-      if (seconds <= 9999999) return "" + seconds;
-    }
-    const start = params.get("start") || "";
-    return /^\d{1,7}$/.test(start) ? "" + +start : "";
-  } catch (error) {
-    return "";
-  }
-}
-function youtubeVideoLinkClass(matchedUrl) {
-  const base = "markdown-video-link markdown-video-link-youtube";
-  return /youtube\.com\/shorts\//i.test(matchedUrl) ? `${base} markdown-video-link-youtube-portrait` : base;
-}
-function sanitizePermlink(permlink) {
-  if (!permlink || typeof permlink !== "string") {
-    return "";
-  }
-  const [withoutQuery] = permlink.split("?");
-  const [cleaned] = withoutQuery.split("#");
-  return cleaned;
-}
-function isValidPermlink(permlink) {
-  const sanitized = sanitizePermlink(permlink);
-  if (!sanitized) {
-    return false;
-  }
-  const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(sanitized);
-  const isCleanFormat = /^[a-z0-9-]+$/.test(sanitized);
-  return isCleanFormat && !isImage;
-}
-var LABEL_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
-function isValidUsername(username) {
-  if (!username || typeof username !== "string") return false;
-  if (username.length > 16) return false;
-  const labels = username.split(".");
-  return labels.every((label) => {
-    return label.length >= 3 && label.length <= 16 && /^[a-z]/.test(label) && // must start with a letter
-    LABEL_REGEX.test(label) && // a-z0-9, hyphens, no start/end hyphen
-    !label.includes("..");
-  });
-}
+var DOMParser = /* @__PURE__ */ createParser();
 
 // src/methods/get-inner-html.method.ts
 function getSerializedInnerHTML(node) {
@@ -10901,10 +10892,7 @@ function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
     at = markerAt + markerLength + (wide ? 1 : gapChars);
     column += width - spacesFrom;
   }
-  return { containers, at };
-}
-function insideContainers(line, containers, blank) {
-  return insideContainersAt(line, containers, blank).at;
+  return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 };
 }
 function insideContainersAt(line, containers, blank) {
   let at = 0;
@@ -10947,11 +10935,24 @@ function insideContainersAt(line, containers, blank) {
   }
   return { at, column, carry, matched: containers.length, prefixAt: at };
 }
-function fenceAt(line, at) {
-  let indent = 0;
-  while (indent < 4 && isSpace(line, at + indent)) indent++;
+function fenceAt(line, at, column = 0, carried = 0) {
+  let indent = carried;
+  let col = column;
+  let start = at;
+  while (indent <= 3) {
+    if (isSpace(line, start)) {
+      indent++;
+      col++;
+    } else if (line[start] === "	") {
+      const width = 4 - col % 4;
+      indent += width;
+      col += width;
+    } else {
+      break;
+    }
+    start++;
+  }
   if (indent > 3) return null;
-  const start = at + indent;
   const char = line[start];
   if (char !== "`" && char !== "~") return null;
   let end = start;
@@ -10973,7 +10974,7 @@ function codeRanges(src) {
     const read = readContainers(line);
     if (read.containers.length > 0) {
       containers = read.containers;
-      open = fenceAt(line, read.at);
+      open = fenceAt(line, read.at, read.column);
       item = containers.some((c) => c !== QUOTE) ? containers : null;
     } else if (!blank) {
       if (item) {
@@ -10988,9 +10989,9 @@ function codeRanges(src) {
           const nested = readContainers(line, inside.at, inside.column, inside.carry);
           if (nested.containers.length > 0) {
             containers = [...item, ...nested.containers];
-            open = fenceAt(line, nested.at);
+            open = fenceAt(line, nested.at, nested.column, nested.carry);
             if (nested.containers.some((c) => c !== QUOTE)) item = containers;
-          } else if (open = fenceAt(line, inside.at)) {
+          } else if (open = fenceAt(line, inside.at, inside.column, inside.carry)) {
             containers = item;
           }
         }
@@ -11005,12 +11006,13 @@ function codeRanges(src) {
         const e = src.indexOf("\n", p2);
         const le = e === -1 ? src.length : e;
         const next = src.slice(p2, le);
-        const at = insideContainers(next, containers, next.trim() === "");
+        const inside = insideContainersAt(next, containers, next.trim() === "");
+        const at = inside.at;
         if (at === -1) {
           end = p2 - 1;
           break;
         }
-        const close = fenceAt(next, at);
+        const close = fenceAt(next, at, inside.column, inside.carry);
         if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === "") {
           end = le;
           break;
@@ -11299,6 +11301,19 @@ function markdown2Html(obj, forApp = true, _webp = false, parentDomain = "ecency
   );
   entryMemoSet(key, obj.body, void 0, res);
   return res;
+}
+
+// src/create-doc.ts
+function createDoc(html) {
+  if (html.trim() === "") {
+    return null;
+  }
+  const cleanedHtml = removeDuplicateAttributes(html);
+  try {
+    return DOMParser.parseFromString(`<body>${cleanedHtml}</body>`, "text/html");
+  } catch {
+    return null;
+  }
 }
 var BACKTICK_FENCE_RE = /```[\s\S]*?```/g;
 var TILDE_FENCE_RE = /~~~[\s\S]*?~~~/g;
@@ -11687,7 +11702,9 @@ function htmlTextImageUrl(body, pos) {
   return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd));
 }
 function firstBodyImageRawUrl(body) {
-  const prepared = prepareBody(body);
+  return bodyImageRawUrl(body, prepareBody(body));
+}
+function bodyImageRawUrl(body, prepared) {
   const candidate = findFirstImageCandidate(prepared, true).candidate;
   if (!candidate) return null;
   if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url));
@@ -11869,7 +11886,7 @@ function metaFingerprint(jsonMetadata) {
 function proxifyFound(src, width, height, format) {
   return proxifyImageSrc(decodeEntities(src), width, height, format);
 }
-function getImage(entry, width = 0, height = 0, format = "match", fastMode = false) {
+function getImage(entry, width, height, format, renderFirstImage) {
   let meta;
   if (typeof entry.json_metadata === "object") {
     meta = entry.json_metadata;
@@ -11896,27 +11913,15 @@ function getImage(entry, width = 0, height = 0, format = "match", fastMode = fal
     }
     return proxifyImageSrc(meta.image[0], width, height, format);
   }
-  if (fastMode) {
+  if (!renderFirstImage) {
     return fastBodyImage(entry.body, width, height, format);
   }
   const fast = findFirstImageUrl(entry.body);
   if (fast) {
     return proxifyFound(fast, width, height, format);
   }
-  const html = markdown2Html(entry);
-  const doc = createDoc(html);
-  if (!doc) {
-    return null;
-  }
-  const imgEls = doc.getElementsByTagName("img");
-  if (imgEls.length >= 1) {
-    const src = imgEls[0].getAttribute("src");
-    if (!src) {
-      return null;
-    }
-    return proxifyFound(src, width, height, format);
-  }
-  return null;
+  const src = renderFirstImage(entry);
+  return src ? proxifyFound(src, width, height, format) : null;
 }
 function getEntryCardImageRawUrl(obj) {
   if (typeof obj === "string") {
@@ -11938,10 +11943,7 @@ function getEntryCardImageRawUrl(obj) {
   }
   return getEntryImageRawUrl(obj);
 }
-function getEntryImageRawUrl(obj) {
-  if (typeof obj === "string") {
-    return firstBodyImageRawUrl(obj);
-  }
+function metaCoverRawUrl(obj) {
   let meta;
   if (typeof obj.json_metadata === "object") {
     meta = obj.json_metadata;
@@ -11958,41 +11960,162 @@ function getEntryImageRawUrl(obj) {
   if (meta && meta.image && !!meta.image.length && typeof meta.image[0] === "string" && meta.image[0].length > 0) {
     return decodeImageSrc(meta.image[0]);
   }
-  return firstBodyImageRawUrl(obj.body);
+  return null;
 }
-function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
-  const fastMode = options.fast === true;
+function getEntryLcpImage(obj) {
+  const cover = metaCoverRawUrl(obj);
+  if (cover) {
+    return { url: cover, poster: false };
+  }
+  const prepared = prepareBody(obj.body);
+  const found = findFirstImageCandidate(prepared, true);
+  if (found.ambiguous) {
+    return null;
+  }
+  const poster = findFirstVideoPoster(prepared);
+  if (poster && (!found.candidate || poster.pos < found.candidate.pos)) {
+    return { url: poster.url, poster: true };
+  }
+  const url = bodyImageRawUrl(obj.body, prepared);
+  return url ? { url, poster: false } : null;
+}
+function getEntryImageRawUrl(obj) {
   if (typeof obj === "string") {
-    if (fastMode) {
+    return firstBodyImageRawUrl(obj);
+  }
+  return metaCoverRawUrl(obj) ?? firstBodyImageRawUrl(obj.body);
+}
+function lookupPostImage(obj, width, height, format, renderFirstImage) {
+  if (typeof obj === "string") {
+    if (!renderFirstImage) {
       return fastBodyImage(obj, width, height, format);
     }
     const fast = findFirstImageUrl(obj);
     if (fast) {
       return proxifyFound(fast, width, height, format);
     }
-    const html = markdown2Html(obj);
-    const doc = createDoc(html);
-    if (!doc) {
-      return null;
-    }
-    const imgEls = doc.getElementsByTagName("img");
-    if (imgEls.length >= 1) {
-      const src = imgEls[0].getAttribute("src");
-      if (!src) {
-        return null;
-      }
-      return proxifyFound(src, width, height, format);
-    }
-    return null;
+    const src = renderFirstImage(obj);
+    return src ? proxifyFound(src, width, height, format) : null;
   }
-  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${fastMode ? "-fast" : ""}`;
+  const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${renderFirstImage ? "" : "-fast"}`;
   const meta = metaFingerprint(obj.json_metadata);
   const item = entryMemoGet(key, obj.body, meta);
   if (item !== MEMO_MISS) {
     return item;
   }
-  const res = getImage(obj, width, height, format, fastMode);
+  const res = getImage(obj, width, height, format, renderFirstImage);
   entryMemoSet(key, obj.body, meta, res);
+  return res;
+}
+function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
+  return lookupPostImage(obj, width, height, format, null);
+}
+
+// src/catch-post-image.ts
+function firstRenderedImageSrc(obj) {
+  const doc = createDoc(markdown2Html(obj));
+  if (!doc) {
+    return null;
+  }
+  const imgEls = doc.getElementsByTagName("img");
+  return imgEls.length >= 1 ? imgEls[0].getAttribute("src") || null : null;
+}
+function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
+  return lookupPostImage(obj, width, height, format, options.fast === true ? null : firstRenderedImageSrc);
+}
+
+// src/post-body-text.ts
+var ESCAPED2 = /\\([\\`*_{}[\]()#+\-.!>~|])/g;
+var ESCAPE_SLOT = /\uE000(\d+)\uE001/g;
+function markdownToText(source) {
+  const escaped = [];
+  const md = /[\uE000\uE001]/.test(source) ? source : source.replace(ESCAPED2, (_m, c) => `\uE000${escaped.push(c) - 1}\uE001`);
+  return md.replace(/\r\n?/g, "\n").replace(/^ {0,3}(?:```|~~~)[^\n]*$/gm, "").replace(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S[^\n]*$/gm, "").replace(/!\[[^[\]\n]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, "").replace(/!\[[^[\]\n]*\]\[[^[\]\n]*\]/g, "").replace(/\[([^[\]\n]*)\]\((?:[^()\n]|\([^()\n]*\))*\)/g, "$1").replace(/\[([^[\]\n]*)\]\[[^[\]\n]*\]/g, "$1").replace(/<((?:https?|ftp):\/\/[^<>\s]+)>/gi, "$1").replace(/^[ \t]*(?:>[ \t]?)+/gm, "").replace(/^[ \t]*#{1,6}(?:[ \t]+|$)/gm, "").replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, "").replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/gm, "").replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, "").replace(/^[ \t]*=+[ \t]*$/gm, "").replace(/^[ \t|:-]+$/gm, (row) => row.includes("---") || /^[ \t]*\|/.test(row) && row.includes("-") ? "" : row).replace(/^[ \t]*\|[^\n]*$/gm, (row) => row.replace(/\|/g, " ")).replace(/(^|[^\w*_~])(?:[*_]{1,3}|~~)(?=[^\s*_~])/gm, "$1").replace(/([^\s*_~])(?:[*_]{1,3}|~~)(?=$|[^\w*_~])/gm, "$1").replace(/`+/g, "").replace(ESCAPE_SLOT, (_m, i2) => escaped[Number(i2)] ?? "");
+}
+function stripTags(text3) {
+  let out = "";
+  let at = 0;
+  for (; ; ) {
+    const open = text3.indexOf("<!--", at);
+    if (open === -1) {
+      out += text3.slice(at);
+      break;
+    }
+    out += text3.slice(at, open);
+    const close = text3.indexOf("-->", open + 4);
+    if (close === -1) break;
+    at = close + 3;
+  }
+  return dropTags(out);
+}
+var isLetter2 = (c) => c >= "a" && c <= "z" || c >= "A" && c <= "Z";
+function dropTags(text3) {
+  const out = [];
+  let i2 = 0;
+  while (i2 < text3.length) {
+    const c = text3[i2];
+    if (c !== "<") {
+      if (isLetter2(c) || c === "/" || c === "!") {
+        while (out[out.length - 1] === "<") out.pop();
+      }
+      out.push(c);
+      i2++;
+      continue;
+    }
+    const next = text3[i2 + 1] ?? "";
+    const opensTag = isLetter2(next) || next === "/" && isLetter2(text3[i2 + 2] ?? "");
+    if (opensTag) {
+      let j = i2 + 1;
+      while (j < text3.length && text3[j] !== ">" && text3[j] !== "<") j++;
+      i2 = text3[j] === ">" ? j + 1 : i2 + 1;
+      continue;
+    }
+    if (next !== "/" && next !== "!") {
+      out.push(c);
+    }
+    i2++;
+  }
+  return out.join("");
+}
+var joint = (arr, limit = 200) => {
+  let result = "";
+  for (let i2 = 0; i2 < arr.length; i2++) {
+    if (result) {
+      result += " ";
+    }
+    if (result.length > limit) {
+      break;
+    }
+    if ((result + arr[i2]).length < limit + 10) {
+      result += arr[i2];
+    } else {
+      break;
+    }
+  }
+  return result.trim();
+};
+function postBodyText(body, length) {
+  if (!body) {
+    return "";
+  }
+  const escaped = markdownToText(cleanReply(body)).replace(/&(?!#?[A-Za-z0-9]+;)/g, "&amp;").replace(/"/g, "&quot;");
+  let text3 = stripTags(escaped).replace(/\r?\n|\r/g, " ").replace(/(?:https?|ftp):\/\/[\n\S]+/g, "").trim().replace(/[ \t]{2,}|\t/g, " ");
+  if (length > 0) {
+    text3 = joint(text3.split(" "), length);
+  }
+  return text3 ? decodeEntities(text3) : text3;
+}
+function getPostBodyText(obj, length = 200) {
+  if (typeof obj === "string") {
+    return postBodyText(obj, length);
+  }
+  const key = `${makeEntryCacheKey(obj)}-text-${length}`;
+  const item = entryMemoGet(key, obj.body);
+  if (item !== MEMO_MISS) {
+    return item;
+  }
+  const res = postBodyText(obj.body, length);
+  entryMemoSet(key, obj.body, void 0, res);
   return res;
 }
 
@@ -12011,7 +12134,7 @@ summaryRenderer.inline.ruler.enable([
   "sub",
   "sup"
 ]);
-var joint = (arr, limit = 200) => {
+var joint2 = (arr, limit = 200) => {
   let result = "";
   if (arr) {
     for (let i2 = 0; i2 < arr.length; i2++) {
@@ -12065,7 +12188,7 @@ function postBodySummary(entryBody, length = 200, platform = "web") {
   }
   text3 = stripHtmlTags(text3).replace(/\r?\n|\r/g, " ").replace(/(?:https?|ftp):\/\/[\n\S]+/g, "").trim().replace(/ {2,}/g, " ");
   if (length > 0) {
-    text3 = joint(text3.split(" "), length);
+    text3 = joint2(text3.split(" "), length);
   }
   if (text3) {
     text3 = decodeEntities(text3);
@@ -12088,6 +12211,6 @@ function getPostBodySummary(obj, length, platform) {
   return res;
 }
 
-export { IMAGE_SIZES, SECTION_LIST, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { IMAGE_SIZES, SECTION_LIST, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, getPostBodyText, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
 //# sourceMappingURL=index.mjs.map
 //# sourceMappingURL=index.mjs.map
