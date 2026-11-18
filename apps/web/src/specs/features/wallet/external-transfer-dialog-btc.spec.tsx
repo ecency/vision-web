@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 
@@ -20,6 +20,7 @@ const LINKED = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 const RECIPIENT = "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3";
 
 const mutateAsync = vi.fn();
+const linked = { tokens: true };
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
@@ -29,7 +30,7 @@ vi.mock("@ecency/sdk", async () => {
       ...actual.getAccountFullQueryOptions(username),
       queryFn: async () => ({
         name: "alice",
-        profile: { tokens: [{ symbol: "BTC", type: "CHAIN", meta: { address: LINKED } }] }
+        profile: { tokens: linked.tokens ? [{ symbol: "BTC", type: "CHAIN", meta: { address: LINKED } }] : [] }
       })
     })
   };
@@ -64,16 +65,21 @@ const amountInput = () => screen.getByPlaceholderText("0.0");
 const reviewButton = () => screen.getByRole("button", { name: "external-transfer.review" });
 
 async function fillForm(to: string, amount: string) {
-  renderDialog();
+  return fillRendered(renderDialog(), to, amount);
+}
+
+async function fillRendered<T>(rendered: T, to: string, amount: string): Promise<T> {
   // The linked address arrives through the account query
   await screen.findByText(/^external-transfer\.balance:/);
   fireEvent.change(recipientInput(), { target: { value: to } });
   fireEvent.change(amountInput(), { target: { value: amount } });
+  return rendered;
 }
 
 describe("ExternalTransferDialog: BTC", () => {
   beforeEach(() => {
     mutateAsync.mockReset();
+    linked.tokens = true;
   });
 
   test("shows the balance with all eight decimals and no Max button", async () => {
@@ -124,5 +130,17 @@ describe("ExternalTransferDialog: BTC", () => {
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
     await waitFor(() => expect(screen.getByText("external-transfer.cancelled")).toBeInTheDocument());
+  });
+
+  test("does not send when the linked wallet is gone by the confirm step", async () => {
+    const { queryClient } = await fillForm(RECIPIENT, "0.01");
+    fireEvent.click(reviewButton());
+    // The account refetches while the dialog is open and the link is removed.
+    linked.tokens = false;
+    await act(() => queryClient.refetchQueries());
+    fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
+
+    await waitFor(() => expect(screen.getByText("external-transfer.account-mismatch")).toBeInTheDocument());
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

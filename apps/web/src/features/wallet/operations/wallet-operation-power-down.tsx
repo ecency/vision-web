@@ -1,4 +1,5 @@
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
+import { availableForPowerDown as availablePowerDown } from "./operation-amount";
 import { getDynamicPropsQueryOptions, getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
@@ -65,7 +66,7 @@ export function WalletOperationPowerDown({ username, asset, onSubmit, showSubmit
   );
 
   const availableForPowerDown = useMemo(
-    () => Math.max(hpBalance - outgoingDelegations - pendingPowerDown, 0),
+    () => availablePowerDown(hpBalance, outgoingDelegations, pendingPowerDown),
     [hpBalance, outgoingDelegations, pendingPowerDown]
   );
 

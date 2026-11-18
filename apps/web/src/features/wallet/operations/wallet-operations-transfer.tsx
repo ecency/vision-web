@@ -19,7 +19,13 @@ import { WalletOperationAmountForm } from "./wallet-operation-amount-form";
 import { formatNumber } from "@/utils";
 import { callRPC } from "@ecency/sdk";
 import { hpToVests } from "@/features/shared/transfer/hp-to-vests";
-import { amountStep, operationAssetPrecision, truncateAmount } from "./operation-amount";
+import {
+  amountStep,
+  enginePrecisionStatus,
+  isEngineLayer,
+  operationAssetPrecision,
+  truncateAmount
+} from "./operation-amount";
 import { isKeyInMemo, operationCarriesMemo, prepareOperationMemo } from "./operation-memo";
 import { error as showError } from "@/features/shared";
 import { formatError } from "@/api/format-error";
@@ -89,10 +95,10 @@ export function WalletOperationsTransfer({
   }, [data?.to, operation, shouldDefaultToSelf, toProp, username]);
 
   // The portfolio declares "engine"; compare without case either way.
-  const isEngineToken = accountWallet?.layer?.toLowerCase() === "engine";
+  const isEngineToken = isEngineLayer(accountWallet?.layer);
   // A Hive Engine token has its own precision (up to 8 decimals); everything
   // else here uses 3 (#2127).
-  const { data: engineBalances } = useQuery({
+  const { data: engineBalances, isFetching: engineBalancesLoading } = useQuery({
     ...getHiveEngineBalancesWithUsdQueryOptions(username, dynamicProps),
     enabled: isEngineToken && !!username
   });
@@ -389,6 +395,7 @@ export function WalletOperationsTransfer({
     asset === "HP" &&
     operation === AssetOperation.Delegate &&
     Boolean(existingDelegationHp && existingDelegationHp > 0);
+  const precisionStatus = enginePrecisionStatus(isEngineToken, knownPrecision, engineBalancesLoading);
   const isSubmitDisabled =
     knownPrecision === null ||
     !hasValidRecipient ||
@@ -479,6 +486,15 @@ export function WalletOperationsTransfer({
               </Button>
             )}
           </div>
+          {showSubmit && precisionStatus && (
+            <div className="px-4 pb-4 text-sm text-gray-600 dark:text-gray-400" role="status">
+              {i18next.t(
+                precisionStatus === "loading"
+                  ? "transfer.token-details-loading"
+                  : "transfer.token-details-unavailable"
+              )}
+            </div>
+          )}
         </form>
       </FormProvider>
     </div>

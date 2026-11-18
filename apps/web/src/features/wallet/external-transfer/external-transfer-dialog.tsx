@@ -178,6 +178,19 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
   const transfer = useExternalTransfer(currency);
 
   const handleConfirm = useCallback(async () => {
+    // The account can refetch while the dialog is open: with no linked wallet
+    // any more there is nothing to check the sending account against, so
+    // nothing is sent.
+    if (!externalAddress) {
+      setErrorMessage(
+        i18next.t("external-transfer.account-mismatch", {
+          defaultValue:
+            "Your connected MetaMask account does not match your linked wallet. Switch to the linked account in MetaMask and try again."
+        })
+      );
+      setStep("error");
+      return;
+    }
     setStep("signing");
     try {
       // Pass the linked wallet address so the EVM send is blocked at the source if

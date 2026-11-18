@@ -57,3 +57,35 @@ export function truncateAmount(value: number, precision: number): string {
     ? `${sign}${whole}.${fraction.slice(0, precision).padEnd(precision, "0")}`
     : `${sign}${whole}`;
 }
+
+/** A portfolio layer is Hive Engine whatever its case (the API sends "engine"). */
+export function isEngineLayer(layer: string | undefined | null): boolean {
+  return layer?.toLowerCase() === "engine";
+}
+
+/**
+ * Why an engine token's amount cannot be entered yet: its details are still
+ * loading, or they did not come (no precision, so no safe amount). Null when
+ * nothing is missing.
+ */
+export function enginePrecisionStatus(
+  isEngineToken: boolean,
+  knownPrecision: number | null,
+  loading: boolean
+): "loading" | "unavailable" | null {
+  if (!isEngineToken || knownPrecision !== null) {
+    return null;
+  }
+  return loading ? "loading" : "unavailable";
+}
+
+/**
+ * HP that can be powered down: held, less delegated and already powering
+ * down. Counted in whole thousandths (HP has 3 decimals), so the result has no
+ * float noise (0.3 - 0.1 is 0.2, not 0.19999999999999998) that would fail the
+ * amount field's 0.001 step check.
+ */
+export function availableForPowerDown(hp: number, delegated: number, pending: number): number {
+  const milli = (v: number) => Math.round((Number.isFinite(v) ? v : 0) * 1000);
+  return Math.max(milli(hp) - milli(delegated) - milli(pending), 0) / 1000;
+}

@@ -1825,7 +1825,9 @@
     "stake-title": "Stake",
     "stake-sub-title": "Stake token to earn passive rewards",
     "unstake-title": "Unstake",
-    "unstake-sub-title": "Unstake token you will stop earning passive rewards"
+    "unstake-sub-title": "Unstake token you will stop earning passive rewards",
+    "token-details-loading": "Loading the token's details before you can continue.",
+    "token-details-unavailable": "This token's details could not be loaded, so the amount cannot be checked. Try again in a moment."
   },
   "trx-common": {
     "insufficient-funds": "Insufficient funds",

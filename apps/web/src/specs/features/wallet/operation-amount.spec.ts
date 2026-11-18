@@ -4,6 +4,7 @@ import {
   operationAssetPrecision,
   truncateAmount
 } from "@/features/wallet/operations/operation-amount";
+import { availableForPowerDown, enginePrecisionStatus, isEngineLayer } from "@/features/wallet/operations/operation-amount";
 
 // #2127: the wallet operations dialog used 3 decimals for every asset, so a
 // Hive Engine token with 8 could not be sent below 0.001 and the rest of a
@@ -76,5 +77,52 @@ describe("truncateAmount", () => {
 
   it("writes whole units for precision 0", () => {
     expect(truncateAmount(12.7, 0)).toBe("12");
+  });
+});
+
+describe("isEngineLayer", () => {
+  // The portfolio declares "engine"; an "ENGINE" check left #2127's precision
+  // path unused.
+  it.each([
+    ["engine", true],
+    ["ENGINE", true],
+    ["Engine", true],
+    ["hive", false],
+    [undefined, false]
+  ])("%s is engine: %s", (layer, expected) => {
+    expect(isEngineLayer(layer)).toBe(expected);
+  });
+});
+
+describe("enginePrecisionStatus", () => {
+  it("says nothing for a token whose precision is known, or a native asset", () => {
+    expect(enginePrecisionStatus(true, 8, false)).toBeNull();
+    expect(enginePrecisionStatus(false, 3, false)).toBeNull();
+  });
+
+  it("says loading while the token's details are still on their way", () => {
+    expect(enginePrecisionStatus(true, null, true)).toBe("loading");
+  });
+
+  it("says unavailable once loading ended without them", () => {
+    expect(enginePrecisionStatus(true, null, false)).toBe("unavailable");
+  });
+});
+
+describe("availableForPowerDown", () => {
+  // The number input has step 0.001: float noise like 79.09999999999999 fails
+  // its step check in some browsers.
+  it.each([
+    [100.1, 21, 0, "79.100"],
+    [0.3, 0.1, 0, "0.200"],
+    [10, 0, 0, "10.000"]
+  ])("%s HP less %s delegated and %s pending is %s", (hp, delegated, pending, expected) => {
+    const value = availableForPowerDown(hp, delegated, pending);
+    expect(value.toFixed(3)).toBe(expected);
+    expect(String(value).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(3);
+  });
+
+  it("is 0, not negative, when more is delegated than held", () => {
+    expect(availableForPowerDown(5, 10, 0)).toBe(0);
   });
 });

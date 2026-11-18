@@ -111,12 +111,15 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
 
   useEffect(() => {
     if (error) {
+      signMethodRef.current = { method: "" };
       onSignError(error);
     }
   }, [error, onSignError]);
 
   useEffect(() => {
     if (isSuccess) {
+      // The key object is not needed once the operation is done.
+      signMethodRef.current = { method: "" };
       onSignSuccess();
     }
   }, [isSuccess, onSignSuccess]);
@@ -133,8 +136,10 @@ export function WalletOperationSign({ data, onSignError, onSignSuccess, asset, o
     } else {
       key = PrivateKey.fromLogin(activeUser.username, typed);
     }
-    // The store keeps the derived key, never a typed master password.
+    // The store keeps the derived key, never a typed master password, and the
+    // typed text is dropped here as soon as it is derived.
     setSigningKey(key.toString());
+    setTypedKey(null);
     signMethodRef.current = { method: "key", key };
     sign(data as any);
     setStep("signing");

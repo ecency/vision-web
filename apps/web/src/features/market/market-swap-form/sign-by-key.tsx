@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { PrivateKey } from "@ecency/sdk";
 import { isWif } from "@ecency/sdk";
 import { FormControl, InputGroup } from "@ui/input";
@@ -22,9 +22,18 @@ export const SignByKey = ({ onKey, onBack, isLoading }: Props) => {
 
   const [key, setKey] = useState("");
 
+  // The field follows the store's key. When the store drops it (idle limit,
+  // logout), a key the field still shows goes too; text the user typed since
+  // stays.
+  const shownKey = useRef<string | null>(null);
   useEffect(() => {
     if (signingKey) {
+      shownKey.current = signingKey;
       setKey(signingKey);
+    } else if (shownKey.current) {
+      const dropped = shownKey.current;
+      shownKey.current = null;
+      setKey((current) => (current === dropped ? "" : current));
     }
   }, [signingKey]);
 
