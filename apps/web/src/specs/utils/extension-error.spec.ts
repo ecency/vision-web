@@ -167,6 +167,8 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "connect ECONNREFUSED https://upstream-node.example.com:8090/rpc" }],
     [{ message: "getaddrinfo EAI_AGAIN upstream-node.example.com" }],
     [{ message: "getaddrinfo ENOTFOUND node1:8091" }],
+    // A Node system error has a string code and a numeric errno, no status.
+    [{ error: { code: "ECONNREFUSED", errno: -111, message: "connect ECONNREFUSED 1.2.3.4:443" } }],
   ])("retries %o: nothing reached a node", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(true);
   });
@@ -226,7 +228,30 @@ describe("isUnsentBroadcastError", () => {
     // A name that is itself a signal word is kept: no retry.
     [{ message: "getaddrinfo ENOTFOUND backend:8091" }],
     [{ message: "ECONNREFUSED http://x.example.com/504-gateway-timeout" }],
+    // A structured HTTP or RPC status means something answered: the text
+    // alone must not make it look unsent.
+    [{ message: "Unable to connect", status: 504 }],
+    [{ message: "Unable to connect", error: { message: "could not connect", status: 502 } }],
+    [{ message: "Unable to connect", error: { statusCode: 504 } }],
+    [{ message: "could not connect", error: { response: { status: 504 } } }],
+    [{ message: "could not connect", error: { code: -32000, message: "unable to connect" } }],
+    [{ message: "could not connect", status: "504" }],
+    [{ message: "Unable to connect", error: new Error("could not connect", { cause: { status: 504 } }) }],
+    [{ message: "could not connect", httpStatus: 502 }],
+    [{ message: "could not connect", error: { responseCode: 503 } }],
+    [{ message: "could not connect", status: "502 Bad Gateway" }],
+    [{ message: "could not connect", error: { cause: { response: { data: { error: { code: -32000 } } } } } }],
   ])("does NOT retry %o", (resp) => {
+    expect(isUnsentBroadcastError(resp)).toBe(false);
+  });
+
+  it("does NOT retry, and does not throw, when reading the response throws", () => {
+    const resp = {
+      message: "could not connect",
+      get detail(): unknown {
+        throw new Error("getter");
+      }
+    };
     expect(isUnsentBroadcastError(resp)).toBe(false);
   });
 });

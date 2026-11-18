@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 import { WalletOperationPowerDown } from "@/features/wallet/operations/wallet-operation-power-down";
@@ -19,6 +19,8 @@ const fallbackParts = vi.hoisted(() => ({
     { name: "outgoing_delegations", balance: 20 }
   ]
 }));
+
+const accountGate = vi.hoisted(() => ({ open: Promise.resolve() as Promise<void> }));
 
 const account = vi.hoisted(() => ({
   name: "alice",
@@ -45,7 +47,7 @@ vi.mock("@ecency/sdk", async () => {
     }),
     getAccountFullQueryOptions: () => ({
       queryKey: ["spec", "account"],
-      queryFn: () => account
+      queryFn: () => accountGate.open.then(() => account)
     })
   };
 });
@@ -64,5 +66,24 @@ describe("WalletOperationPowerDown", () => {
     // 80.000. The rounded parts would give 80.001, more than is available.
     const input = (await screen.findByRole("spinbutton")) as HTMLInputElement;
     await waitFor(() => expect(Number(input.value)).toBe(80));
+  });
+
+  test("keeps Continue disabled until the exact cap from the account has loaded", async () => {
+    let release: () => void = () => {};
+    accountGate.open = new Promise<void>((r) => (release = r));
+    renderWithQueryClient(
+      <WalletOperationPowerDown username="alice" asset="HP" showSubmit={true} onSubmit={() => {}} />
+    );
+
+    const input = (await screen.findByRole("spinbutton")) as HTMLInputElement;
+    const submit = screen.getByRole("button", { name: /g.continue/ });
+    // Only the rounded wallet figures so far (80.001): nothing can be sent.
+    await waitFor(() => expect(Number(input.value)).toBe(80.001));
+    expect(submit).toBeDisabled();
+
+    await act(async () => release());
+    await waitFor(() => expect(Number(input.value)).toBe(80));
+    await waitFor(() => expect(submit).toBeEnabled());
+    accountGate.open = Promise.resolve();
   });
 });

@@ -194,6 +194,46 @@ function isEndpointName(operand: string): boolean {
   return ENDPOINT_NAME.test(operand);
 }
 
+const STATUS_KEYS = new Set([
+  "status",
+  "statuscode",
+  "status_code",
+  "httpstatus",
+  "http_status",
+  "code",
+  "errorcode",
+  "error_code",
+  "responsecode",
+  "response_code"
+]);
+
+function isStatusValue(s: unknown): boolean {
+  if (typeof s === "number") return Number.isFinite(s);
+  // "504", "-32000", "502 Bad Gateway"
+  return typeof s === "string" && /^\s*-?\d{3,5}\b/.test(s);
+}
+
+/**
+ * True when the response, or an object inside it, carries an HTTP or JSON-RPC
+ * status: a server answered, whatever its text says. The text is normalized
+ * to its message fields, which drops these. `cause` and `response` are read
+ * by name, since an Error's cause and a getter on a class are not enumerable.
+ */
+function carriesAnswerStatus(value: unknown, depth = 0, seen = new WeakSet<object>()): boolean {
+  if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return false;
+  seen.add(value);
+  const v = value as Record<string, unknown>;
+  for (const key of Object.keys(v)) {
+    if (STATUS_KEYS.has(key.toLowerCase()) && isStatusValue(v[key])) return true;
+  }
+  if (isStatusValue(v.status) || isStatusValue(v.statusCode)) return true;
+  const children = new Set<unknown>([v.cause, v.response, v.error, v.data, ...Object.values(v)]);
+  for (const child of children) {
+    if (carriesAnswerStatus(child, depth + 1, seen)) return true;
+  }
+  return false;
+}
+
 /**
  * True when a broadcast failure shows the transaction never reached a node
  * (the connection was refused, the name did not resolve, Cloudflare could not
@@ -208,8 +248,18 @@ function isEndpointName(operand: string): boolean {
 export function isUnsentBroadcastError(
   resp: Pick<TxResponse, "message" | "error">
 ): boolean {
+  try {
+    return classifyUnsent(resp);
+  } catch {
+    // A response that cannot even be read proves nothing: no retry.
+    return false;
+  }
+}
+
+function classifyUnsent(resp: Pick<TxResponse, "message" | "error">): boolean {
   const text = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`.trim();
   if (!text) return false;
+  if (carriesAnswerStatus(resp)) return false;
   // The name after a DNS or refused-connection code is the endpoint, not a
   // diagnostic: "ENOTFOUND hive-gateway.example.com" says nothing about a
   // gateway answering. Only that one operand goes, only when it ends cleanly
