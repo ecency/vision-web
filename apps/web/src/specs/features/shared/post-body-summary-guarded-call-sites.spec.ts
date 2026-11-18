@@ -64,6 +64,18 @@ describe("card and search summaries go through the summary guard", () => {
     expect(source).toMatch(/entrySummary\(entry\)/);
   });
 
+  // The search rows reach the guard through searchSummary; the pin above covers
+  // them only while both still use it, and call no summary reader directly.
+  it.each([
+    ["features/shared/search-list-item/index.tsx", 1],
+    ["app/decks/_components/columns/deck-items/deck-search-list-item.tsx", 2]
+  ])("%s reads its excerpt through searchSummary", (file, calls) => {
+    const source = read(file);
+    expect(source).toMatch(/import\s*{\s*searchSummary\s*}\s*from\s*"[^"]*search-summary"/);
+    expect(source.match(/searchSummary\(/g)?.length ?? 0).toBe(calls);
+    expect(source).not.toMatch(/\b(?:postBodyTextSafely|postBodySummary|getPostBodyText)\(/);
+  });
+
   it("the guard swallows the throw and reports rather than rethrowing", () => {
     const source = read("core/entries/post-body-summary-safely.ts");
     expect(source).toMatch(/catch\s*\([\s\S]*?\)\s*{[\s\S]*?return "";/);

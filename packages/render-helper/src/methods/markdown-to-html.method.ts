@@ -374,7 +374,7 @@ function codeRanges(src: string): Array<[number, number]> {
     const read = readContainers(line)
     if (read.containers.length > 0) {
       containers = read.containers
-      open = fenceAt(line, read.at, read.column)
+      open = fenceAt(line, read.at, read.column, read.carry)
       // A quote line outside the item ends it.
       item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {

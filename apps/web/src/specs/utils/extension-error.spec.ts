@@ -186,6 +186,10 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "Failed to fetch" }],
     [{ message: "Request failed with status code 503" }],
     [{ message: "Service Unavailable" }],
+    // A gateway answered: a connection phrase from upstream does not make it unsent.
+    [{ message: "Request failed with status code 504", error: "Unable to connect to upstream" }],
+    [{ message: "Bad Gateway: could not connect to backend" }],
+    [{ error: "ECONNREFUSED after timeout" }],
   ])("does NOT retry %o", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(false);
   });

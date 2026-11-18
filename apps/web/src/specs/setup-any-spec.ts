@@ -398,5 +398,6 @@ vi.mock("react-tweet", () => ({}));
 vi.mock("@/utils", () => ({
   random: vi.fn(),
   getAccessToken: vi.fn(() => "mock-token"),
-  ensureValidToken: vi.fn(async () => "mock-token")
+  ensureValidToken: vi.fn(async () => "mock-token"),
+  ensureValidTokenWithin: vi.fn(async () => "mock-token")
 }));

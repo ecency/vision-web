@@ -98,7 +98,7 @@ export function WalletOperationsTransfer({
   const isEngineToken = isEngineLayer(accountWallet?.layer);
   // A Hive Engine token has its own precision (up to 8 decimals); everything
   // else here uses 3 (#2127).
-  const { data: engineBalances, isFetching: engineBalancesLoading } = useQuery({
+  const { data: engineBalances, fetchStatus: engineBalancesFetch } = useQuery({
     ...getHiveEngineBalancesWithUsdQueryOptions(username, dynamicProps),
     enabled: isEngineToken && !!username
   });
@@ -395,7 +395,9 @@ export function WalletOperationsTransfer({
     asset === "HP" &&
     operation === AssetOperation.Delegate &&
     Boolean(existingDelegationHp && existingDelegationHp > 0);
-  const precisionStatus = enginePrecisionStatus(isEngineToken, knownPrecision, engineBalancesLoading);
+  // Fetching or paused (offline, it runs on reconnect): still on its way.
+  // "Unavailable" only once a lookup has ended without the details.
+  const precisionStatus = enginePrecisionStatus(isEngineToken, knownPrecision, engineBalancesFetch !== "idle");
   const isSubmitDisabled =
     knownPrecision === null ||
     !hasValidRecipient ||
@@ -486,13 +488,16 @@ export function WalletOperationsTransfer({
               </Button>
             )}
           </div>
-          {showSubmit && precisionStatus && (
-            <div className="px-4 pb-4 text-sm text-gray-600 dark:text-gray-400" role="status">
-              {i18next.t(
-                precisionStatus === "loading"
-                  ? "transfer.token-details-loading"
-                  : "transfer.token-details-unavailable"
-              )}
+          {showSubmit && (
+            // Mounted empty first, so a screen reader announces the message
+            // when it appears.
+            <div className="px-4 pb-4 empty:p-0 text-sm text-gray-600 dark:text-gray-400" role="status">
+              {precisionStatus &&
+                i18next.t(
+                  precisionStatus === "loading"
+                    ? "transfer.token-details-loading"
+                    : "transfer.token-details-unavailable"
+                )}
             </div>
           )}
         </form>

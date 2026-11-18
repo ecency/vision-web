@@ -447,6 +447,10 @@ const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
 const KEYCHAIN_BROADCAST_TIMEOUT_MS = 10 * 60 * 1000;
 const KEYCHAIN_TIMEOUT_MESSAGE =
   "Keychain didn't respond. If no popup appeared, click its icon to wake it, then try again.";
+// After the long broadcast wait the popup may still be open and an approval
+// would still send: the user checks before sending again.
+const KEYCHAIN_BROADCAST_TIMEOUT_MESSAGE =
+  "Keychain did not answer in time. Close its popup, and check your wallet history before sending again: the transaction may have gone through.";
 
 function signBufferViaKeychain(
   keychain: KeyChainImpl,
@@ -512,7 +516,7 @@ function broadcastViaKeychain(
       const timeoutId = setTimeout(() => {
         if (!settled) {
           settled = true;
-          reject(new Error(KEYCHAIN_TIMEOUT_MESSAGE));
+          reject(new Error(KEYCHAIN_BROADCAST_TIMEOUT_MESSAGE));
         }
       }, KEYCHAIN_BROADCAST_TIMEOUT_MS);
 

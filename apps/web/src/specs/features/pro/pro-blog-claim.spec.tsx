@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/utils", () => ({
   getAccessToken: () => mocks.accessToken,
-  ensureValidToken: async () => mocks.accessToken,
+  ensureValidTokenWithin: async () => mocks.accessToken,
   random: vi.fn()
 }));
 

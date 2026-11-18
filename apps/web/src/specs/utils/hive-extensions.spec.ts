@@ -353,6 +353,11 @@ describe("per-username extension preference", () => {
   });
 });
 
+// Typed stand-ins for the extension globals in the cases below.
+type TxAnswer = { success: boolean; result?: unknown; message?: string; error?: unknown };
+type AnswerCb = (r: TxAnswer) => void;
+const extWindow = () => window as unknown as Record<string, unknown>;
+
 /**
  * A slow approval is not a failure: the extension answered the ping, so the
  * broadcast waits for the wallet's own answer (as on self-hosted, #2125). A
@@ -361,7 +366,7 @@ describe("per-username extension preference", () => {
  */
 describe("broadcastWithExtension (slow approval)", () => {
   beforeEach(() => {
-    const w = window as any;
+    const w = extWindow();
     delete w.hive_keychain;
     delete w.hive;
     delete w.hive_extension;
@@ -371,16 +376,16 @@ describe("broadcastWithExtension (slow approval)", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    delete (window as any).hive_keychain;
+    delete extWindow().hive_keychain;
     localStorage.clear();
   });
 
   it("resolves when the user approves after a minute", async () => {
     vi.useFakeTimers();
-    let answer: ((r: any) => void) | undefined;
-    (window as any).hive_keychain = {
+    let answer: AnswerCb | undefined;
+    extWindow().hive_keychain = {
       requestHandshake: (cb: () => void) => cb(),
-      requestBroadcast: (_a: string, _o: any[], _t: string, cb: (r: any) => void) => {
+      requestBroadcast: (_a: string, _o: unknown[], _t: string, cb: AnswerCb) => {
         answer = cb;
       }
     };
@@ -406,7 +411,7 @@ describe("broadcastWithExtension (slow approval)", () => {
  */
 describe("broadcastWithExtension (fallback node)", () => {
   beforeEach(() => {
-    const w = window as any;
+    const w = extWindow();
     delete w.hive_keychain;
     delete w.hive;
     delete w.hive_extension;
@@ -415,15 +420,15 @@ describe("broadcastWithExtension (fallback node)", () => {
   });
 
   afterEach(() => {
-    delete (window as any).hive_keychain;
+    delete extWindow().hive_keychain;
     localStorage.clear();
   });
 
-  const keychainAnswering = (first: any) => {
+  const keychainAnswering = (first: TxAnswer) => {
     const nodes: Array<string | null> = [];
-    (window as any).hive_keychain = {
+    extWindow().hive_keychain = {
       requestHandshake: (cb: () => void) => cb(),
-      requestBroadcast: (_a: string, _o: any[], _t: string, cb: (r: any) => void, node: string | null) => {
+      requestBroadcast: (_a: string, _o: unknown[], _t: string, cb: AnswerCb, node: string | null) => {
         nodes.push(node);
         cb(nodes.length === 1 ? first : { success: true, result: { id: "retry" } });
       }
@@ -451,5 +456,32 @@ describe("broadcastWithExtension (fallback node)", () => {
     const nodes = keychainAnswering(first);
     await expect(broadcastWithExtension("alice", [["transfer", {}]], "active")).resolves.toEqual({ id: "retry" });
     expect(nodes).toHaveLength(2);
+  });
+});
+
+describe("broadcastWithExtension (no answer at all)", () => {
+  beforeEach(() => {
+    const w = extWindow();
+    delete w.hive_keychain;
+    delete w.hive;
+    delete w.hive_extension;
+    delete w.peakvault;
+    localStorage.clear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    delete extWindow().hive_keychain;
+  });
+
+  it("tells the user to check their history before sending again", async () => {
+    vi.useFakeTimers();
+    extWindow().hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: vi.fn()
+    };
+    const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
+    const assertion = expect(promise).rejects.toThrow(/check your wallet history/i);
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    await assertion;
   });
 });

@@ -50,6 +50,19 @@ describe("verifyHsAccessToken", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("refuses a token whose date is not a number, without throwing", async () => {
+    const fetchSpy = meAnswers("alice");
+    const odd = b64u({
+      signed_message: { type: "posting", app: "ecency.app" },
+      authors: ["alice"],
+      // Neither member is callable: arithmetic on it throws.
+      timestamp: { toString: 1, valueOf: 1 },
+      signatures: ["s"]
+    });
+    await expect(verifyHsAccessToken(odd)).resolves.toEqual({ ok: false, reason: "invalid" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("accepts a token a few days old (refreshed in the background near expiry)", async () => {
     meAnswers("alice");
     const recent = b64u({

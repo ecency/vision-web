@@ -166,6 +166,18 @@ export function isUserCancellation(
   );
 }
 
+const AMBIGUOUS_BROADCAST_SIGNALS = [
+  "status code",
+  "gateway",
+  "timeout",
+  "timed out",
+  "etimedout",
+  "econnreset",
+  "socket hang up",
+  "upstream",
+  "backend",
+];
+
 /**
  * True when a broadcast failure shows the transaction never reached a node
  * (the connection was refused, the name did not resolve, Cloudflare could not
@@ -182,6 +194,10 @@ export function isUnsentBroadcastError(
 ): boolean {
   const text = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`.trim();
   if (!text) return false;
+  // Any sign that a server answered or the request was under way wins over a
+  // connection phrase in the same failure (a gateway's "unable to connect to
+  // upstream" after it may have passed the transaction on).
+  if (AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => text.includes(sig))) return false;
   return [
     "connection refused",
     "econnrefused",

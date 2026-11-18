@@ -122,6 +122,12 @@ describe("availableForPowerDown", () => {
     expect(String(value).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(3);
   });
 
+  it("never goes above what is available when inputs have more decimals", () => {
+    // 100.0006 - 20.0004 = 80.0002: the largest 0.001 step within it is 80.000.
+    expect(availableForPowerDown(100.0006, 20.0004, 0)).toBe(80);
+    expect(availableForPowerDown(1.0009, 0, 0)).toBe(1);
+  });
+
   it("is 0, not negative, when more is delegated than held", () => {
     expect(availableForPowerDown(5, 10, 0)).toBe(0);
   });

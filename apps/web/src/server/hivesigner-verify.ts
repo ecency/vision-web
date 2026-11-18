@@ -39,8 +39,12 @@ export async function verifyHsAccessToken(
   ) {
     return { ok: false, reason: "invalid" };
   }
+  // Type first: the token is decoded JSON, and arithmetic on an odd value can throw.
+  if (typeof message.timestamp !== "number") {
+    return { ok: false, reason: "invalid" };
+  }
   const age = Date.now() / 1000 - message.timestamp;
-  if (typeof message.timestamp !== "number" || !(age <= TOKEN_MAX_AGE_S && age >= -TOKEN_MAX_SKEW_S)) {
+  if (!(age <= TOKEN_MAX_AGE_S && age >= -TOKEN_MAX_SKEW_S)) {
     return { ok: false, reason: "invalid" };
   }
 

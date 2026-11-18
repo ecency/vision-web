@@ -1,6 +1,6 @@
 import { EcencyConfigManager } from "@/config";
 import * as ls from "@/utils/local-storage";
-import { ensureValidToken, getAccessToken } from "@/utils/user-token";
+import { ensureValidTokenWithin } from "@/utils/user-token";
 import { VideoUploadResult, ThreeSpeakEmbedVideo } from "./types";
 
 function getEmbedEndpoint(): string {
@@ -13,11 +13,13 @@ function getEmbedEndpoint(): string {
  * Returns the active user's HiveSigner access token to send as `code` to the
  * 3Speak proxy routes. The server validates it against
  * https://hivesigner.com/api/me and refuses one past its lifetime, so an
- * expired token is renewed first. If renewing fails (a HiveSigner outage) the
- * cached token goes as before, rather than a hard "log in again" prompt.
+ * expired token is renewed first, waiting a few seconds at most. If renewing
+ * fails or stalls (a HiveSigner outage) the stored token goes as before,
+ * rather than a hard "log in again" prompt.
  *
- * Throws only when the user is not logged in at all; a refused token comes
- * back from the server as 401, which callers may surface as a re-login prompt.
+ * Throws an error with status 401 before any request in two cases: no active
+ * user, or an active user with no stored token. A token the server refuses
+ * comes back as its own 401; callers may surface either as a re-login prompt.
  */
 async function getThreeSpeakAuthCode(): Promise<string> {
   const username = ls.get("active_user");
@@ -26,7 +28,7 @@ async function getThreeSpeakAuthCode(): Promise<string> {
     (err as any).status = 401;
     throw err;
   }
-  const token = (await ensureValidToken(username)) ?? getAccessToken(username);
+  const token = await ensureValidTokenWithin(username);
   if (!token) {
     const err = new Error("[3Speak] No HiveSigner token available, please log in again");
     (err as any).status = 401;

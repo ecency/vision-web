@@ -10,7 +10,7 @@ vi.mock("@/utils/local-storage", () => ({
 const tokens = vi.hoisted(() => ({ fresh: "valid-hs-token" as string | undefined }));
 vi.mock("@/utils/user-token", () => ({
   getAccessToken: vi.fn(() => "valid-hs-token"),
-  ensureValidToken: vi.fn(async () => tokens.fresh)
+  ensureValidTokenWithin: vi.fn(async () => tokens.fresh)
 }));
 
 // Drive tus-js-client's upload callbacks deterministically. `runUpload` is set
@@ -286,8 +286,8 @@ describe("3Speak auth code", () => {
     expect(await sentCode()).toBe("renewed-token");
   });
 
-  it("falls back to the cached token when renewing fails", async () => {
-    tokens.fresh = undefined;
-    expect(await sentCode()).toBe("valid-hs-token");
+  it("sends the stored token the renewal helper falls back to", async () => {
+    tokens.fresh = "stored-token";
+    expect(await sentCode()).toBe("stored-token");
   });
 });

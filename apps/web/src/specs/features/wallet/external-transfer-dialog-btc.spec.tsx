@@ -100,7 +100,7 @@ describe("ExternalTransferDialog: BTC", () => {
   test("enables Review for a valid address and an amount below the balance", async () => {
     await fillForm(RECIPIENT, "0.01");
 
-    expect(reviewButton()).toBeEnabled();
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
   });
 
   test("blocks sending the whole balance, since the fee is added on top", async () => {
@@ -114,6 +114,8 @@ describe("ExternalTransferDialog: BTC", () => {
     mutateAsync.mockResolvedValue({ txHash: "deadbeef", currency: "BTC" });
     await fillForm(RECIPIENT, "0.01");
 
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
     fireEvent.click(reviewButton());
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
@@ -126,6 +128,8 @@ describe("ExternalTransferDialog: BTC", () => {
     mutateAsync.mockRejectedValue(Object.assign(new Error("User rejected the request."), { code: 4001 }));
     await fillForm(RECIPIENT, "0.01");
 
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
     fireEvent.click(reviewButton());
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
@@ -134,10 +138,15 @@ describe("ExternalTransferDialog: BTC", () => {
 
   test("does not send when the linked wallet is gone by the confirm step", async () => {
     const { queryClient } = await fillForm(RECIPIENT, "0.01");
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
     fireEvent.click(reviewButton());
     // The account refetches while the dialog is open and the link is removed.
     linked.tokens = false;
     await act(() => queryClient.refetchQueries());
+    // React Query hands the new data to components on a timer tick: let it
+    // run so the dialog has committed the removed link before the click.
+    await act(() => new Promise((r) => setTimeout(r, 0)));
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
     await waitFor(() => expect(screen.getByText("external-transfer.no-linked-wallet")).toBeInTheDocument());
