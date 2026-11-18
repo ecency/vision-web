@@ -1,4 +1,4 @@
-export { IMAGE_SIZES, createImageHTML, img } from '../chunk-A2ADGWM6.js';
+export { IMAGE_SIZES, createImageHTML, img } from '../chunk-JJUDG2FE.js';
 import '../chunk-NQZM6AV2.js';
 import '../chunk-LUI6MD5L.js';
 import '../chunk-LT2KELO7.js';

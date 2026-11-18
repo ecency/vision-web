@@ -29,6 +29,7 @@ function stripTags(text) {
 var isLetter = (c) => c >= "a" && c <= "z" || c >= "A" && c <= "Z";
 function dropTags(text) {
   const out = [];
+  const lastGt = text.lastIndexOf(">");
   let i = 0;
   while (i < text.length) {
     const c = text[i];
@@ -42,13 +43,20 @@ function dropTags(text) {
     }
     const next = text[i + 1] ?? "";
     const opensTag = isLetter(next) || next === "/" && isLetter(text[i + 2] ?? "");
+    if (opensTag && i > lastGt) {
+      out.push("&lt;");
+      i++;
+      continue;
+    }
     if (opensTag) {
       let j = i + 1;
       while (j < text.length && text[j] !== ">" && text[j] !== "<") j++;
       i = text[j] === ">" ? j + 1 : i + 1;
       continue;
     }
-    if (next !== "/" && next !== "!") {
+    if (i > lastGt) {
+      out.push("&lt;");
+    } else if (next !== "/" && next !== "!") {
       out.push(c);
     }
     i++;
@@ -98,5 +106,5 @@ function getPostBodyText(obj, length = 200) {
 }
 
 export { getPostBodyText };
-//# sourceMappingURL=chunk-YARA6QQD.js.map
-//# sourceMappingURL=chunk-YARA6QQD.js.map
+//# sourceMappingURL=chunk-DOMWPVHC.js.map
+//# sourceMappingURL=chunk-DOMWPVHC.js.map

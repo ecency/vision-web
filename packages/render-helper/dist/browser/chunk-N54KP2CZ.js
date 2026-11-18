@@ -1,4 +1,4 @@
-import { linkify } from './chunk-M4ZLVWIN.js';
+import { linkify } from './chunk-EXMICESB.js';
 import { markInternalThumbnail } from './chunk-NQZM6AV2.js';
 import { WHITE_LIST } from './chunk-4J745Z46.js';
 import { YOUTUBE_REGEX, POST_REGEX } from './chunk-3IFARPWV.js';
@@ -115,5 +115,5 @@ function text(node, forApp, renderOptions) {
 }
 
 export { text };
-//# sourceMappingURL=chunk-VQN4KC23.js.map
-//# sourceMappingURL=chunk-VQN4KC23.js.map
+//# sourceMappingURL=chunk-N54KP2CZ.js.map
+//# sourceMappingURL=chunk-N54KP2CZ.js.map

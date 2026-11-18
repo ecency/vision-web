@@ -1,6 +1,6 @@
 import { removeChildNodes } from './chunk-VXSEAEHB.js';
 import { getSerializedInnerHTML } from './chunk-6JBQDGO4.js';
-import { createImageHTML } from './chunk-A2ADGWM6.js';
+import { createImageHTML } from './chunk-JJUDG2FE.js';
 import { markInternalThumbnail } from './chunk-NQZM6AV2.js';
 import { SECTION_LIST } from './chunk-P5HRQG6E.js';
 import { WHITE_LIST } from './chunk-4J745Z46.js';
@@ -711,5 +711,5 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
 }
 
 export { a };
-//# sourceMappingURL=chunk-E2GUGUOC.js.map
-//# sourceMappingURL=chunk-E2GUGUOC.js.map
+//# sourceMappingURL=chunk-TEEFNSXZ.js.map
+//# sourceMappingURL=chunk-TEEFNSXZ.js.map

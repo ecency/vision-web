@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.52
+
+### Patch Changes
+
+- Rendering edge cases, wallet dialog safety and extension broadcast follow-ups (#2135)
+
 ## 2.5.51
 
 ### Patch Changes

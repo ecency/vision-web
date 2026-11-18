@@ -20,9 +20,10 @@ function findTag(lower, tag, from, end) {
   }
   return at;
 }
-function findOpenTagEnd(lower, openAt) {
+function findOpenTagEnd(lower, openAt, budget) {
   let quote = "";
   for (let i = openAt + 1; i < lower.length; i++) {
+    if (budget && --budget.left < 0) return -1;
     const c = lower[i];
     if (c === "\n") return NaN;
     if (quote) {
@@ -229,7 +230,7 @@ function blankMasked(input, mask) {
   return { text: text + input.text.slice(from), lower: lower + input.lower.slice(from) };
 }
 function stripHiddenRegions(text) {
-  let spellings = { text, lower: text.toLowerCase() };
+  let spellings = { text, lower: asciiLower(text) };
   const { block: blockMask, code: codeMask } = markLines(spellings.lower);
   spellings = blankMasked(spellings, codeMask);
   spellings = blankSpans(spellings, "<!--", "-->", false, null);
@@ -416,12 +417,13 @@ function stripCodeRegions(body) {
   return stripHiddenRegions(text);
 }
 function blankUnequalAnchors(cleaned, textContent) {
-  const lower = cleaned.toLowerCase();
+  const lower = asciiLower(cleaned);
+  const budget = { left: cleaned.length * 4 + 1024 };
   const parts = [];
   let from = 0;
   let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
   while (at !== -1) {
-    const gt = findOpenTagEnd(lower, at);
+    const gt = findOpenTagEnd(lower, at, budget);
     if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
       at = findTag(lower, "<a", at + 2, OPEN_TAG_NAME_END);
       continue;
@@ -701,5 +703,5 @@ function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
 }
 
 export { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, lookupPostImage };
-//# sourceMappingURL=chunk-XTZ3WXWE.js.map
-//# sourceMappingURL=chunk-XTZ3WXWE.js.map
+//# sourceMappingURL=chunk-UU7WU3PI.js.map
+//# sourceMappingURL=chunk-UU7WU3PI.js.map
