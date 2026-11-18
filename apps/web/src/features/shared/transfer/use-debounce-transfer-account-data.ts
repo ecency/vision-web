@@ -25,7 +25,8 @@ export function useDebounceTransferAccountData() {
     setAmount,
     setTo,
     autoFilledAmount,
-    setAutoFilledAmount
+    setAutoFilledAmount,
+    amountEdited
   } = useTransferSharedState();
 
   const [toDebounce, setToDebounce] = useState<string>();
@@ -115,11 +116,13 @@ export function useDebounceTransferAccountData() {
   // ref, so editing it never re-runs this.
   const currentAmountRef = useRef(currentAmount);
   currentAmountRef.current = currentAmount;
+  const amountEditedRef = useRef(!!amountEdited);
+  amountEditedRef.current = !!amountEdited;
   const filledFor = useRef<string | null>(null);
   // The value this hook last put in the field (kept in the dialog's shared
-  // state, since this step unmounts on Next): still showing it means the user
-  // has not typed, so a new recipient's delegation (or the default when it
-  // has none) may replace it.
+  // state, since this step unmounts on Next): while it still shows and the
+  // user has not edited the amount, a new recipient's delegation (or the
+  // default when it has none) may replace it.
   const autoFilledRef = useRef(autoFilledAmount ?? null);
   if (setAutoFilledAmount) {
     autoFilledRef.current = autoFilledAmount ?? null;
@@ -137,11 +140,13 @@ export function useDebounceTransferAccountData() {
     // Compared as numbers: Next writes "5000" back as "5000.000".
     const isAutoFilled =
       autoFilled.current !== null && !!typed && Number(typed) === Number(autoFilled.current);
-    const untouched = !typed || ["0", "0.000", "0.001"].includes(typed) || isAutoFilled;
+    // An amount the user edited is theirs, whatever its value.
+    const untouched =
+      !amountEditedRef.current && (!typed || ["0", "0.000", "0.001"].includes(typed) || isAutoFilled);
     if (amount === null) {
       // "No delegation" only once the list has loaded: before that (or if it
       // fails) a filled delegation stays, since the amount is absolute.
-      if (isAutoFilled && delegationsLoaded) {
+      if (isAutoFilled && delegationsLoaded && !amountEditedRef.current) {
         remember(null);
         filledFor.current = null;
         setAmount("0.001");

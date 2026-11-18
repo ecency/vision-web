@@ -103,6 +103,9 @@ export function Transfer(props: Props) {
   // The amount the dialog filled in itself (an existing delegation), kept
   // here because step 1 unmounts on Next.
   const [autoFilledAmount, setAutoFilledAmount] = useState<string | null>(null);
+  // Set by the user's own edits only, so a typed amount (even "0.001") is
+  // never taken for the default and replaced.
+  const [amountEdited, setAmountEdited] = useState(false);
 
   return (
     <TransferSharedStateContext.Provider
@@ -129,9 +132,12 @@ export function Transfer(props: Props) {
         setAmountError,
         autoFilledAmount,
         setAutoFilledAmount,
+        amountEdited,
+        setAmountEdited,
         reset: useCallback(() => {
           setStep(1);
           setAutoFilledAmount(null);
+          setAmountEdited(false);
           setMemo(props.memo ?? "");
           setTo(props.to ?? "");
           setAmount(props.amount ?? "0.001");

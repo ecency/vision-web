@@ -143,6 +143,34 @@ describe("useDebounceTransferAccountData", () => {
     expect(state.amount).toBe("200");
   });
 
+  it("keeps a 0.001 the user typed: an edit, not the dialog's default", () => {
+    h.delegations = [{ delegator: "alice", delegatee: "ecency", vesting_shares: "10000000.000000 VESTS" }];
+    const setAmount = vi.fn();
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ to: "ecency", mode: "delegate", amount: "0.001", amountEdited: true, autoFilledAmount: null, setAutoFilledAmount: vi.fn(), setAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(setAmount).not.toHaveBeenCalled();
+  });
+
+  it("keeps a typed amount equal to the earlier fill when the next recipient has no delegation", () => {
+    h.delegations = [];
+    const setAmount = vi.fn();
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ to: "bob", mode: "delegate", amount: "5000", amountEdited: true, autoFilledAmount: "5000", setAutoFilledAmount: vi.fn(), setAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(setAmount).not.toHaveBeenCalled();
+  });
+
   it("keeps a filled delegation while the delegation list has not loaded", () => {
     h.delegations = [];
     h.delegationsLoaded = false;
