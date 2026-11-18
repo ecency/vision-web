@@ -48,11 +48,17 @@ function markdownToText(source: string): string {
       // Block markers at the start of a line: quotes, headings, list items.
       .replace(/^[ \t]*(?:>[ \t]?)+/gm, '')
       .replace(/^[ \t]*#{1,6}(?:[ \t]+|$)/gm, '')
-      .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/gm, '')
-      // Rules, setext underlines and table separator rows.
+      // Rules on both sides of the list markers: before, so `* * *` does not
+      // lose its first `*` as a list item; after, for a rule inside a list
+      // item (`1. ***`).
       .replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, '')
+      .replace(/^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/gm, '')
+      .replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, '')
+      // Setext underlines and table separator rows.
       .replace(/^[ \t]*=+[ \t]*$/gm, '')
-      .replace(/^[ \t|:-]+$/gm, (row) => (row.includes('---') ? '' : row))
+      // A separator row: three dashes, or a leading pipe and a dash (`|-|-|`).
+      // A data row of only dashes (`| - |`) goes too, which a summary can spare.
+      .replace(/^[ \t|:-]+$/gm, (row) => (row.includes('---') || (/^[ \t]*\|/.test(row) && row.includes('-')) ? '' : row))
       // Table cell borders, on lines that are table rows.
       .replace(/^[ \t]*\|[^\n]*$/gm, (row) => row.replace(/\|/g, ' '))
       // Emphasis and strike delimiters (one to three `*` or `_`, or `~~`): a
@@ -165,7 +171,8 @@ function postBodyText(body: string, length: number): string {
     .replace(/\r?\n|\r/g, ' ')
     .replace(/(?:https?|ftp):\/\/[\n\S]+/g, '')
     .trim()
-    .replace(/ {2,}/g, ' ')
+    // Tabs too: the rendered summary shows any run of them as one space.
+    .replace(/[ \t]{2,}|\t/g, ' ')
   if (length > 0) {
     text = joint(text.split(' '), length)
   }

@@ -41,9 +41,22 @@ describe('getPostBodyText', () => {
     'A URL https://e.com/page in prose is dropped.',
     'Comparisons stay: a < b and c > d, I <3 this.',
     'Hidden <!-- a comment --> text and <b>bold</b> tags.',
-    'Word '.repeat(80)
+    'Word '.repeat(80),
+    '* * *\n\n* * *\n\n(Text below).\n---\n\n* * *\n\nThe post body.',
+    '- - -\n\nAfter a rule.',
+    'Steps\t\t\t17/11/2026\t\t\t3048\t\tDaily',
+    '1. ***\n\ntext',
+    '1. - - -\n\ntext',
+    '+ * * *\n\ntext',
+    ':-|\n-|-\n\ntext'
   ])('matches the rendered summary for %j', (body) => {
     expect(getPostBodyText(body, 200)).toBe(getPostBodySummary(body, 200))
+  })
+
+  it('drops a short table separator row and keeps cells apart', () => {
+    // The rendered summary runs the cells together ("EnglishEspañol").
+    const body = '|<center>English</center>|<center>Español</center>\n|-|-|\n------\nHello there.'
+    expect(getPostBodyText(body, 200)).toBe('English Español Hello there.')
   })
 
   it('keeps an escaped character literal, never as emphasis', () => {
