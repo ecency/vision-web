@@ -1,4 +1,5 @@
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
+import { availableForPowerDown as availablePowerDown, powerDownAvailableFromVests } from "./operation-amount";
 import { getDynamicPropsQueryOptions, getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
@@ -64,9 +65,18 @@ export function WalletOperationPowerDown({ username, asset, onSubmit, showSubmit
     [accountWallet?.parts]
   );
 
+  // The exact cap needs the account's VESTS and the conversion rate; until
+  // both arrive the form shows the rounded wallet figures but sends nothing.
+  const exactCapReady = !!account && !!dynamicProps;
+
   const availableForPowerDown = useMemo(
-    () => Math.max(hpBalance - outgoingDelegations - pendingPowerDown, 0),
-    [hpBalance, outgoingDelegations, pendingPowerDown]
+    () =>
+      // The account's VESTS are exact; the wallet parts are only a stand-in
+      // until the account loads.
+      exactCapReady && account
+        ? powerDownAvailableFromVests(account, hivePerMVests)
+        : availablePowerDown(hpBalance, outgoingDelegations, pendingPowerDown),
+    [account, exactCapReady, hivePerMVests, hpBalance, outgoingDelegations, pendingPowerDown]
   );
 
   const maxAccountBalanceRef = useRef(availableForPowerDown);
@@ -117,6 +127,7 @@ export function WalletOperationPowerDown({ username, asset, onSubmit, showSubmit
         <form
           className="block"
           onSubmit={methods.handleSubmit(({ amount }) => {
+            if (!exactCapReady) return;
             onSubmit({
               amount: hpToVests(Number(amount), hivePerMVests),
               from: username,
@@ -178,7 +189,7 @@ export function WalletOperationPowerDown({ username, asset, onSubmit, showSubmit
               <Button
                 type="submit"
                 icon={<UilArrowRight />}
-                disabled={!amountValue || Number(amountValue) <= 0}
+                disabled={!exactCapReady || !amountValue || Number(amountValue) <= 0}
               >
                 {i18next.t("g.continue")}
               </Button>

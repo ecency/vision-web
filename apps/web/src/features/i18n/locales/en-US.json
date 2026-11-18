@@ -1825,7 +1825,9 @@
     "stake-title": "Stake",
     "stake-sub-title": "Stake token to earn passive rewards",
     "unstake-title": "Unstake",
-    "unstake-sub-title": "Unstake token you will stop earning passive rewards"
+    "unstake-sub-title": "Unstake token you will stop earning passive rewards",
+    "token-details-loading": "Loading the token's details before you can continue.",
+    "token-details-unavailable": "This token's details could not be loaded, so the amount cannot be checked. Try again in a moment."
   },
   "trx-common": {
     "insufficient-funds": "Insufficient funds",
@@ -1900,6 +1902,9 @@
     "error-hint": "Operation cannot be signed or transactions couldn't be broadcasted. Please, check operation and try again"
   },
   "key-or-hot": {
+    "keychain-broadcast-pending": "Still waiting for Keychain. Approve or reject the request in its popup. If you already approved it, the transaction may be on its way: check your wallet history before sending again.",
+    "keychain-stop-waiting": "Stop waiting",
+    "keychain-broadcast-unknown": "Stopped waiting for Keychain. The transaction may still go through: check your wallet history before sending again.",
     "sign": "Sign",
     "key-placeholder": "Private key, master password or seed",
     "with-hivesigner": "Sign with Hivesigner",
@@ -4129,7 +4134,8 @@
     "view-explorer": "View on explorer",
     "failed": "Transfer failed",
     "cancelled": "Transaction cancelled by user.",
-    "try-again": "Try again"
+    "try-again": "Try again",
+    "no-linked-wallet": "No wallet is linked for this currency any more. Link one in your profile, then try again."
   },
   "mobile-login-qr": {
     "title": "Log in to Mobile App",

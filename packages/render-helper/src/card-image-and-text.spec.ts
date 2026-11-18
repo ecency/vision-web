@@ -22,6 +22,35 @@ describe('getEntryCardImage', () => {
     expect(getEntryCardImage(e, 600, 500, 'match')).toBe(catchPostImage(e, 600, 500, 'match', { fast: true }))
   })
 
+  it.each([
+    ['İ<!--c-->![x](https://e.com/a.png)'],
+    ['İİ<style>s</style>![x](https://e.com/a.png)'],
+    ['İİİİİİ <a href="https://e.com/p">t</a>https://e.com/b.png']
+  ])('finds the image after text that lowercases to a longer string: %j', (body) => {
+    // `İ`.toLowerCase() is two characters; the scan's offsets must not move.
+    expect(getEntryCardImage(body, 0, 0)).toBe(getEntryCardImage(body.replace(/İ/g, 'I'), 0, 0))
+    expect(getEntryCardImage(body, 0, 0)).not.toBeNull()
+  })
+
+  it.each([
+    ['unterminated anchors', (k: number) => '<a '.repeat(k)],
+    ['unterminated quoted anchors', (k: number) => '<a href="x '.repeat(k)]
+  ])('stays linear on %s', (_label, make) => {
+    const time = (k: number) => {
+      let best = Infinity
+      for (let r = 0; r < 7; r++) {
+        const body = `${make(k)} ${r}`
+        const t = performance.now()
+        getEntryCardImage(body, 0, 0)
+        best = Math.min(best, performance.now() - t)
+      }
+      return best
+    }
+    let k = 2_000
+    while (time(k) < 5 && k < 256_000) k *= 2
+    expect(time(8 * k) / time(k)).toBeLessThan(40)
+  }, 60_000)
+
   it('takes a raw body string too', () => {
     expect(getEntryCardImage('![x](https://e.com/a.png)', 600, 500)).toBe(
       catchPostImage('![x](https://e.com/a.png)', 600, 500, 'match', { fast: true })
@@ -63,10 +92,20 @@ describe('getPostBodyText', () => {
     expect(getPostBodyText('\\*literal asterisks\\* and more', 200)).toBe('*literal asterisks* and more')
   })
 
-  it('leaves no tag opener behind when tags are nested inside each other', () => {
-    for (const body of ['a <scr<b>ipt>x</scr</b>ipt> b <<i>img src=x> c', '<<<Z', '<<<<a', 'x <<<script y']) {
-      expect(getPostBodyText(body, 200)).not.toMatch(/<[A-Za-z/!]/)
+  it('leaves no complete tag behind when tags are nested inside each other', () => {
+    for (const body of ['a <scr<b>ipt>x</scr</b>ipt> b <<i>img src=x> c', '<<<Z>', '<<<<a>', 'x <<<script y>', '<scr<!-- c -->ipt>']) {
+      expect(getPostBodyText(body, 200)).not.toMatch(/<[A-Za-z/!][^>]*>/)
     }
+  })
+
+  it.each([
+    ['Compare a<b in prose.', 'Compare a<b in prose.'],
+    ['x<y', 'x<y'],
+    ['<<<Z', '<<<Z']
+  ])('keeps a < that can never close as a tag: %j', (body, expected) => {
+    // No > after it anywhere, so it is text, as the renderer shows it.
+    expect(getPostBodyText(body, 200)).toBe(expected)
+    expect(getPostBodyText(body, 200)).toBe(getPostBodySummary(body, 200))
   })
 
   it('returns the whole text with length 0', () => {

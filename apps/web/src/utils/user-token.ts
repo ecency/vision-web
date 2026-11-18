@@ -72,7 +72,10 @@ function refreshTokenInBackground(user: User): void {
     })
     .catch((err) => {
       console.error("Background token refresh failed:", err);
-      return user.accessToken;
+      // Not the token captured at the start: undefined, as ensureValidToken's
+      // own failed refresh gives. ensureValidTokenWithin then re-reads
+      // storage, where another tab may have stored a fresh token.
+      return undefined;
     })
     .finally(() => {
       pendingRefreshes.delete(user.username);
@@ -162,4 +165,29 @@ export async function ensureValidToken(username: string): Promise<string | undef
 
   pendingRefreshes.set(username, refreshPromise);
   return refreshPromise;
+}
+
+/**
+ * ensureValidToken with a time limit: a renewal that stalls (HiveSigner slow
+ * or down) must not hold up the request that needs the token. Past `ms`, or
+ * when renewing fails, the stored token as it is, read without starting
+ * another renewal (getAccessToken would); undefined only with no stored
+ * token. A renewal still running finishes in the background and stores its
+ * token for the next call.
+ */
+export function ensureValidTokenWithin(username: string, ms = 5000): Promise<string | undefined> {
+  const cached = () => getUser(username)?.accessToken;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(cached()), ms);
+    ensureValidToken(username).then(
+      (token) => {
+        clearTimeout(timer);
+        resolve(token ?? cached());
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(cached());
+      }
+    );
+  });
 }

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { renderWithQueryClient } from "@/specs/test-utils";
 
@@ -20,6 +20,7 @@ const LINKED = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 const RECIPIENT = "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3";
 
 const mutateAsync = vi.fn();
+const linked = { tokens: true };
 
 vi.mock("@ecency/sdk", async () => {
   const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
@@ -29,7 +30,7 @@ vi.mock("@ecency/sdk", async () => {
       ...actual.getAccountFullQueryOptions(username),
       queryFn: async () => ({
         name: "alice",
-        profile: { tokens: [{ symbol: "BTC", type: "CHAIN", meta: { address: LINKED } }] }
+        profile: { tokens: linked.tokens ? [{ symbol: "BTC", type: "CHAIN", meta: { address: LINKED } }] : [] }
       })
     })
   };
@@ -64,16 +65,21 @@ const amountInput = () => screen.getByPlaceholderText("0.0");
 const reviewButton = () => screen.getByRole("button", { name: "external-transfer.review" });
 
 async function fillForm(to: string, amount: string) {
-  renderDialog();
+  return fillRendered(renderDialog(), to, amount);
+}
+
+async function fillRendered<T>(rendered: T, to: string, amount: string): Promise<T> {
   // The linked address arrives through the account query
   await screen.findByText(/^external-transfer\.balance:/);
   fireEvent.change(recipientInput(), { target: { value: to } });
   fireEvent.change(amountInput(), { target: { value: amount } });
+  return rendered;
 }
 
 describe("ExternalTransferDialog: BTC", () => {
   beforeEach(() => {
     mutateAsync.mockReset();
+    linked.tokens = true;
   });
 
   test("shows the balance with all eight decimals and no Max button", async () => {
@@ -94,7 +100,7 @@ describe("ExternalTransferDialog: BTC", () => {
   test("enables Review for a valid address and an amount below the balance", async () => {
     await fillForm(RECIPIENT, "0.01");
 
-    expect(reviewButton()).toBeEnabled();
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
   });
 
   test("blocks sending the whole balance, since the fee is added on top", async () => {
@@ -108,6 +114,8 @@ describe("ExternalTransferDialog: BTC", () => {
     mutateAsync.mockResolvedValue({ txHash: "deadbeef", currency: "BTC" });
     await fillForm(RECIPIENT, "0.01");
 
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
     fireEvent.click(reviewButton());
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
@@ -120,9 +128,28 @@ describe("ExternalTransferDialog: BTC", () => {
     mutateAsync.mockRejectedValue(Object.assign(new Error("User rejected the request."), { code: 4001 }));
     await fillForm(RECIPIENT, "0.01");
 
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
     fireEvent.click(reviewButton());
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
     await waitFor(() => expect(screen.getByText("external-transfer.cancelled")).toBeInTheDocument());
+  });
+
+  test("does not send when the linked wallet is gone by the confirm step", async () => {
+    const { queryClient } = await fillForm(RECIPIENT, "0.01");
+    // Review enables once the linked address arrives through the account query.
+    await waitFor(() => expect(reviewButton()).toBeEnabled());
+    fireEvent.click(reviewButton());
+    // The account refetches while the dialog is open and the link is removed.
+    linked.tokens = false;
+    await act(() => queryClient.refetchQueries());
+    // React Query hands the new data to components on a timer tick: let it
+    // run so the dialog has committed the removed link before the click.
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
+
+    await waitFor(() => expect(screen.getByText("external-transfer.no-linked-wallet")).toBeInTheDocument());
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

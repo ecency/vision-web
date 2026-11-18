@@ -4,6 +4,12 @@ import {
   operationAssetPrecision,
   truncateAmount
 } from "@/features/wallet/operations/operation-amount";
+import {
+  availableForPowerDown,
+  enginePrecisionStatus,
+  isEngineLayer,
+  powerDownAvailableFromVests
+} from "@/features/wallet/operations/operation-amount";
 
 // #2127: the wallet operations dialog used 3 decimals for every asset, so a
 // Hive Engine token with 8 could not be sent below 0.001 and the rest of a
@@ -76,5 +82,136 @@ describe("truncateAmount", () => {
 
   it("writes whole units for precision 0", () => {
     expect(truncateAmount(12.7, 0)).toBe("12");
+  });
+});
+
+describe("isEngineLayer", () => {
+  // The portfolio declares "engine"; an "ENGINE" check left #2127's precision
+  // path unused.
+  it.each([
+    ["engine", true],
+    ["ENGINE", true],
+    ["Engine", true],
+    ["hive", false],
+    [undefined, false]
+  ])("%s is engine: %s", (layer, expected) => {
+    expect(isEngineLayer(layer)).toBe(expected);
+  });
+});
+
+describe("enginePrecisionStatus", () => {
+  it("says nothing for a token whose precision is known, or a native asset", () => {
+    expect(enginePrecisionStatus(true, 8, false)).toBeNull();
+    expect(enginePrecisionStatus(false, 3, false)).toBeNull();
+  });
+
+  it("says loading while the token's details are still on their way", () => {
+    expect(enginePrecisionStatus(true, null, true)).toBe("loading");
+  });
+
+  it("says unavailable once loading ended without them", () => {
+    expect(enginePrecisionStatus(true, null, false)).toBe("unavailable");
+  });
+});
+
+describe("availableForPowerDown", () => {
+  // The number input has step 0.001: float noise like 79.09999999999999 fails
+  // its step check in some browsers.
+  it.each([
+    [100.1, 21, 0, "79.100"],
+    [0.3, 0.1, 0, "0.200"],
+    [10, 0, 0, "10.000"]
+  ])("%s HP less %s delegated and %s pending is %s", (hp, delegated, pending, expected) => {
+    const value = availableForPowerDown(hp, delegated, pending);
+    expect(value.toFixed(3)).toBe(expected);
+    expect(String(value).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(3);
+  });
+
+  it("never goes above what is available when inputs have more decimals", () => {
+    // 100.0006 - 20.0004 = 80.0002: the largest 0.001 step within it is 80.000.
+    expect(availableForPowerDown(100.0006, 20.0004, 0)).toBe(80);
+    expect(availableForPowerDown(1.0009, 0, 0)).toBe(1);
+  });
+
+  it.each([
+    [1_000_000.0009995, 0, 0, 1_000_000],
+    [0.0009999995, 0, 0, 0],
+    [80.0009999995, 0, 0, 80],
+    [99_999_999.0009997, 0, 0, 99_999_999],
+    [10_000_000.00099997, 0, 0, 10_000_000],
+    [1_000_000.000999997, 0, 0, 1_000_000],
+    [134_217_728.0009995, 0, 0, 134_217_728],
+    [300_000_000.0009995, 0, 0, 300_000_000],
+    [100_000_000, 99_999_999.9990003, 0, 0],
+    [53251496.16843625, 21194934.226436343, 0, 32056561.941]
+  ])("never rounds %s less %s and %s up past the net amount", (hp, delegated, pending, expected) => {
+    // A remainder just short of the next thousandth is not float noise.
+    expect(availableForPowerDown(hp, delegated, pending)).toBe(expected);
+  });
+
+  it("is the largest thousandth within the net amount for inputs with extra decimals", () => {
+    for (let s = 1; s <= 40; s++) {
+      let seed = s;
+      const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 2000; i++) {
+        const hp = rand() * 10 ** Math.floor(rand() * 9);
+        const delegated = rand() * hp;
+        const value = availableForPowerDown(hp, delegated, 0);
+        const net = hp - delegated;
+        // The float subtraction is the reference here, so allow its own error.
+        const noise = Math.max(1, hp) * Number.EPSILON * 4;
+        expect(value).toBeLessThanOrEqual(net + noise);
+        expect(net - value).toBeLessThan(0.001 + noise);
+        expect(String(value).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
+  it("is exact for 3-decimal balances of any size", () => {
+    // Seeded so a failure repeats.
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 20000; i++) {
+      const hpMilli = Math.floor(rand() * 1e11);
+      const delMilli = Math.floor(rand() * hpMilli);
+      const pendMilli = Math.floor(rand() * (hpMilli - delMilli));
+      const expected = (hpMilli - delMilli - pendMilli) / 1000;
+      expect(availableForPowerDown(hpMilli / 1000, delMilli / 1000, pendMilli / 1000)).toBe(expected);
+    }
+  });
+
+  it("is 0, not negative, when more is delegated than held", () => {
+    expect(availableForPowerDown(5, 10, 0)).toBe(0);
+  });
+});
+
+describe("powerDownAvailableFromVests", () => {
+  const acct = (held: string, delegated: string, toWithdraw = "0", withdrawn = "0") => ({
+    vesting_shares: `${held} VESTS`,
+    delegated_vesting_shares: `${delegated} VESTS`,
+    to_withdraw: toWithdraw,
+    withdrawn
+  });
+
+  it("subtracts in VESTS before converting, so rounding cannot add a thousandth", () => {
+    // 1 VESTS = 0.0005 HP: 100.0008 HP held, 20.0003 HP delegated.
+    expect(powerDownAvailableFromVests(acct("200001.600000", "40000.600000"), 500)).toBe(80);
+  });
+
+  it("subtracts what is still to withdraw (to_withdraw and withdrawn are millionths)", () => {
+    // 200000 VESTS held, 50000 of 100000 still to withdraw: 150000 VESTS = 75 HP.
+    expect(powerDownAvailableFromVests(acct("200000.000000", "0.000000", "100000000000", "50000000000"), 500)).toBe(75);
+  });
+
+  it("is exact for a real-world rate", () => {
+    // 1000000 VESTS at 590.123456 HP per MVESTS is 590.123456 HP: cut to 590.123.
+    expect(powerDownAvailableFromVests(acct("1000000.000000", "0.000000"), 590.123456)).toBe(590.123);
+    expect(powerDownAvailableFromVests(acct("1694.915254", "0.000000"), 590)).toBe(0.999);
+  });
+
+  it("is 0 when everything is delegated or the rate is unknown", () => {
+    expect(powerDownAvailableFromVests(acct("100.000000", "200.000000"), 500)).toBe(0);
+    expect(powerDownAvailableFromVests(acct("100.000000", "0.000000"), 0)).toBe(0);
+    expect(powerDownAvailableFromVests(acct("100.000000", "0.000000"), Number.NaN)).toBe(0);
   });
 });

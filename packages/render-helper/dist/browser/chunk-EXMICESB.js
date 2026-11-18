@@ -1,4 +1,4 @@
-import { createImageHTML } from './chunk-A2ADGWM6.js';
+import { createImageHTML } from './chunk-JJUDG2FE.js';
 import { SECTION_LIST } from './chunk-P5HRQG6E.js';
 import { getProxyBase } from './chunk-LT2KELO7.js';
 import { isValidUsername, sanitizePermlink, isValidPermlink, imageUrlEnd } from './chunk-OEOVNYVL.js';
@@ -158,5 +158,5 @@ function linkify(content, forApp, renderOptions) {
 }
 
 export { linkify };
-//# sourceMappingURL=chunk-M4ZLVWIN.js.map
-//# sourceMappingURL=chunk-M4ZLVWIN.js.map
+//# sourceMappingURL=chunk-EXMICESB.js.map
+//# sourceMappingURL=chunk-EXMICESB.js.map

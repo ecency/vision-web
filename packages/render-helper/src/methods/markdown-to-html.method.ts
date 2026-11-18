@@ -253,6 +253,16 @@ function readContainers(
     containers.push(width)
     at = markerAt + markerLength + (wide ? 1 : gapChars)
     column += width - spacesFrom
+    if (wide) {
+      // A tab there is consumed whole but the content starts one column in:
+      // its other columns count as indent of what follows (so `-\t\t~~~` is
+      // indented code, not a fence). Nothing after a wide gap opens a container.
+      if (line[at - 1] === '\t') {
+        const tabWidth = 4 - (afterMarker % 4)
+        return { containers, at, column: column + tabWidth - 1, carry: tabWidth - 1 }
+      }
+      break
+    }
   }
   // No container read: the carried indent still counts before the content.
   return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 }
@@ -364,7 +374,7 @@ function codeRanges(src: string): Array<[number, number]> {
     const read = readContainers(line)
     if (read.containers.length > 0) {
       containers = read.containers
-      open = fenceAt(line, read.at, read.column)
+      open = fenceAt(line, read.at, read.column, read.carry)
       // A quote line outside the item ends it.
       item = containers.some((c) => c !== QUOTE) ? containers : null
     } else if (!blank) {

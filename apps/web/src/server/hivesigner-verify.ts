@@ -13,6 +13,14 @@ export type HsVerifyResult =
   | { ok: true; username: string }
   | { ok: false; reason: "invalid" | "unavailable" };
 
+// An access token lives 7 days and the client renews it near expiry; a day's
+// grace covers a session picked up after a few idle days. HiveSigner itself
+// enforces no expiry, so this is the only age limit. The date is under the
+// token's signature: only HiveSigner or the account's own key holder can set
+// it. A small allowance for clock skew the other way.
+const TOKEN_MAX_AGE_S = 8 * 24 * 60 * 60;
+const TOKEN_MAX_SKEW_S = 300;
+
 export async function verifyHsAccessToken(
   token: string,
   signal?: AbortSignal
@@ -29,6 +37,14 @@ export async function verifyHsAccessToken(
     message.authors.length !== 1 ||
     typeof author !== "string"
   ) {
+    return { ok: false, reason: "invalid" };
+  }
+  // Type first: the token is decoded JSON, and arithmetic on an odd value can throw.
+  if (typeof message.timestamp !== "number") {
+    return { ok: false, reason: "invalid" };
+  }
+  const age = Date.now() / 1000 - message.timestamp;
+  if (!(age <= TOKEN_MAX_AGE_S && age >= -TOKEN_MAX_SKEW_S)) {
     return { ok: false, reason: "invalid" };
   }
 

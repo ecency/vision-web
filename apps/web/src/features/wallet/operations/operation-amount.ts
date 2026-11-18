@@ -57,3 +57,92 @@ export function truncateAmount(value: number, precision: number): string {
     ? `${sign}${whole}.${fraction.slice(0, precision).padEnd(precision, "0")}`
     : `${sign}${whole}`;
 }
+
+/** A portfolio layer is Hive Engine whatever its case (the API sends "engine"). */
+export function isEngineLayer(layer: string | undefined | null): boolean {
+  return layer?.toLowerCase() === "engine";
+}
+
+/**
+ * Why an engine token's amount cannot be entered yet: its details are still
+ * loading, or they did not come (no precision, so no safe amount). Null when
+ * nothing is missing.
+ */
+export function enginePrecisionStatus(
+  isEngineToken: boolean,
+  knownPrecision: number | null,
+  loading: boolean
+): "loading" | "unavailable" | null {
+  if (!isEngineToken || knownPrecision !== null) {
+    return null;
+  }
+  return loading ? "loading" : "unavailable";
+}
+
+/** A finite number as the decimal it prints as: digits x 10^exp. */
+function decimalOf(v: number): { digits: bigint; exp: number } {
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(v));
+  if (!m) return { digits: BigInt(0), exp: 0 };
+  const frac = m[3] ?? "";
+  return { digits: BigInt(`${m[1]}${m[2]}${frac}`), exp: Number(m[4] ?? 0) - frac.length };
+}
+
+/**
+ * HP that can be powered down: held, less delegated and already powering
+ * down, cut down to whole thousandths (HP has 3 decimals) so it is never more
+ * than is available (100.0006 - 20.0004 is 80.000, not 80.001).
+ *
+ * The sum is done on the decimals the numbers print as, not in floating
+ * point, so 0.3 - 0.1 is exactly 0.200 (not 0.199) and a balance just short
+ * of the next thousandth (1000000.0009995) is never rounded up, at any size
+ * a balance can have (exact up to 2^53 thousandths, about 9e12 HP).
+ */
+export function availableForPowerDown(hp: number, delegated: number, pending: number): number {
+  const parts = [hp, delegated, pending].map((v) => decimalOf(Number.isFinite(v) ? v : 0));
+  const exp = Math.min(...parts.map((p) => p.exp));
+  const ten = BigInt(10);
+  const [h, d, p] = parts.map((x) => x.digits * ten ** BigInt(x.exp - exp));
+  const net = h - d - p;
+  if (net <= BigInt(0)) return 0;
+  // net x 10^exp HP, in thousandths, cut down (net is positive, so BigInt
+  // division is a floor).
+  const milli = exp + 3 >= 0 ? net * ten ** BigInt(exp + 3) : net / ten ** BigInt(-(exp + 3));
+  return Number(milli) / 1000;
+}
+
+/** An asset string ("200001.600000 VESTS") or integer count in millionths. */
+function micro(v: string | number | undefined, scaled: boolean): bigint {
+  const m = /^\s*(\d+)(?:\.(\d*))?/.exec(String(v ?? ""));
+  if (!m) return BigInt(0);
+  if (!scaled) return BigInt(m[1]);
+  return BigInt(m[1] + (m[2] ?? "").padEnd(6, "0").slice(0, 6));
+}
+
+interface PowerDownVests {
+  vesting_shares: string;
+  delegated_vesting_shares: string;
+  to_withdraw: string | number;
+  withdrawn: string | number;
+}
+
+/**
+ * HP that can be powered down, worked out from the account's VESTS: held,
+ * less delegated and still to withdraw, then converted and cut down to whole
+ * thousandths. The HP figures in the wallet parts are each rounded to 3
+ * decimals before they are subtracted (100.0008 - 20.0003 becomes
+ * 100.001 - 20.000 = 80.001), so they can allow more than the account has.
+ */
+export function powerDownAvailableFromVests(account: PowerDownVests, hivePerMVests: number): number {
+  const held = micro(account.vesting_shares, true);
+  const delegated = micro(account.delegated_vesting_shares, true);
+  const pending = micro(account.to_withdraw, false) - micro(account.withdrawn, false);
+  const net = held - delegated - (pending > BigInt(0) ? pending : BigInt(0));
+  if (net <= BigInt(0) || !(hivePerMVests > 0)) return 0;
+  // HP = microVESTS x hivePerMVests / 1e12, so thousandths of HP are
+  // microVESTS x hivePerMVests / 1e9, done on the decimal of hivePerMVests.
+  const rate = decimalOf(hivePerMVests);
+  const ten = BigInt(10);
+  const shift = rate.exp - 9;
+  const milli = shift >= 0 ? net * rate.digits * ten ** BigInt(shift) : (net * rate.digits) / ten ** BigInt(-shift);
+  return Number(milli) / 1000;
+}

@@ -52,6 +52,20 @@ describe('fenced code inside list items, app render', () => {
     expect(strip(app)).toBe(strip(render(body, false)))
   })
 
+  it.each([
+    '-\t\t~~~\n  &amp; prose &copy;',
+    '-\t\t~~~\n\n  after &copy; x',
+    '1.\t\t\x60\x60\x60\n   prose &copy;',
+    // A tab then spaces: the tab's extra columns still count.
+    '-\t  ~~~\n  prose &copy;',
+    '-\t  ~~~\n\n  after &copy; x'
+  ])('reads a wide tab gap after the marker as indented code, not a fence: %j', (body) => {
+    // The tab's columns past the content start count as indent, so `~~~`
+    // there is indented four or more: no fence, and the prose after it keeps
+    // the app's entity handling.
+    expect(render(body, true)).toContain('&copy;')
+  })
+
   it('keeps the app entity handling for prose after a fence that follows a quote', () => {
     // In prose the app keeps an entity as written (its placeholder pass); a
     // fence range running past its close would take that away.

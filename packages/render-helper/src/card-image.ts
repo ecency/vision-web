@@ -67,9 +67,10 @@ function findTag(lower: string, tag: string, from: number, end: RegExp): number 
 // makes it self-closing, which opens nothing. Returns the index of the `>`
 // for a real opening tag, -1 for an unterminated one (taken as open to the
 // end), and NaN for a broken or self-closing one, which is skipped.
-function findOpenTagEnd(lower: string, openAt: number): number {
+function findOpenTagEnd(lower: string, openAt: number, budget?: { left: number }): number {
   let quote = ''
   for (let i = openAt + 1; i < lower.length; i++) {
+    if (budget && --budget.left < 0) return -1
     const c = lower[i]
     if (c === '\n') return NaN
     if (quote) {
@@ -300,7 +301,8 @@ function blankMasked(input: Spellings, mask: Uint8Array): Spellings {
 }
 
 function stripHiddenRegions(text: string): string {
-  let spellings: Spellings = { text, lower: text.toLowerCase() }
+  // ASCII only: offsets in `lower` must match `text` (see asciiLower).
+  let spellings: Spellings = { text, lower: asciiLower(text) }
   const { block: blockMask, code: codeMask } = markLines(spellings.lower)
   spellings = blankMasked(spellings, codeMask)
   spellings = blankSpans(spellings, '<!--', '-->', false, null)
@@ -677,14 +679,19 @@ function stripCodeRegions(body: string): string {
 // A scan rather than a regex: the opening tag's end is found quote-aware (a
 // `>` inside a title must not end it), and the href may be quoted or bare.
 function blankUnequalAnchors(cleaned: string, textContent: boolean): string {
-  const lower = cleaned.toLowerCase()
+  const lower = asciiLower(cleaned)
+  // An unterminated opener is read to the end of its line; thousands of them
+  // on one line would make every read go to that end. A shared budget of a
+  // few passes over the body bounds the total: past it, an opener counts as
+  // unterminated, which a real post never reaches.
+  const budget = { left: cleaned.length * 4 + 1024 }
   // Output chunks, joined once: rebuilding the string per anchor is quadratic
   // on a body with thousands of anchors.
   const parts: string[] = []
   let from = 0
   let at = findTag(lower, '<a', 0, OPEN_TAG_NAME_END)
   while (at !== -1) {
-    const gt = findOpenTagEnd(lower, at)
+    const gt = findOpenTagEnd(lower, at, budget)
     if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
       // Broken, self-closing or malformed: not an anchor around any text.
       at = findTag(lower, '<a', at + 2, OPEN_TAG_NAME_END)

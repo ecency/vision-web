@@ -7,8 +7,10 @@ import { extractPermlink, getUploadTuning } from "@/api/threespeak-embed/api";
 vi.mock("@/utils/local-storage", () => ({
   get: vi.fn(() => "testuser")
 }));
+const tokens = vi.hoisted(() => ({ fresh: "valid-hs-token" as string | undefined }));
 vi.mock("@/utils/user-token", () => ({
-  getAccessToken: vi.fn(() => "valid-hs-token")
+  getAccessToken: vi.fn(() => "valid-hs-token"),
+  ensureValidTokenWithin: vi.fn(async () => tokens.fresh)
 }));
 
 // Drive tus-js-client's upload callbacks deterministically. `runUpload` is set
@@ -255,5 +257,37 @@ describe("uploadVideoEmbed against a legacy backend (header fallback)", () => {
     };
     const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
     await expect(uploadVideoEmbed(smallFile(), "a", false, () => {})).rejects.toThrow(/network down/);
+  });
+});
+
+// The server refuses a token past its lifetime, so an expired one is renewed
+// before it is sent; if renewing fails (HiveSigner down) the cached one goes,
+// as before.
+describe("3Speak auth code", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    tokens.fresh = "valid-hs-token";
+  });
+
+  const sentCode = async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve("{}")
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    await uploadVideoEmbed(new File(["t"], "t.mp4", { type: "video/mp4" }), "testuser", true, () => {}).catch(() => {});
+    return JSON.parse(fetchSpy.mock.calls[0][1].body).code;
+  };
+
+  it("sends the renewed token", async () => {
+    tokens.fresh = "renewed-token";
+    expect(await sentCode()).toBe("renewed-token");
+  });
+
+  it("sends the stored token the renewal helper falls back to", async () => {
+    tokens.fresh = "stored-token";
+    expect(await sentCode()).toBe("stored-token");
   });
 });

@@ -112,6 +112,7 @@ function img(el, state, forApp = true, renderOptions) {
     el.removeAttribute("sizes");
   }
 }
+var quoteAttr = (value) => value.replace(/"/g, "&quot;");
 function createImageHTML(src, isLCP, forApp = true) {
   const decoded = decodeDomImageSrc(src);
   const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
@@ -121,10 +122,10 @@ function createImageHTML(src, isLCP, forApp = true) {
   const srcset = isAlreadyProxied ? "" : buildSrcSet(decoded);
   const loading = isLCP ? "eager" : "lazy";
   const fetch = isLCP ? 'fetchpriority="high"' : 'decoding="async"';
-  const srcsetAttr = srcset ? `srcset="${srcset}" sizes="${IMAGE_SIZES}"` : "";
+  const srcsetAttr = srcset ? `srcset="${quoteAttr(srcset)}" sizes="${IMAGE_SIZES}"` : "";
   const imgTag = `<img
     class="markdown-img-link"
-    src="${proxified}"
+    src="${quoteAttr(proxified)}"
     ${srcsetAttr}
     loading="${loading}"
     ${fetch}
@@ -133,12 +134,12 @@ function createImageHTML(src, isLCP, forApp = true) {
   if (!forApp) {
     const sources = buildPictureSources(decoded);
     if (sources) {
-      return `<picture><source type="image/avif" srcset="${sources.avif}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${sources.webp}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
+      return `<picture><source type="image/avif" srcset="${quoteAttr(sources.avif)}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${quoteAttr(sources.webp)}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
     }
   }
   return imgTag;
 }
 
 export { IMAGE_SIZES, createImageHTML, img };
-//# sourceMappingURL=chunk-A2ADGWM6.js.map
-//# sourceMappingURL=chunk-A2ADGWM6.js.map
+//# sourceMappingURL=chunk-JJUDG2FE.js.map
+//# sourceMappingURL=chunk-JJUDG2FE.js.map

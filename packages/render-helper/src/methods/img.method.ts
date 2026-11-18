@@ -194,6 +194,10 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
   }
 }
 
+// A value for a double-quoted attribute: a `"` (from a configured proxy base,
+// say) is written as &quot; so it cannot end the attribute.
+const quoteAttr = (value: string): string => value.replace(/"/g, '&quot;');
+
 export function createImageHTML(src: string, isLCP: boolean, forApp = true): string {
   // Decode with the same pipeline as the DOM path img() so the same source URL
   // hashes to the same proxy /p/ URL regardless of which render path produced it
@@ -210,10 +214,10 @@ export function createImageHTML(src: string, isLCP: boolean, forApp = true): str
   const srcset = isAlreadyProxied ? '' : buildSrcSet(decoded);
   const loading = isLCP ? 'eager' : 'lazy';
   const fetch = isLCP ? 'fetchpriority="high"' : 'decoding="async"';
-  const srcsetAttr = srcset ? `srcset="${srcset}" sizes="${IMAGE_SIZES}"` : '';
+  const srcsetAttr = srcset ? `srcset="${quoteAttr(srcset)}" sizes="${IMAGE_SIZES}"` : '';
   const imgTag = `<img
     class="markdown-img-link"
-    src="${proxified}"
+    src="${quoteAttr(proxified)}"
     ${srcsetAttr}
     loading="${loading}"
     ${fetch}
@@ -228,7 +232,7 @@ export function createImageHTML(src: string, isLCP: boolean, forApp = true): str
   if (!forApp) {
     const sources = buildPictureSources(decoded);
     if (sources) {
-      return `<picture><source type="image/avif" srcset="${sources.avif}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${sources.webp}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
+      return `<picture><source type="image/avif" srcset="${quoteAttr(sources.avif)}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${quoteAttr(sources.webp)}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
     }
   }
   return imgTag;

@@ -19,7 +19,13 @@ import { WalletOperationAmountForm } from "./wallet-operation-amount-form";
 import { formatNumber } from "@/utils";
 import { callRPC } from "@ecency/sdk";
 import { hpToVests } from "@/features/shared/transfer/hp-to-vests";
-import { amountStep, operationAssetPrecision, truncateAmount } from "./operation-amount";
+import {
+  amountStep,
+  enginePrecisionStatus,
+  isEngineLayer,
+  operationAssetPrecision,
+  truncateAmount
+} from "./operation-amount";
 import { isKeyInMemo, operationCarriesMemo, prepareOperationMemo } from "./operation-memo";
 import { error as showError } from "@/features/shared";
 import { formatError } from "@/api/format-error";
@@ -89,10 +95,10 @@ export function WalletOperationsTransfer({
   }, [data?.to, operation, shouldDefaultToSelf, toProp, username]);
 
   // The portfolio declares "engine"; compare without case either way.
-  const isEngineToken = accountWallet?.layer?.toLowerCase() === "engine";
+  const isEngineToken = isEngineLayer(accountWallet?.layer);
   // A Hive Engine token has its own precision (up to 8 decimals); everything
   // else here uses 3 (#2127).
-  const { data: engineBalances } = useQuery({
+  const { data: engineBalances, fetchStatus: engineBalancesFetch } = useQuery({
     ...getHiveEngineBalancesWithUsdQueryOptions(username, dynamicProps),
     enabled: isEngineToken && !!username
   });
@@ -389,6 +395,9 @@ export function WalletOperationsTransfer({
     asset === "HP" &&
     operation === AssetOperation.Delegate &&
     Boolean(existingDelegationHp && existingDelegationHp > 0);
+  // Fetching or paused (offline, it runs on reconnect): still on its way.
+  // "Unavailable" only once a lookup has ended without the details.
+  const precisionStatus = enginePrecisionStatus(isEngineToken, knownPrecision, engineBalancesFetch !== "idle");
   const isSubmitDisabled =
     knownPrecision === null ||
     !hasValidRecipient ||
@@ -402,11 +411,11 @@ export function WalletOperationsTransfer({
           asset={asset}
           balance={displayBalance}
           username={username}
-          onBalanceClick={() =>
-            methods.setValue(
-              "amount",
-              +truncateAmount(displayBalance ?? 0, precision) || 0
-            )
+          onBalanceClick={
+            // Unknown precision: a fallback of 3 would cut an 8-decimal balance.
+            knownPrecision === null
+              ? undefined
+              : () => methods.setValue("amount", +truncateAmount(displayBalance ?? 0, knownPrecision) || 0)
           }
         />
         <WalletOperationCard
@@ -419,11 +428,11 @@ export function WalletOperationsTransfer({
             showSubmit &&
             ![AssetOperation.Unstake, AssetOperation.ClaimInterest].includes(operation)
           }
-          onBalanceClick={() =>
-            methods.setValue(
-              "amount",
-              +truncateAmount(recipientBalance ?? displayBalance ?? 0, precision) || 0
-            )
+          onBalanceClick={
+            // Unknown precision: a fallback of 3 would cut an 8-decimal balance.
+            knownPrecision === null
+              ? undefined
+              : () => methods.setValue("amount", +truncateAmount(recipientBalance ?? displayBalance ?? 0, knownPrecision) || 0)
           }
         />
       </div>
@@ -479,6 +488,18 @@ export function WalletOperationsTransfer({
               </Button>
             )}
           </div>
+          {showSubmit && (
+            // Mounted empty first, so a screen reader announces the message
+            // when it appears.
+            <div className="px-4 pb-4 empty:p-0 text-sm text-gray-600 dark:text-gray-400" role="status">
+              {precisionStatus &&
+                i18next.t(
+                  precisionStatus === "loading"
+                    ? "transfer.token-details-loading"
+                    : "transfer.token-details-unavailable"
+                )}
+            </div>
+          )}
         </form>
       </FormProvider>
     </div>

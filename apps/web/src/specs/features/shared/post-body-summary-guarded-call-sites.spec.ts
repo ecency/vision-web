@@ -30,7 +30,7 @@ const SITES: { file: string; calls: number }[] = [
   // The card reader: two passes in summarizeText (capped, then untruncated)
   // plus the body fallback in entrySummary.
   { file: "core/entries/entry-summary.ts", calls: 3 },
-  { file: "features/shared/search-list-item/index.tsx", calls: 1 }
+  { file: "features/shared/search-list-item/search-summary.tsx", calls: 1 }
 ];
 
 const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");
@@ -52,8 +52,8 @@ describe("card and search summaries go through the summary guard", () => {
 
   it.each(SITES)("$file makes all $calls of its calls through the guard", ({ file, calls }) => {
     const source = read(file);
-    expect(source.match(/postBodyTextSafely\(/g)?.length ?? 0).toBe(calls);
-    expect(source.match(/(?<!Safely)\b(?:postBodySummary|getPostBodyText)\(/g)).toBeNull();
+    expect(source.match(/postBodyTextSafely\s*\(/g)?.length ?? 0).toBe(calls);
+    expect(source.match(/(?<!Safely)\b(?:postBodySummary|getPostBodyText)\s*\(/g)).toBeNull();
   });
 
   // The card component reaches the reader through this module, so the pin above
@@ -62,6 +62,29 @@ describe("card and search summaries go through the summary guard", () => {
     const source = read("features/shared/entry-list-item/entry-list-item-muted-content.tsx");
     expect(source).toContain('from "@/core/entries/entry-summary"');
     expect(source).toMatch(/entrySummary\(entry\)/);
+  });
+
+  // The search rows reach the guard through searchSummary; the pin above covers
+  // them only while both still use it, and call no summary reader directly.
+  // Each row's excerpt JSX shows the value searchSummary produced, not the
+  // raw body: `rendered` is how that value appears in the markup.
+  it.each([
+    ["features/shared/search-list-item/index.tsx", 1, /const summary = useMemo\(\s*\(\) => searchSummary\(/, "{summary}"],
+    [
+      "app/decks/_components/columns/deck-items/deck-search-list-item.tsx",
+      2,
+      /useState\(\s*searchSummary\(/,
+      "{body}"
+    ]
+  ])("%s reads its excerpt through searchSummary", (file, calls, binding, rendered) => {
+    const source = read(file);
+    expect(source).toMatch(/import\s*{\s*searchSummary\s*}\s*from\s*"[^"]*search-summary"/);
+    expect(source.match(/searchSummary\s*\(/g)?.length ?? 0).toBe(calls);
+    expect(source).toMatch(binding);
+    expect(source).toContain(rendered);
+    expect(source).not.toMatch(/[{(]\s*(?:res|entry)\.body\s*[})]/);
+    // Whitespace before the parenthesis is still a call.
+    expect(source).not.toMatch(/\b(?:postBodyTextSafely|postBodySummary|getPostBodyText)\s*\(/);
   });
 
   it("the guard swallows the throw and reports rather than rethrowing", () => {

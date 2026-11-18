@@ -4,7 +4,7 @@ import {
   extensionErrorMessage,
   isExplicitUserCancellation,
   isUserCancellation,
-  isRetryableNodeError
+  isUnsentBroadcastError
 } from "../../utils/extension-error";
 
 describe("extensionErrorMessage", () => {
@@ -157,16 +157,23 @@ describe("cancellation string coverage", () => {
   );
 });
 
-describe("isRetryableNodeError", () => {
+describe("isUnsentBroadcastError", () => {
   it.each([
-    [{ message: "Request failed with status code 502" }],
     [{ message: "All origin servers are unavailable" }],
-    [{ error: "ETIMEDOUT" }],
-    [{ message: "timeout of 30000ms exceeded" }],
     [{ error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
-    [{ message: "bad gateway" }],
-  ])("retries node/transport failure %o", (resp) => {
-    expect(isRetryableNodeError(resp)).toBe(true);
+    [{ message: "getaddrinfo ENOTFOUND api.example.com" }],
+    // A word like "gateway" in the node's own name is not a gateway answer.
+    [{ message: "getaddrinfo ENOTFOUND hive-gateway.example.com" }],
+    [{ message: "connect ECONNREFUSED https://upstream-node.example.com:8090/rpc" }],
+    [{ message: "getaddrinfo EAI_AGAIN upstream-node.example.com" }],
+    [{ message: "getaddrinfo ENOTFOUND node1:8091" }],
+    [{ message: "connect ECONNREFUSED 10.0.0.1:443" }],
+    [{ message: "unable to connect to 192.168.100.200" }],
+    [{ message: "connect ECONNREFUSED https://api.example.com:443/rpc" }],
+    // A Node system error has a string code and a numeric errno, no status.
+    [{ error: { code: "ECONNREFUSED", errno: -111, message: "connect ECONNREFUSED 1.2.3.4:443" } }],
+  ])("retries %o: nothing reached a node", (resp) => {
+    expect(isUnsentBroadcastError(resp)).toBe(true);
   });
 
   it.each([
@@ -175,12 +182,88 @@ describe("isRetryableNodeError", () => {
     [{ message: "insufficient resource credits" }],
     [{ error: "user_cancel" }],
     [{ message: "Transaction already in the blockchain" }],
-    // tightened: bare "network" and 500/"internal server error" must NOT retry —
-    // they can wrap deterministic chain rejections
     [{ message: "broadcast to network failed: missing authority" }],
     [{ message: "Request failed with status code 500" }],
     [{ message: "Internal Server Error" }],
-  ])("does NOT retry deterministic/cancel failure %o", (resp) => {
-    expect(isRetryableNodeError(resp)).toBe(false);
+    // The first transaction may already be on chain after these; a retry
+    // signs a new one the chain cannot dedupe.
+    [{ message: "Request failed with status code 502" }],
+    [{ message: "Request failed with status code 504" }],
+    [{ message: "bad gateway" }],
+    [{ error: "ETIMEDOUT" }],
+    [{ message: "timeout of 30000ms exceeded" }],
+    [{ error: "socket hang up" }],
+    [{ message: "Failed to fetch" }],
+    [{ message: "Request failed with status code 503" }],
+    [{ message: "Service Unavailable" }],
+    // A gateway answered: a connection phrase from upstream does not make it unsent.
+    [{ message: "Request failed with status code 504", error: "Unable to connect to upstream" }],
+    [{ message: "Bad Gateway: could not connect to backend" }],
+    [{ error: "ECONNREFUSED after timeout" }],
+    // The diagnostic itself reports a gateway error: still ambiguous.
+    [{ message: "502 Bad Gateway from api.example.com: could not connect" }],
+    [{ message: "Bad Gateway.Could not connect" }],
+    // Endpoint names are ignored only right after a DNS or refused-connection
+    // code: nothing else around them may be dropped with them.
+    [{ error: { cause: { url: "https://api.hive.blog", code: "ECONNRESET" } }, message: "Unable to connect to the node" }],
+    [{ error: { code: -32000, data: { url: "https://api.hive.blog", status: 504, name: "GatewayTimeout" } }, message: "Could not connect" }],
+    [{ error: { config: { url: "https://api.hive.blog/" }, code: "ETIMEDOUT", detail: "could not connect" } }],
+    [{ message: "Could not connect to https://api.hive.blog/:ETIMEDOUT" }],
+    [{ message: "Error: Could not connect. [https://api.hive.blog](ECONNRESET)" }],
+    [{ message: "Could not connect to node: requests.exceptions.ReadTimeout" }],
+    [{ message: "Unable to connect: java.net.SocketTimeoutException" }],
+    [{ message: "error.gateway.timeout could not connect" }],
+    [{ message: "gateway.go:88: could not connect to node" }],
+    [{ message: "unable to connect to upstream.rpc.internal:8090 (502)" }],
+    [{ message: "getaddrinfo ENOTFOUND https://api.hive.blog/:ETIMEDOUT" }],
+    [{ message: "connect ECONNREFUSED gateway.example.com:443/rpc;timeout" }],
+    // A word after the code is a diagnostic, not an endpoint.
+    [{ message: "broadcast failed: ECONNREFUSED ETIMEDOUT" }],
+    [{ message: "failed after 3 attempts: ECONNREFUSED ECONNRESET" }],
+    [{ message: "connect ECONNREFUSED timed out" }],
+    [{ message: "ECONNREFUSED status code 502" }],
+    [{ message: "ENOTFOUND socket hang up" }],
+    [{ message: "ECONNREFUSED timeout" }],
+    [{ message: "request failed: ECONNREFUSED timeout." }],
+    [{ message: "connect ECONNREFUSED upstream" }],
+    [{ message: "getaddrinfo ENOTFOUND api.hive.blog.Timeout" }],
+    [{ error: { errors: ["ECONNREFUSED ETIMEDOUT"] } }],
+    // A name that is itself a signal word is kept: no retry.
+    [{ message: "getaddrinfo ENOTFOUND backend:8091" }],
+    [{ message: "ECONNREFUSED http://x.example.com/504-gateway-timeout" }],
+    // A structured HTTP or RPC status means something answered: the text
+    // alone must not make it look unsent.
+    [{ message: "Unable to connect", status: 504 }],
+    [{ message: "Unable to connect", error: { message: "could not connect", status: 502 } }],
+    [{ message: "Unable to connect", error: { statusCode: 504 } }],
+    [{ message: "could not connect", error: { response: { status: 504 } } }],
+    [{ message: "could not connect", error: { code: -32000, message: "unable to connect" } }],
+    [{ message: "could not connect", status: "504" }],
+    [{ message: "Unable to connect", error: new Error("could not connect", { cause: { status: 504 } }) }],
+    [{ message: "could not connect", httpStatus: 502 }],
+    // A status in the text is an answer too.
+    [{ message: "HTTP 504 unable to connect" }],
+    [{ message: "unable to connect (502)" }],
+    [{ message: "status=503 could not connect" }],
+    [{ error: "HTTP/1.1 504 could not connect" }],
+    [{ message: "could not connect: 504" }],
+    [{ message: "HTTP 504. Unable to connect" }],
+    [{ message: "could not connect: 504." }],
+    [{ message: "Could not connect. Server returned 502." }],
+    [{ message: "could not connect", error: { responseCode: 503 } }],
+    [{ message: "could not connect", status: "502 Bad Gateway" }],
+    [{ message: "could not connect", error: { cause: { response: { data: { error: { code: -32000 } } } } } }],
+  ])("does NOT retry %o", (resp) => {
+    expect(isUnsentBroadcastError(resp)).toBe(false);
+  });
+
+  it("does NOT retry, and does not throw, when reading the response throws", () => {
+    const resp = {
+      message: "could not connect",
+      get detail(): unknown {
+        throw new Error("getter");
+      }
+    };
+    expect(isUnsentBroadcastError(resp)).toBe(false);
   });
 });

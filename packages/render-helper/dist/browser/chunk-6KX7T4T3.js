@@ -1,6 +1,6 @@
 import { sanitizeHtml } from './chunk-O2PEXDUT.js';
 import { stripAuthorMarkers } from './chunk-FAKJ3NFL.js';
-import { traverse } from './chunk-XDYBZJNC.js';
+import { traverse } from './chunk-C7ZU2GSP.js';
 import { createRenderNonce, xmldomNodeFilter } from './chunk-YYHKRTAC.js';
 import { ENTITY_REGEX } from './chunk-3IFARPWV.js';
 import { regexMatches } from './chunk-SH6RGNOF.js';
@@ -153,6 +153,13 @@ function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
     containers.push(width);
     at = markerAt + markerLength + (wide ? 1 : gapChars);
     column += width - spacesFrom;
+    if (wide) {
+      if (line[at - 1] === "	") {
+        const tabWidth = 4 - afterMarker % 4;
+        return { containers, at, column: column + tabWidth - 1, carry: tabWidth - 1 };
+      }
+      break;
+    }
   }
   return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 };
 }
@@ -236,7 +243,7 @@ function codeRanges(src) {
     const read = readContainers(line);
     if (read.containers.length > 0) {
       containers = read.containers;
-      open = fenceAt(line, read.at, read.column);
+      open = fenceAt(line, read.at, read.column, read.carry);
       item = containers.some((c) => c !== QUOTE) ? containers : null;
     } else if (!blank) {
       if (item) {
@@ -496,5 +503,5 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
 }
 
 export { markdownToHTML, stripDocumentWrapper };
-//# sourceMappingURL=chunk-7PCYQESC.js.map
-//# sourceMappingURL=chunk-7PCYQESC.js.map
+//# sourceMappingURL=chunk-6KX7T4T3.js.map
+//# sourceMappingURL=chunk-6KX7T4T3.js.map

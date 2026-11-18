@@ -85,15 +85,22 @@ export const success = (message: string) => {
   window.dispatchEvent(ev);
 };
 
-export const info = (message: string, link?: string) => {
+export const info = (
+  message: string,
+  link?: string,
+  extras?: Pick<FeedbackObject, "action" | "onDismiss">
+): string => {
   const detail: FeedbackObject = {
     id: random(),
     type: "info",
     message,
-    link
+    link,
+    action: extras?.action,
+    onDismiss: extras?.onDismiss
   };
   const ev = new CustomEvent("ecency-feedback", { detail });
   window.dispatchEvent(ev);
+  return detail.id;
 };
 
 type FeedbackType = "error" | "success" | "info";

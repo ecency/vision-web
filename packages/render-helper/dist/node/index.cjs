@@ -1372,6 +1372,7 @@ function img(el, state, forApp = true, renderOptions) {
     el.removeAttribute("sizes");
   }
 }
+var quoteAttr = (value) => value.replace(/"/g, "&quot;");
 function createImageHTML(src, isLCP, forApp = true) {
   const decoded = decodeDomImageSrc(src);
   const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
@@ -1381,10 +1382,10 @@ function createImageHTML(src, isLCP, forApp = true) {
   const srcset = isAlreadyProxied ? "" : buildSrcSet(decoded);
   const loading = isLCP ? "eager" : "lazy";
   const fetch = isLCP ? 'fetchpriority="high"' : 'decoding="async"';
-  const srcsetAttr = srcset ? `srcset="${srcset}" sizes="${IMAGE_SIZES}"` : "";
+  const srcsetAttr = srcset ? `srcset="${quoteAttr(srcset)}" sizes="${IMAGE_SIZES}"` : "";
   const imgTag = `<img
     class="markdown-img-link"
-    src="${proxified}"
+    src="${quoteAttr(proxified)}"
     ${srcsetAttr}
     loading="${loading}"
     ${fetch}
@@ -1393,7 +1394,7 @@ function createImageHTML(src, isLCP, forApp = true) {
   if (!forApp) {
     const sources = buildPictureSources(decoded);
     if (sources) {
-      return `<picture><source type="image/avif" srcset="${sources.avif}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${sources.webp}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
+      return `<picture><source type="image/avif" srcset="${quoteAttr(sources.avif)}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${quoteAttr(sources.webp)}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
     }
   }
   return imgTag;
@@ -10918,6 +10919,13 @@ function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
     containers.push(width);
     at = markerAt + markerLength + (wide ? 1 : gapChars);
     column += width - spacesFrom;
+    if (wide) {
+      if (line[at - 1] === "	") {
+        const tabWidth = 4 - afterMarker % 4;
+        return { containers, at, column: column + tabWidth - 1, carry: tabWidth - 1 };
+      }
+      break;
+    }
   }
   return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 };
 }
@@ -11001,7 +11009,7 @@ function codeRanges(src) {
     const read = readContainers(line);
     if (read.containers.length > 0) {
       containers = read.containers;
-      open = fenceAt(line, read.at, read.column);
+      open = fenceAt(line, read.at, read.column, read.carry);
       item = containers.some((c) => c !== QUOTE) ? containers : null;
     } else if (!blank) {
       if (item) {
@@ -11358,9 +11366,10 @@ function findTag(lower, tag, from, end) {
   }
   return at;
 }
-function findOpenTagEnd(lower, openAt) {
+function findOpenTagEnd(lower, openAt, budget) {
   let quote = "";
   for (let i2 = openAt + 1; i2 < lower.length; i2++) {
+    if (budget && --budget.left < 0) return -1;
     const c = lower[i2];
     if (c === "\n") return NaN;
     if (quote) {
@@ -11567,7 +11576,7 @@ function blankMasked(input, mask) {
   return { text: text3 + input.text.slice(from), lower: lower + input.lower.slice(from) };
 }
 function stripHiddenRegions(text3) {
-  let spellings = { text: text3, lower: text3.toLowerCase() };
+  let spellings = { text: text3, lower: asciiLower(text3) };
   const { block: blockMask, code: codeMask } = markLines(spellings.lower);
   spellings = blankMasked(spellings, codeMask);
   spellings = blankSpans(spellings, "<!--", "-->", false, null);
@@ -11754,12 +11763,13 @@ function stripCodeRegions(body) {
   return stripHiddenRegions(text3);
 }
 function blankUnequalAnchors(cleaned, textContent) {
-  const lower = cleaned.toLowerCase();
+  const lower = asciiLower(cleaned);
+  const budget = { left: cleaned.length * 4 + 1024 };
   const parts = [];
   let from = 0;
   let at = findTag(lower, "<a", 0, OPEN_TAG_NAME_END);
   while (at !== -1) {
-    const gt = findOpenTagEnd(lower, at);
+    const gt = findOpenTagEnd(lower, at, budget);
     if (Number.isNaN(gt) || gt === -1 || hasGluedAttribute(cleaned.slice(at, gt))) {
       at = findTag(lower, "<a", at + 2, OPEN_TAG_NAME_END);
       continue;
@@ -12078,6 +12088,7 @@ function stripTags(text3) {
 var isLetter2 = (c) => c >= "a" && c <= "z" || c >= "A" && c <= "Z";
 function dropTags(text3) {
   const out = [];
+  const lastGt = text3.lastIndexOf(">");
   let i2 = 0;
   while (i2 < text3.length) {
     const c = text3[i2];
@@ -12091,13 +12102,20 @@ function dropTags(text3) {
     }
     const next = text3[i2 + 1] ?? "";
     const opensTag = isLetter2(next) || next === "/" && isLetter2(text3[i2 + 2] ?? "");
+    if (opensTag && i2 > lastGt) {
+      out.push("&lt;");
+      i2++;
+      continue;
+    }
     if (opensTag) {
       let j = i2 + 1;
       while (j < text3.length && text3[j] !== ">" && text3[j] !== "<") j++;
       i2 = text3[j] === ">" ? j + 1 : i2 + 1;
       continue;
     }
-    if (next !== "/" && next !== "!") {
+    if (i2 > lastGt) {
+      out.push("&lt;");
+    } else if (next !== "/" && next !== "!") {
       out.push(c);
     }
     i2++;

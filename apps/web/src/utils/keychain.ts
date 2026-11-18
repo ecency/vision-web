@@ -168,45 +168,6 @@ export const customJson = (
     );
   });
 
-export const broadcast = (
-  account: string,
-  operations: any[],
-  key: AuthorityTypes,
-  rpc: string | null = null
-): Promise<TxResponse> =>
-  new Promise<TxResponse>((resolve, reject) => {
-    const keychain = resolveKeychainInstance(account);
-
-    if (!keychain) {
-      reject(new Error("Hive Keychain extension is unavailable or disabled."));
-      return;
-    }
-
-    let finished = false;
-    const timeout = setTimeout(() => {
-      if (!finished) {
-        reject(new Error("Hive Keychain response timeout"));
-      }
-    }, 10000);
-
-    keychain.requestBroadcast(
-      account,
-      operations,
-      key,
-      (resp) => {
-        finished = true;
-        clearTimeout(timeout);
-        if (!resp.success) {
-          reject(new Error(extensionErrorMessage(resp, "Operation cancelled")));
-          return;
-        }
-
-        resolve(resp);
-      },
-      rpc
-    );
-  });
-
 export const addAccount = (username: string, keys: Keys): Promise<TxResponse> =>
   new Promise<TxResponse>((resolve, reject) => {
     const keychain = resolveKeychainInstance(username);

@@ -166,44 +166,133 @@ export function isUserCancellation(
   );
 }
 
+const AMBIGUOUS_BROADCAST_SIGNALS = [
+  "status code",
+  "gateway",
+  "timeout",
+  "timed out",
+  "etimedout",
+  "econnreset",
+  "socket hang up",
+  "upstream",
+  "backend",
+];
+
+const ENDPOINT_PATH = "(?:/[a-z0-9/._~-]*)?";
+const ENDPOINT_NAME = new RegExp(
+  "^(?:" +
+    // scheme://host[:port][/path]
+    `[a-z][a-z0-9+.-]*://[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?::\\d+)?${ENDPOINT_PATH}` +
+    // host.domain[:port][/path], host:port[/path]
+    `|[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?::\\d+)?${ENDPOINT_PATH}` +
+    `|[a-z0-9-]+:\\d+${ENDPOINT_PATH}` +
+    ")$"
+);
+
+/** A URL, a dotted host name or a host:port, as a connection error names it. */
+function isEndpointName(operand: string): boolean {
+  return ENDPOINT_NAME.test(operand);
+}
+
+const STATUS_KEYS = new Set([
+  "status",
+  "statuscode",
+  "status_code",
+  "httpstatus",
+  "http_status",
+  "code",
+  "errorcode",
+  "error_code",
+  "responsecode",
+  "response_code"
+]);
+
+function isStatusValue(s: unknown): boolean {
+  if (typeof s === "number") return Number.isFinite(s);
+  // "504", "-32000", "502 Bad Gateway"
+  return typeof s === "string" && /^\s*-?\d{3,5}\b/.test(s);
+}
+
 /**
- * True when a failure looks like a node/transport/connectivity problem, so
- * retrying the broadcast through a different RPC node could plausibly succeed.
- * Deterministic chain errors (missing authority, insufficient RC, invalid op,
- * already broadcasted) fail identically on any node, so they return false —
- * retrying them would only re-open the extension popup for no benefit. With no
- * usable signal at all we return false rather than blindly re-prompting.
+ * True when the response, or an object inside it, carries an HTTP or JSON-RPC
+ * status: a server answered, whatever its text says. The text is normalized
+ * to its message fields, which drops these. `cause` and `response` are read
+ * by name, since an Error's cause and a getter on a class are not enumerable.
  */
-export function isRetryableNodeError(
+function carriesAnswerStatus(value: unknown, depth = 0, seen = new WeakSet<object>()): boolean {
+  if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return false;
+  seen.add(value);
+  const v = value as Record<string, unknown>;
+  for (const key of Object.keys(v)) {
+    if (STATUS_KEYS.has(key.toLowerCase()) && isStatusValue(v[key])) return true;
+  }
+  if (isStatusValue(v.status) || isStatusValue(v.statusCode)) return true;
+  const children = new Set<unknown>([v.cause, v.response, v.error, v.data, ...Object.values(v)]);
+  for (const child of children) {
+    if (carriesAnswerStatus(child, depth + 1, seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when a broadcast failure shows the transaction never reached a node
+ * (the connection was refused, the name did not resolve, Cloudflare could not
+ * reach the origin), so retrying through another node cannot send it twice.
+ * A retry from the extension signs a NEW transaction, which the chain does
+ * not dedupe against the first: after a timeout, a reset
+ * connection or a gateway or "unavailable" answer (a proxy can send one after
+ * the node took the transaction) the first may already be on chain, so those
+ * return false, as do deterministic chain errors (missing authority, RC) that
+ * fail the same on any node. With no usable signal at all, false.
+ */
+export function isUnsentBroadcastError(
   resp: Pick<TxResponse, "message" | "error">
 ): boolean {
+  try {
+    return classifyUnsent(resp);
+  } catch {
+    // A response that cannot even be read proves nothing: no retry.
+    return false;
+  }
+}
+
+function classifyUnsent(resp: Pick<TxResponse, "message" | "error">): boolean {
   const text = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`.trim();
   if (!text) return false;
+  if (carriesAnswerStatus(resp)) return false;
+  // The name after a DNS or refused-connection code is the endpoint, not a
+  // diagnostic: "ENOTFOUND hive-gateway.example.com" says nothing about a
+  // gateway answering. Only that one operand goes, only when it ends cleanly
+  // ("...blog/:ETIMEDOUT" stays) and looks like an endpoint (a scheme, a port
+  // or an inner dot, so "ECONNREFUSED ETIMEDOUT" stays), and only when no
+  // part of it is itself a signal ("api.hive.blog.timeout" stays).
+  const diagnostic = text.replace(
+    /\b(enotfound|eai_again|econnrefused)\s+([a-z0-9.:\/_~+-]+)(?=$|[\s"',)\]}])/g,
+    (match, code: string, operand: string) =>
+      isEndpointName(operand) &&
+      !operand.split(/[.:/]/).some((label) => AMBIGUOUS_BROADCAST_SIGNALS.includes(label)) &&
+      // A path is the server's wording, not a host: any signal in it counts.
+      !AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => operand.replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^[^/]*/, "").includes(sig))
+        ? code
+        : match
+  );
+  // Any sign that a server answered or the request was under way wins over a
+  // connection phrase in the same failure (a gateway's "unable to connect to
+  // upstream" after it may have passed the transaction on).
+  if (AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => diagnostic.includes(sig))) return false;
+  // An HTTP status in the text ("HTTP 504", "(502)", "status=503") is an
+  // answer as well, a sentence's full stop after it too ("HTTP 504."). Any
+  // standalone 100-599 counts (IP octets and decimals do not); a port left in the text
+  // ("api.hive.blog:443") only costs a retry, never causes one. The endpoint
+  // after a connection code was taken out above, so its port does not count.
+  if (/(?<!\d)(?<!\d\.)[1-5]\d\d(?!\d|\.\d)/.test(diagnostic)) return false;
   return [
-    "timeout",
-    "timed out",
-    "etimedout",
     "connection refused",
     "econnrefused",
     "enotfound",
     "eai_again",
-    "econnreset",
-    "socket hang up",
-    "network error", // axios ERR_NETWORK
-    "networkerror", // browser "NetworkError when attempting to fetch"
-    "failed to fetch",
-    "fetch failed",
-    "bad gateway",
-    "gateway timeout",
-    "service unavailable",
-    "temporarily unavailable",
-    "origin servers are unavailable",
     "could not connect",
     "unable to connect",
-    // gateway/upstream statuses only — NOT 500, which can wrap deterministic
-    // chain rejections (missing authority, RC) that fail identically on retry.
-    "status code 502",
-    "status code 503",
-    "status code 504",
+    "origin servers are unavailable",
   ].some((sig) => text.includes(sig));
 }

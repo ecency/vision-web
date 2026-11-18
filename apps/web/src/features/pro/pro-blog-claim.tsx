@@ -1,6 +1,6 @@
 "use client";
 
-import { getAccessToken } from "@/utils";
+import { ensureValidTokenWithin } from "@/utils";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "@ui/alert";
@@ -182,13 +182,16 @@ export function ProBlogClaim({ username, settleTimeoutMs = 10_000 }: Props) {
 
   const claim = useCallback(async () => {
     setError("");
-    const code = getAccessToken(username) ?? "";
-    if (!code) {
-      setError(i18next.t("pro-blog.login-required"));
-      return;
-    }
+    // Busy before the first wait, so a second click cannot start a second claim.
     setBusy(true);
     try {
+      // Renewed first if expired (the server refuses an old one), a few
+      // seconds at most; the cached token if renewing fails or stalls.
+      const code = (await ensureValidTokenWithin(username)) ?? "";
+      if (!code) {
+        setError(i18next.t("pro-blog.login-required"));
+        return;
+      }
       const r = await fetch("/api/hosting/claim-blog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

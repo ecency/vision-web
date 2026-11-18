@@ -21,7 +21,7 @@
 
 import { AuthorityTypes, KeyChainImpl, TxResponse } from "@/types";
 import type { PeakVaultApi } from "@/types/app-window";
-import { extensionErrorMessage, isUserCancellation, isRetryableNodeError } from "./extension-error";
+import { extensionErrorMessage, isUserCancellation, isUnsentBroadcastError } from "./extension-error";
 import publicNodes from "../../public/public-nodes.json";
 import i18next from "i18next";
 
@@ -431,17 +431,39 @@ function pingKeychain(keychain: KeyChainImpl, timeoutMs = 6000): Promise<void> {
   });
 }
 
-// Timeout for a Keychain sign/broadcast request AFTER the worker passed the 6s
+// Timeout for a Keychain sign request (login) AFTER the worker passed the 6s
 // liveness handshake. An idle/crashed Manifest V3 worker can answer
 // requestHandshake yet silently drop the actual request, so the callback never
-// fires; without this the user sees a dead 60s spinner. 30s surfaces that fast
-// with an actionable message while still leaving ample time to approve the
-// popup. The message deliberately steers the user away from a blind retry on a
-// broadcast (which could double-submit) by tying the retry to "no popup
-// appeared" -- the genuine dropped-request case.
+// fires; without this the user sees a dead spinner. 30s surfaces that fast
+// with an actionable message while still leaving time to approve the popup.
+// A broadcast waits longer, see below: a late approval there still sends.
 const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
+// A broadcast has no deadline once it is handed to the extension: the
+// extension answered the ping, the user may take minutes in the popup, and an
+// approval at any point still sends. Reporting a failure on a timer invites a
+// second send of the same transfer, so the request only ends when the
+// extension answers. A long wait shows a notice that does not end it (#2125).
+const KEYCHAIN_BROADCAST_NOTICE_MS = 2 * 60 * 1000;
 const KEYCHAIN_TIMEOUT_MESSAGE =
   "Keychain didn't respond. If no popup appeared, click its icon to wake it, then try again.";
+/**
+ * The long-wait notice. It does not end the request: an approval can still
+ * send. Its button lets the user stop waiting when the extension dropped the
+ * request and will never answer; the outcome is then unknown, not failed.
+ * Resolves to a function that closes the notice.
+ */
+function noticeKeychainStillPending(onStopWaiting: () => void, onClosed: () => void): Promise<() => void> {
+  // Loaded on demand: the feedback module imports @/utils, which this file is part of.
+  return import("@/features/shared/feedback/feedback-events")
+    .then(({ info, dismissFeedback }) => {
+      const id = info(i18next.t("key-or-hot.keychain-broadcast-pending"), undefined, {
+        action: { label: i18next.t("key-or-hot.keychain-stop-waiting"), onClick: onStopWaiting },
+        onDismiss: onClosed
+      });
+      return () => dismissFeedback(id);
+    })
+    .catch(() => () => {});
+}
 
 function signBufferViaKeychain(
   keychain: KeyChainImpl,
@@ -504,25 +526,46 @@ function broadcastViaKeychain(
   const attempt = (node: string | null): Promise<TxResponse> =>
     new Promise((resolve, reject) => {
       let settled = false;
-      const timeoutId = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(KEYCHAIN_TIMEOUT_MESSAGE));
-        }
-      }, KEYCHAIN_REQUEST_TIMEOUT_MS);
+      let closeNotice: Promise<() => void> | undefined;
+      let noticeId: ReturnType<typeof setTimeout> | undefined;
+      const stopWaiting = () => {
+        if (settled) return;
+        settled = true;
+        // Not a failure: an approval may still send. Rejecting with this
+        // message never reaches the fallback retry, which only follows an
+        // answer from the extension.
+        reject(new Error(i18next.t("key-or-hot.keychain-broadcast-unknown")));
+      };
+      // Closing the notice keeps waiting (an approval may be coming) and
+      // brings it back later, so the way out is never lost.
+      const armNotice = () => {
+        noticeId = setTimeout(() => {
+          closeNotice = noticeKeychainStillPending(stopWaiting, () => {
+            if (!settled) armNotice();
+          });
+        }, KEYCHAIN_BROADCAST_NOTICE_MS);
+      };
+      armNotice();
 
-      keychain.requestBroadcast(
-        account,
-        operations,
-        authorityType,
-        (response: TxResponse) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutId);
-          resolve(response);
-        },
-        node
-      );
+      try {
+        keychain.requestBroadcast(
+          account,
+          operations,
+          authorityType,
+          (response: TxResponse) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(noticeId);
+            void closeNotice?.then((close) => close());
+            resolve(response);
+          },
+          node
+        );
+      } catch (e) {
+        // Thrown before the hand-off: no pending notice for a request that never left.
+        clearTimeout(noticeId);
+        throw e;
+      }
     });
 
   // Wake the (possibly idle Manifest V3) worker first so a sleeping/crashed
@@ -539,12 +582,15 @@ function broadcastViaKeychain(
     // known-good node so a flaky/outaged default node (e.g. the common
     // api.hive.blog default during maintenance) doesn't block the user. Gated to:
     //  - rpc == null (Keychain used the user's own node, not a caller-pinned one)
-    //  - a node/transport failure (isRetryableNodeError) — NOT a user cancel and
+    //  - a failure that proves nothing was sent (isUnsentBroadcastError): the
+    //    retry is a NEW signed transaction the chain cannot dedupe, so after a
+    //    timeout or gateway error, where the first may have been accepted, it
+    //    could send twice. NOT a user cancel and
     //    NOT a deterministic chain error (missing authority, RC, already
     //    broadcasted), which fail identically on any node and would only re-open
     //    the confirmation popup for nothing.
     const fallbackNode = rpc == null ? getKeychainFallbackRpc() : null;
-    if (fallbackNode && !isUserCancellation(response) && isRetryableNodeError(response)) {
+    if (fallbackNode && !isUserCancellation(response) && isUnsentBroadcastError(response)) {
       return attempt(fallbackNode).then((retry) => {
         if (retry.success) {
           return retry.result;
