@@ -44,7 +44,8 @@ export function SearchListItem({ res }: Props) {
   const img = useMemo(() => getEntryCardImageSafely(res.body, 600, 500), [res.body]);
 
   const title = useMemo(
-    () => transformMarkedContent(res.title_marked ? res.title_marked : res.title),
+    // Only the server's highlighted title is HTML; a plain title is text.
+    () => (res.title_marked ? transformMarkedContent(res.title_marked) : res.title),
     [res]
   );
   const summary = useMemo(() => searchSummary(res.body_marked, res.body), [res]);
