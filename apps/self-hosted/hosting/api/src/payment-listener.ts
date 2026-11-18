@@ -13,11 +13,40 @@ import { ConfigService } from './services/config-service';
 import { parseMemo, mapTenantFromDb, type ParsedMemo } from './types';
 import { AuditService } from './services/audit-service';
 import * as Pricing from './pricing';
+import { ACTIVATED_STATUS_SQL } from './utils/subscription-status-sql';
+import { isReservedTenantName } from './utils/reserved-tenant-names';
 
 // Parse the abandoned-tenant grace window from env, failing safe to 7 for any value that is not a
 // positive integer. The whole (trimmed) string must be digits — parseInt alone would accept
 // partial matches like '13.9' or '7foo', silently bypassing the safe fallback with a truncated
 // value. Empty, non-numeric, zero, and negative all fall back to 7. Exported for unit testing.
+/**
+ * The transfers to the payment account in one transaction, each with the key
+ * its payment row is de-duplicated by (#2128). The first HBD one keeps the bare
+ * trx id, as every row written before this did, so a replayed block still finds
+ * those;
+ * a later one in the same transaction gets `<trx id>:<op index>`, so it is
+ * processed and recorded instead of being taken for the first.
+ */
+export function paymentTransfers(
+  operations: ReadonlyArray<[string, any]>,
+  trxId: string,
+  paymentAccount: string
+): Array<{ key: string; transfer: { from: string; to: string; amount: string; memo: string } }> {
+  const found: Array<{ key: string; transfer: { from: string; to: string; amount: string; memo: string } }> = [];
+  let bareTaken = false;
+  operations.forEach((op, opIndex) => {
+    if (op[0] !== 'transfer' || op[1]?.to !== paymentAccount) return;
+    // Only an HBD transfer was ever recorded under the bare id (others were
+    // ignored without a row), so the first HBD one keeps it.
+    const hbd = String(op[1]?.amount ?? '').trim().endsWith(' HBD');
+    const key = hbd && !bareTaken ? trxId : `${trxId}:${opIndex}`;
+    if (hbd) bareTaken = true;
+    found.push({ key, transfer: op[1] });
+  });
+  return found;
+}
+
 export function parseAbandonedGraceDays(raw: string | undefined): number {
   return parseGraceDays(raw, 7);
 }
@@ -179,18 +208,16 @@ export class PaymentListener {
         continue;
       }
 
-      for (const op of tx.operations) {
-        if (op[0] === 'transfer' && op[1].to === CONFIG.PAYMENT_ACCOUNT) {
-          await this.processTransfer({
-            trxId,
-            blockNum,
-            from: op[1].from,
-            to: op[1].to,
-            amount: op[1].amount,
-            memo: op[1].memo,
-            timestamp: block.timestamp,
-          });
-        }
+      for (const { key, transfer } of paymentTransfers(tx.operations as any, trxId, CONFIG.PAYMENT_ACCOUNT)) {
+        await this.processTransfer({
+          trxId: key,
+          blockNum,
+          from: transfer.from,
+          to: transfer.to,
+          amount: transfer.amount,
+          memo: transfer.memo,
+          timestamp: block.timestamp,
+        });
       }
     }
   }
@@ -361,6 +388,9 @@ export class PaymentListener {
               { permanent: true }
             );
           }
+          if (isReservedTenantName(username)) {
+            throw Object.assign(new Error('This blog name is reserved'), { permanent: true });
+          }
           if (!(await TenantService.accountExistsStrict(username))) {
             throw Object.assign(new Error('Hive account not found'), { permanent: true });
           }
@@ -391,7 +421,7 @@ export class PaymentListener {
 
         const activated = await client.query(
           `UPDATE tenants
-           SET subscription_status = 'active',
+           SET subscription_status = ${ACTIVATED_STATUS_SQL},
                subscription_started_at = $2,
                subscription_expires_at = $3,
                subscription_plan = COALESCE($4, subscription_plan),

@@ -112,13 +112,19 @@ export function signBuffer(
 }
 
 /**
- * Broadcast operations with the extension
+ * Broadcast operations with the extension.
+ *
+ * `deadlineMs` is how long to wait for the wallet's answer. A request still
+ * open in the wallet popup can be approved after that, so giving up is not a
+ * failure the user should retry (#2125); the message says so. A caller that
+ * has already pinged the extension passes a long deadline.
  */
 export function broadcast(
   account: string,
   operations: Operation[],
   authType: AuthorityType = 'Posting',
   instance?: HiveKeychain,
+  deadlineMs = 30000,
 ): Promise<KeychainResponse> {
   return new Promise<KeychainResponse>((resolve, reject) => {
     const keychain = instance ?? defaultInstance();
@@ -131,9 +137,13 @@ export function broadcast(
     let finished = false;
     const timeout = setTimeout(() => {
       if (!finished) {
-        reject(new Error('Hive extension response timeout'));
+        reject(
+          new Error(
+            'The wallet did not answer in time. The request may still be open in the wallet: check it before trying again.',
+          ),
+        );
       }
-    }, 30000);
+    }, deadlineMs);
 
     keychain.requestBroadcast(account, operations, authType, (resp) => {
       finished = true;

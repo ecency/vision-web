@@ -2,7 +2,7 @@
 
 import useMount from "react-use/lib/useMount";
 import { useRouter, useSearchParams } from "next/navigation";
-import { validateToken } from "@/utils";
+import { consumeHsLoginState, validateToken } from "@/utils";
 import { User } from "@/entities";
 import { useGlobalStore } from "@/core/global-store";
 import { useHsLoginRefresh, useRecordUserActivity } from "@/api/mutations";
@@ -14,6 +14,11 @@ import { UilSpinner } from "@tooni/iconscout-unicons-react";
 import { Alert } from "@ui/alert";
 import defaults from "@/defaults";
 
+// The state of a login being completed right now. React runs a mount effect
+// twice in development (strict mode); the second run must not find the state
+// already used and send the user away mid sign-in.
+let completing: string | null = null;
+
 export function AuthPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -21,20 +26,31 @@ export function AuthPage() {
   const addUser = useGlobalStore((state) => state.addUser);
   const setActiveUser = useGlobalStore((s) => s.setActiveUser);
   const toggleUiProp = useGlobalStore((s) => s.toggleUiProp);
+  const activeUser = useGlobalStore((s) => s.activeUser);
 
   const { mutateAsync: recordActivity } = useRecordUserActivity();
   const { mutateAsync: hsTokenRenew } = useHsLoginRefresh();
 
   const initUser = useCallback(async () => {
     const code = searchParams?.get("code");
+    const state = searchParams?.get("state") ?? null;
+    if (state && state === completing) {
+      return;
+    }
     const isValidToken = validateToken(code ?? "");
+    // Only a login this tab started: its one-time state must come back.
+    const startedHere = consumeHsLoginState(state);
 
-    if (!code || !isValidToken) {
+    if (!code || !isValidToken || !startedHere) {
       router.push("/");
-      toggleUiProp("login");
+      // Back or reload after signing in lands here too: no dialog then.
+      if (!activeUser) {
+        toggleUiProp("login");
+      }
       return;
     }
 
+    completing = state;
     try {
       const response = await hsTokenRenew({ code });
       const user: User = {
@@ -54,8 +70,11 @@ export function AuthPage() {
       router.push(`/@${user.username}/feed`);
     } catch (e) {
       sentry.captureException(e);
+    } finally {
+      completing = null;
     }
   }, [
+    activeUser,
     addUser,
     hsTokenRenew,
     recordActivity,

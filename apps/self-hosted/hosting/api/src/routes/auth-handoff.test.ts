@@ -42,6 +42,13 @@ const post = (path: string, body: Record<string, unknown>) =>
     body: JSON.stringify(body),
   });
 
+// An access token issued to this app for one account, as HiveSigner writes it.
+const hsToken = (author: string, app = 'ecency.app', type = 'posting') =>
+  Buffer.from(
+    JSON.stringify({ signed_message: { type, app }, authors: [author], timestamp: 1, signatures: ['s'] }),
+  ).toString('base64url');
+const ALICE_TOKEN = hsToken('alice');
+
 const ME_OK = {
   ok: true,
   status: 200,
@@ -58,7 +65,7 @@ describe('handoff mint and exchange', () => {
   });
 
   it('mints a one-time code for the account the token belongs to', async () => {
-    const response = await post('/handoff', { accessToken: 'a'.repeat(32) });
+    const response = await post('/handoff', { accessToken: ALICE_TOKEN });
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -72,19 +79,38 @@ describe('handoff mint and exchange', () => {
     // the short TTL that makes a captured link worthless in minutes.
     expect(mocks.handoffSet).toHaveBeenCalledWith(
       body.code,
-      { accessToken: 'a'.repeat(32), username: 'alice' },
+      { accessToken: ALICE_TOKEN, username: 'alice' },
       300,
     );
     // Neither the code nor the token reaches the audit trail.
     expect(JSON.stringify(mocks.auditLog.mock.calls)).not.toContain(body.code);
-    expect(JSON.stringify(mocks.auditLog.mock.calls)).not.toContain('a'.repeat(32));
+    expect(JSON.stringify(mocks.auditLog.mock.calls)).not.toContain(ALICE_TOKEN);
   });
 
   it('caps minting per account inside the window', async () => {
     mocks.handoffCountMint.mockResolvedValue(11);
-    const response = await post('/handoff', { accessToken: 'a'.repeat(32) });
+    const response = await post('/handoff', { accessToken: ALICE_TOKEN });
     expect(response.status).toBe(429);
     expect(mocks.handoffSet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a code', hsToken('alice', 'ecency.app', 'code')],
+    ['not a token', 'z'.repeat(32)],
+  ])('refuses %s token without asking HiveSigner', async (_label, accessToken) => {
+    const response = await post('/handoff', { accessToken });
+    expect(response.status).toBe(401);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts an access token from a blog's own HiveSigner app", async () => {
+    const response = await post('/handoff', { accessToken: hsToken('alice', 'alice.blog') });
+    expect(response.status).toBe(200);
+  });
+
+  it('refuses a token whose author is not the account HiveSigner names', async () => {
+    const response = await post('/handoff', { accessToken: hsToken('mallory') });
+    expect(response.status).toBe(401);
   });
 
   it('refuses to mint for a token HiveSigner rejects', async () => {
