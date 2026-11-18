@@ -128,6 +128,18 @@ describe("availableForPowerDown", () => {
     expect(availableForPowerDown(1.0009, 0, 0)).toBe(1);
   });
 
+  it("is exact for 3-decimal balances of any size", () => {
+    // Seeded so a failure repeats.
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 20000; i++) {
+      const hpMilli = Math.floor(rand() * 1e11);
+      const delMilli = Math.floor(rand() * hpMilli);
+      const expected = (hpMilli - delMilli) / 1000;
+      expect(availableForPowerDown(hpMilli / 1000, delMilli / 1000, 0)).toBe(expected);
+    }
+  });
+
   it("is 0, not negative, when more is delegated than held", () => {
     expect(availableForPowerDown(5, 10, 0)).toBe(0);
   });

@@ -9,7 +9,7 @@ import { encodeObj } from "@/utils/encoder";
 import { ensureValidTokenWithin } from "@/utils/user-token";
 
 // A renewal that never answers must not hold up the request that needs the
-// token: after the limit the caller gets undefined and sends the cached one.
+// token: after the limit the helper returns the stored token as it is.
 const storeExpired = (username: string) =>
   ls.set(
     `user_${username}`,

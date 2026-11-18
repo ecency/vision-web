@@ -83,12 +83,20 @@ export function enginePrecisionStatus(
  * HP that can be powered down: held, less delegated and already powering
  * down, cut down to whole thousandths (HP has 3 decimals) so it is never more
  * than is available (100.0006 - 20.0004 is 80.000, not 80.001). The cut
- * tolerates float noise, so 0.3 - 0.1 is 0.200, not 0.199, and the result
- * passes the amount field's 0.001 step check.
+ * tolerates float noise at any size, so 0.3 - 0.1 is 0.200, not 0.199, and
+ * the result passes the amount field's 0.001 step check.
  */
 export function availableForPowerDown(hp: number, delegated: number, pending: number): number {
   const finite = (v: number) => (Number.isFinite(v) ? v : 0);
   const net = finite(hp) - finite(delegated) - finite(pending);
   if (!(net > 0)) return 0;
-  return Math.floor(net * 1000 + 1e-6) / 1000;
+  const units = net * 1000;
+  // A whole thousandth within float noise of the result is the exact value.
+  // The noise grows with the largest input (a small remainder of a large
+  // balance carries the large one's error), so the allowance does too;
+  // anything else is cut down, never up.
+  const scale = Math.max(Math.abs(finite(hp)), Math.abs(finite(delegated)), Math.abs(finite(pending))) * 1000;
+  const nearest = Math.round(units);
+  if (Math.abs(units - nearest) <= Math.max(1e-6, scale * 1e-12)) return nearest / 1000;
+  return Math.floor(units) / 1000;
 }
