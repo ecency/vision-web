@@ -131,6 +131,8 @@ describe("useDebounceTransferAccountData", () => {
     );
     renderHook(() => useDebounceTransferAccountData(), { wrapper }).unmount();
     expect(state.amount).toBe("5000");
+    // Next writes the amount with 3 decimals; it is still the filled value.
+    state.amount = "5000.000";
     // Back, then another recipient with a delegation of its own.
     h.delegations = [{ delegator: "alice", delegatee: "bob", vesting_shares: "400000.000000 VESTS" }];
     state.to = "bob";

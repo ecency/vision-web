@@ -133,10 +133,12 @@ export function useDebounceTransferAccountData() {
       return;
     }
     const typed = currentAmountRef.current;
-    const untouched =
-      !typed || ["0", "0.000", "0.001"].includes(typed) || typed === autoFilled.current;
+    // Compared as numbers: Next writes "5000" back as "5000.000".
+    const isAutoFilled =
+      autoFilled.current !== null && !!typed && Number(typed) === Number(autoFilled.current);
+    const untouched = !typed || ["0", "0.000", "0.001"].includes(typed) || isAutoFilled;
     if (amount === null) {
-      if (autoFilled.current !== null && typed === autoFilled.current) {
+      if (isAutoFilled) {
         remember(null);
         filledFor.current = null;
         setAmount("0.001");
