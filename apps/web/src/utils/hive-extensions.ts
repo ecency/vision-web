@@ -446,11 +446,23 @@ const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
 const KEYCHAIN_BROADCAST_NOTICE_MS = 2 * 60 * 1000;
 const KEYCHAIN_TIMEOUT_MESSAGE =
   "Keychain didn't respond. If no popup appeared, click its icon to wake it, then try again.";
-function noticeKeychainStillPending() {
+/**
+ * The long-wait notice. It does not end the request: an approval can still
+ * send. Its button lets the user stop waiting when the extension dropped the
+ * request and will never answer; the outcome is then unknown, not failed.
+ * Resolves to a function that closes the notice.
+ */
+function noticeKeychainStillPending(onStopWaiting: () => void, onClosed: () => void): Promise<() => void> {
   // Loaded on demand: the feedback module imports @/utils, which this file is part of.
-  import("@/features/shared/feedback/feedback-events")
-    .then(({ info }) => info(i18next.t("key-or-hot.keychain-broadcast-pending")))
-    .catch(() => {});
+  return import("@/features/shared/feedback/feedback-events")
+    .then(({ info, dismissFeedback }) => {
+      const id = info(i18next.t("key-or-hot.keychain-broadcast-pending"), undefined, {
+        action: { label: i18next.t("key-or-hot.keychain-stop-waiting"), onClick: onStopWaiting },
+        onDismiss: onClosed
+      });
+      return () => dismissFeedback(id);
+    })
+    .catch(() => () => {});
 }
 
 function signBufferViaKeychain(
@@ -512,9 +524,28 @@ function broadcastViaKeychain(
   const authorityType = (keyType.charAt(0).toUpperCase() + keyType.slice(1)) as AuthorityTypes;
 
   const attempt = (node: string | null): Promise<TxResponse> =>
-    new Promise((resolve) => {
+    new Promise((resolve, reject) => {
       let settled = false;
-      const noticeId = setTimeout(noticeKeychainStillPending, KEYCHAIN_BROADCAST_NOTICE_MS);
+      let closeNotice: Promise<() => void> | undefined;
+      let noticeId: ReturnType<typeof setTimeout> | undefined;
+      const stopWaiting = () => {
+        if (settled) return;
+        settled = true;
+        // Not a failure: an approval may still send. Rejecting with this
+        // message never reaches the fallback retry, which only follows an
+        // answer from the extension.
+        reject(new Error(i18next.t("key-or-hot.keychain-broadcast-unknown")));
+      };
+      // Closing the notice keeps waiting (an approval may be coming) and
+      // brings it back later, so the way out is never lost.
+      const armNotice = () => {
+        noticeId = setTimeout(() => {
+          closeNotice = noticeKeychainStillPending(stopWaiting, () => {
+            if (!settled) armNotice();
+          });
+        }, KEYCHAIN_BROADCAST_NOTICE_MS);
+      };
+      armNotice();
 
       try {
         keychain.requestBroadcast(
@@ -525,6 +556,7 @@ function broadcastViaKeychain(
             if (settled) return;
             settled = true;
             clearTimeout(noticeId);
+            void closeNotice?.then((close) => close());
             resolve(response);
           },
           node

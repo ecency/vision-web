@@ -510,6 +510,87 @@ describe("broadcastWithExtension (no answer at all)", () => {
     window.removeEventListener("ecency-feedback", onFeedback);
   });
 
+  // A worker that drops the request never calls back: the notice lets the
+  // user stop waiting, with the outcome unknown, not as a failure to retry.
+  it("lets the user stop waiting from the notice, with the outcome unknown and no retry", async () => {
+    vi.useFakeTimers();
+    const toasts: { message: string; action?: { label: string; onClick: () => void } }[] = [];
+    const onFeedback = (e: Event) => toasts.push((e as CustomEvent).detail);
+    window.addEventListener("ecency-feedback", onFeedback);
+    let answer: AnswerCb | undefined;
+    const requestBroadcast = vi.fn((_a: string, _o: unknown[], _k: string, cb: AnswerCb) => {
+      answer = cb;
+    });
+    extWindow().hive_keychain = { requestHandshake: (cb: () => void) => cb(), requestBroadcast };
+    const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
+    const outcome = promise.then(
+      () => "resolved",
+      (e: Error) => e.message
+    );
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await vi.waitFor(() => expect(toasts).toHaveLength(1));
+    expect(toasts[0].action?.label).toBe("key-or-hot.keychain-stop-waiting");
+    toasts[0].action?.onClick();
+    await expect(outcome).resolves.toBe("key-or-hot.keychain-broadcast-unknown");
+
+    // A late answer changes nothing, and nothing was sent again.
+    answer?.({ success: false, message: "connect ECONNREFUSED 1.2.3.4:443" } as TxAnswer);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requestBroadcast).toHaveBeenCalledTimes(1);
+    window.removeEventListener("ecency-feedback", onFeedback);
+  });
+
+  it("brings the notice back two minutes after it is closed, so the way out is not lost", async () => {
+    vi.useFakeTimers();
+    const toasts: { onDismiss?: () => void }[] = [];
+    const onFeedback = (e: Event) => toasts.push((e as CustomEvent).detail);
+    window.addEventListener("ecency-feedback", onFeedback);
+    extWindow().hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: vi.fn()
+    };
+    void broadcastWithExtension("alice", [["transfer", {}]], "active").catch(() => {});
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await vi.waitFor(() => expect(toasts).toHaveLength(1));
+
+    // Closed with X: still waiting (an approval may be coming), no new notice yet.
+    toasts[0].onDismiss?.();
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000 - 1);
+    expect(toasts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(toasts).toHaveLength(2));
+    window.removeEventListener("ecency-feedback", onFeedback);
+  });
+
+  it("closes the notice when Keychain answers after it appeared", async () => {
+    vi.useFakeTimers();
+    const shown: string[] = [];
+    const dismissed: string[] = [];
+    const onFeedback = (e: Event) => shown.push((e as CustomEvent<{ id: string }>).detail.id);
+    const onDismiss = (e: Event) => dismissed.push((e as CustomEvent<string>).detail);
+    window.addEventListener("ecency-feedback", onFeedback);
+    window.addEventListener("ecency-feedback-dismiss", onDismiss);
+    let answer: AnswerCb | undefined;
+    extWindow().hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: (_a: string, _o: unknown[], _k: string, cb: AnswerCb) => {
+        answer = cb;
+      }
+    };
+    const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+
+    expect(dismissed).toHaveLength(0);
+    answer?.({ success: true, result: { id: "tx3" } } as TxAnswer);
+    await expect(promise).resolves.toEqual({ id: "tx3" });
+    // The test setup's random() mock gives no ids, so count the dismissals.
+    await vi.waitFor(() => expect(dismissed).toHaveLength(1));
+    window.removeEventListener("ecency-feedback", onFeedback);
+    window.removeEventListener("ecency-feedback-dismiss", onDismiss);
+  });
+
   it("shows no notice when Keychain answers before the wait gets long", async () => {
     vi.useFakeTimers();
     const notices: string[] = [];
@@ -526,5 +607,18 @@ describe("broadcastWithExtension (no answer at all)", () => {
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
     expect(notices).toEqual([]);
     window.removeEventListener("ecency-feedback", onFeedback);
+  });
+});
+
+describe("the stop-waiting error", () => {
+  // It must never send the request another way: the first may still go through.
+  it("does not trigger the auth fallback to another sign method", async () => {
+    const { shouldTriggerAuthFallback } = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
+    const en = (await import("@/features/i18n/locales/en-US.json")).default as {
+      "key-or-hot": Record<string, string>;
+    };
+    const text = en["key-or-hot"]["keychain-broadcast-unknown"];
+    expect(text).toMatch(/check your wallet history/);
+    expect(shouldTriggerAuthFallback(new Error(text))).toBe(false);
   });
 });
