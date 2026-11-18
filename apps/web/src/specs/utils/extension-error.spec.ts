@@ -167,6 +167,9 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "connect ECONNREFUSED https://upstream-node.example.com:8090/rpc" }],
     [{ message: "getaddrinfo EAI_AGAIN upstream-node.example.com" }],
     [{ message: "getaddrinfo ENOTFOUND node1:8091" }],
+    [{ message: "connect ECONNREFUSED 10.0.0.1:443" }],
+    [{ message: "unable to connect to 192.168.100.200" }],
+    [{ message: "connect ECONNREFUSED https://api.example.com:443/rpc" }],
     // A Node system error has a string code and a numeric errno, no status.
     [{ error: { code: "ECONNREFUSED", errno: -111, message: "connect ECONNREFUSED 1.2.3.4:443" } }],
   ])("retries %o: nothing reached a node", (resp) => {
@@ -238,6 +241,15 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "could not connect", status: "504" }],
     [{ message: "Unable to connect", error: new Error("could not connect", { cause: { status: 504 } }) }],
     [{ message: "could not connect", httpStatus: 502 }],
+    // A status in the text is an answer too.
+    [{ message: "HTTP 504 unable to connect" }],
+    [{ message: "unable to connect (502)" }],
+    [{ message: "status=503 could not connect" }],
+    [{ error: "HTTP/1.1 504 could not connect" }],
+    [{ message: "could not connect: 504" }],
+    [{ message: "HTTP 504. Unable to connect" }],
+    [{ message: "could not connect: 504." }],
+    [{ message: "Could not connect. Server returned 502." }],
     [{ message: "could not connect", error: { responseCode: 503 } }],
     [{ message: "could not connect", status: "502 Bad Gateway" }],
     [{ message: "could not connect", error: { cause: { response: { data: { error: { code: -32000 } } } } } }],

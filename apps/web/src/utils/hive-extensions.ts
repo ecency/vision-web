@@ -438,18 +438,20 @@ function pingKeychain(keychain: KeyChainImpl, timeoutMs = 6000): Promise<void> {
 // with an actionable message while still leaving time to approve the popup.
 // A broadcast waits longer, see below: a late approval there still sends.
 const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
-// A broadcast waits much longer: the extension answered the ping, so it is
-// alive, and the user may take minutes in the popup (reading a transfer,
-// finding a key). Failing at 30s while the popup is still open would report
-// a failure that a later approval turns into a broadcast, inviting a second
-// send. The long deadline only covers an extension that dies mid-request, as
-// on self-hosted (#2125).
-const KEYCHAIN_BROADCAST_TIMEOUT_MS = 10 * 60 * 1000;
+// A broadcast has no deadline once it is handed to the extension: the
+// extension answered the ping, the user may take minutes in the popup, and an
+// approval at any point still sends. Reporting a failure on a timer invites a
+// second send of the same transfer, so the request only ends when the
+// extension answers. A long wait shows a notice that does not end it (#2125).
+const KEYCHAIN_BROADCAST_NOTICE_MS = 2 * 60 * 1000;
 const KEYCHAIN_TIMEOUT_MESSAGE =
   "Keychain didn't respond. If no popup appeared, click its icon to wake it, then try again.";
-// After the long broadcast wait the popup may still be open and an approval
-// would still send: the user checks before sending again.
-const keychainBroadcastTimeoutMessage = () => i18next.t("key-or-hot.keychain-broadcast-timeout");
+function noticeKeychainStillPending() {
+  // Loaded on demand: the feedback module imports @/utils, which this file is part of.
+  import("@/features/shared/feedback/feedback-events")
+    .then(({ info }) => info(i18next.t("key-or-hot.keychain-broadcast-pending")))
+    .catch(() => {});
+}
 
 function signBufferViaKeychain(
   keychain: KeyChainImpl,
@@ -510,27 +512,28 @@ function broadcastViaKeychain(
   const authorityType = (keyType.charAt(0).toUpperCase() + keyType.slice(1)) as AuthorityTypes;
 
   const attempt = (node: string | null): Promise<TxResponse> =>
-    new Promise((resolve, reject) => {
+    new Promise((resolve) => {
       let settled = false;
-      const timeoutId = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(keychainBroadcastTimeoutMessage()));
-        }
-      }, KEYCHAIN_BROADCAST_TIMEOUT_MS);
+      const noticeId = setTimeout(noticeKeychainStillPending, KEYCHAIN_BROADCAST_NOTICE_MS);
 
-      keychain.requestBroadcast(
-        account,
-        operations,
-        authorityType,
-        (response: TxResponse) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutId);
-          resolve(response);
-        },
-        node
-      );
+      try {
+        keychain.requestBroadcast(
+          account,
+          operations,
+          authorityType,
+          (response: TxResponse) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(noticeId);
+            resolve(response);
+          },
+          node
+        );
+      } catch (e) {
+        // Thrown before the hand-off: no pending notice for a request that never left.
+        clearTimeout(noticeId);
+        throw e;
+      }
     });
 
   // Wake the (possibly idle Manifest V3) worker first so a sleeping/crashed

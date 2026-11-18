@@ -473,20 +473,58 @@ describe("broadcastWithExtension (no answer at all)", () => {
     delete extWindow().hive_keychain;
   });
 
-  it("tells the user to check their history before sending again", async () => {
+  // The request is with the wallet: it may still be approved and sent, so
+  // the app never reports a failure on a timer. A long wait shows a notice
+  // that does not end the request.
+  it("never fails after handing the request to Keychain, and resolves on a late approval", async () => {
     vi.useFakeTimers();
+    const notices: string[] = [];
+    const onFeedback = (e: Event) => notices.push((e as CustomEvent<{ message: string }>).detail.message);
+    window.addEventListener("ecency-feedback", onFeedback);
+    let answer: AnswerCb | undefined;
     extWindow().hive_keychain = {
       requestHandshake: (cb: () => void) => cb(),
-      requestBroadcast: vi.fn()
+      requestBroadcast: (_a: string, _o: unknown[], _k: string, cb: AnswerCb) => {
+        answer = cb;
+      }
     };
     const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
     let settled = false;
-    promise.catch(() => {}).finally(() => (settled = true));
-    // The user may take minutes in the popup: still waiting just before ten.
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1);
-    expect(settled).toBe(false);
-    const assertion = expect(promise).rejects.toThrow("key-or-hot.keychain-broadcast-timeout");
+    promise.then(
+      () => (settled = true),
+      () => (settled = true)
+    );
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000 - 1);
+    expect(notices).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
-    await assertion;
+    await vi.waitFor(() => expect(notices).toEqual(["key-or-hot.keychain-broadcast-pending"]));
+
+    // An hour on, still waiting, and the notice was shown once.
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(settled).toBe(false);
+    expect(notices).toHaveLength(1);
+
+    answer?.({ success: true, result: { id: "tx1" } } as TxAnswer);
+    await expect(promise).resolves.toEqual({ id: "tx1" });
+    window.removeEventListener("ecency-feedback", onFeedback);
+  });
+
+  it("shows no notice when Keychain answers before the wait gets long", async () => {
+    vi.useFakeTimers();
+    const notices: string[] = [];
+    const onFeedback = (e: Event) => notices.push((e as CustomEvent<{ message: string }>).detail.message);
+    window.addEventListener("ecency-feedback", onFeedback);
+    extWindow().hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: (_a: string, _o: unknown[], _k: string, cb: AnswerCb) =>
+        setTimeout(() => cb({ success: true, result: { id: "tx2" } } as TxAnswer), 30_000)
+    };
+    const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(promise).resolves.toEqual({ id: "tx2" });
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(notices).toEqual([]);
+    window.removeEventListener("ecency-feedback", onFeedback);
   });
 });

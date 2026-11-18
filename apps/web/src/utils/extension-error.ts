@@ -280,6 +280,12 @@ function classifyUnsent(resp: Pick<TxResponse, "message" | "error">): boolean {
   // connection phrase in the same failure (a gateway's "unable to connect to
   // upstream" after it may have passed the transaction on).
   if (AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => diagnostic.includes(sig))) return false;
+  // An HTTP status in the text ("HTTP 504", "(502)", "status=503") is an
+  // answer as well, a sentence's full stop after it too ("HTTP 504."). Any
+  // standalone 100-599 counts (IP octets and decimals do not); a port left in the text
+  // ("api.hive.blog:443") only costs a retry, never causes one. The endpoint
+  // after a connection code was taken out above, so its port does not count.
+  if (/(?<!\d)(?<!\d\.)[1-5]\d\d(?!\d|\.\d)/.test(diagnostic)) return false;
   return [
     "connection refused",
     "econnrefused",

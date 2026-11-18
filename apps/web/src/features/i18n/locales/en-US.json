@@ -1902,7 +1902,7 @@
     "error-hint": "Operation cannot be signed or transactions couldn't be broadcasted. Please, check operation and try again"
   },
   "key-or-hot": {
-    "keychain-broadcast-timeout": "Keychain did not answer in time. Close its popup, and check your wallet history before sending again: the transaction may have gone through.",
+    "keychain-broadcast-pending": "Still waiting for Keychain. Approve or reject the request in its popup. If you already approved it, the transaction may be on its way: check your wallet history before sending again.",
     "sign": "Sign",
     "key-placeholder": "Private key, master password or seed",
     "with-hivesigner": "Sign with Hivesigner",
