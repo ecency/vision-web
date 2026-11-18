@@ -99,7 +99,26 @@ declare function markdown2Html(obj: Entry | string, forApp?: boolean, _webp?: bo
  * inspecting one asset while the card renders another.
  */
 declare function getEntryCardImageRawUrl(obj: Entry | string): string | null;
+/**
+ * The image an entry page shows first, for its LCP preload (#2119): the
+ * metadata cover, else the first body image or YouTube poster in source order,
+ * flagged `poster` when it is a poster (the body renders that as a plain
+ * format=match <img>, not a <picture>). Null when the regex scan cannot decide
+ * (a markdown image it cannot read may come first). getEntryImageRawUrl keeps
+ * ignoring posters: feed cards rank a regex-found image above an earlier one.
+ */
+declare function getEntryLcpImage(obj: Entry): {
+    url: string;
+    poster: boolean;
+} | null;
 declare function getEntryImageRawUrl(obj: Entry | string): string | null;
+/**
+ * The proxied image a feed card shows: catchPostImage(..., { fast: true })
+ * without the markdown renderer, so a card bundle stays free of it (#2113).
+ * Metadata (thumbnails, then image), the regex tiers and the video poster.
+ */
+declare function getEntryCardImage(obj: Entry | string, width?: number, height?: number, format?: string): string | null;
+
 interface CatchPostImageOptions {
     /**
      * Stop after the metadata and regex tiers. The last tier is a full
@@ -108,10 +127,18 @@ interface CatchPostImageOptions {
      * server's event loop for seconds. Callers that can live without the rare
      * markdown-only finds (video embed posters, for instance) set this and get
      * null back instead. Default false keeps every existing caller byte-identical.
+     * A browser bundle that only needs this should import getEntryCardImage,
+     * which leaves the markdown renderer out (#2113).
      */
     fast?: boolean;
 }
 declare function catchPostImage(obj: Entry | string, width?: number, height?: number, format?: string, options?: CatchPostImageOptions): string | null;
+
+/**
+ * Summary text of an entry or a raw body, without the markdown renderer.
+ * `length` 0 means no truncation, as in getPostBodySummary.
+ */
+declare function getPostBodyText(obj: Entry | string, length?: number): string;
 
 /**
  * Generate a text summary from an Entry object or raw string
@@ -212,4 +239,4 @@ declare function isValidPermlink(permlink: string): boolean;
  */
 declare function simpleMarkdownToHTML(input: string): string;
 
-export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, getPostBodyText, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };

@@ -8,13 +8,17 @@ import { Controller, useForm } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
 import * as yup from "yup";
 import { getBadActorsQueryOptions, lookupAccountsQueryOptions } from "@ecency/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { accountExists, isValidAccountName, normalizeAccountName } from "@/utils/hive-account-name";
+import { error as showError } from "@/features/shared";
+import { formatError } from "@/api/format-error";
 
 const form = yup.object({
   username: yup
     .string()
     .required(i18next.t("validation.required"))
     .min(2, i18next.t("sign-up.username-max-length-error"))
+    .test("hive-account-name", i18next.t("validation.invalid-account-name"), isValidAccountName)
 });
 
 interface Props {
@@ -22,6 +26,7 @@ interface Props {
 }
 
 export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
+  const queryClient = useQueryClient();
   const methods = useForm({
     resolver: yupResolver(form),
     defaultValues: {
@@ -55,7 +60,28 @@ export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
     [badActors, debouncedUsername]
   );
   const showSuggestions = isFocused && normalizedUsername.length > 0;
-  const submit = methods.handleSubmit(({ username }) => onUsernameSubmit?.(username));
+  // A typed name must be an existing account before it is used: Hive Engine
+  // and POINTS operations are custom_json, which the chain accepts whatever
+  // the recipient, so a typo would send the tokens nowhere (#2122). A picked
+  // suggestion comes from lookup_accounts and needs no second check.
+  const submit = methods.handleSubmit(async ({ username }) => {
+    try {
+      const exists = await accountExists(queryClient, username);
+      // The user may have changed the name while it was being checked.
+      if (methods.getValues("username") !== username) {
+        return;
+      }
+      if (!exists) {
+        methods.setError("username", { message: i18next.t("validation.account-not-found") });
+        return;
+      }
+    } catch (e) {
+      showError(...formatError(e));
+      return;
+    }
+    // The name as checked: trimmed and lowercased.
+    onUsernameSubmit?.(normalizeAccountName(username));
+  });
 
   const handleSuggestionSelect = (name: string) => {
     methods.setValue("username", name, {

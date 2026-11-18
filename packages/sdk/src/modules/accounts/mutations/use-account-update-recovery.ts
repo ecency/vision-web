@@ -9,6 +9,7 @@ import hs from "hivesigner";
 import { getAccountFullQueryOptions } from "../queries";
 import type { AuthContextV2 } from "@/modules/core/types";
 import { broadcastOperations } from "@/modules/core/hive-tx";
+import { PENDING_EXTERNAL_SIGNATURE, isPendingExternalSignature } from "@/modules/core/pending-external-signature";
 
 type SignType = "key" | "keychain" | "hivesigner" | "ecency";
 
@@ -94,14 +95,26 @@ export function useAccountUpdateRecovery(
         if (!options.hsCallbackUrl && process.env.NODE_ENV === "development") {
           console.warn("[SDK][Accounts] hsCallbackUrl not provided for HiveSigner update-recovery; user will not be redirected after signing.");
         }
-        return hs.sendOperation(
+        // Only opens HiveSigner's signing page; nothing is signed yet (#2126).
+        hs.sendOperation(
           ["change_recovery_account", operationBody],
           options.hsCallbackUrl ? { callback: options.hsCallbackUrl } : {},
           () => {}
         );
+        return PENDING_EXTERNAL_SIGNATURE;
       }
     },
     onError: options.onError,
-    onSuccess: options.onSuccess,
+    onSuccess: (resp, payload, ...rest) => {
+      // HiveSigner's page is open, nothing is signed: not a success yet.
+      if (isPendingExternalSignature(resp)) {
+        return;
+      }
+      // Every argument React Query passes, and the callback's result (it may
+      // be a promise React Query waits for).
+      return (options.onSuccess as
+        | ((data: unknown, variables: CommonPayload, ...rest: unknown[]) => unknown)
+        | undefined)?.(resp, payload, ...rest);
+    },
   });
 }

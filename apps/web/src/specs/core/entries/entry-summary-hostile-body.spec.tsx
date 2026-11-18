@@ -2,7 +2,7 @@ import React from "react";
 import { render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { catchPostImage, postBodySummary } from "@ecency/render-helper";
+import { catchPostImage, getPostBodyText } from "@ecency/render-helper";
 
 // The renderer is wrapped, not stubbed away: the package keeps its real
 // implementation and only `postBodySummary` becomes a spy, so everything below
@@ -20,7 +20,7 @@ vi.mock("@ecency/render-helper", async () => {
     await vi.importActual<typeof import("@ecency/render-helper")>("@ecency/render-helper");
   return {
     ...actual,
-    postBodySummary: vi.fn(actual.postBodySummary),
+    getPostBodyText: vi.fn(actual.getPostBodyText),
     catchPostImage: vi.fn(actual.catchPostImage)
   };
 });
@@ -76,7 +76,7 @@ function brokenEntry(overrides: Partial<Entry> = {}): Entry {
 
 /** Make the renderer throw for the crafted author, work normally otherwise. */
 function throwForCraftedPosts() {
-  vi.mocked(postBodySummary).mockImplementation(((obj: any, ...rest: any[]) => {
+  vi.mocked(getPostBodyText).mockImplementation(((obj: any, ...rest: any[]) => {
     const isCrafted =
       typeof obj === "string" ? obj.includes("boom") : obj?.author === BROKEN_AUTHOR;
     if (isCrafted) {
@@ -89,7 +89,7 @@ function throwForCraftedPosts() {
 describe("entrySummary with a body that breaks the summary renderer", () => {
   beforeEach(() => {
     vi.mocked(sentry.captureException).mockClear();
-    vi.mocked(postBodySummary).mockReset();
+    vi.mocked(getPostBodyText).mockReset();
     vi.mocked(catchPostImage).mockReset();
   });
 
@@ -109,7 +109,7 @@ describe("entrySummary with a body that breaks the summary renderer", () => {
   // them failing must not cost the card the other. A description written by a
   // hostile client is the likelier of the two to be crafted.
   it("still summarises the body when only the description breaks the renderer", () => {
-    vi.mocked(postBodySummary).mockImplementation(((obj: any, length?: number) => {
+    vi.mocked(getPostBodyText).mockImplementation(((obj: any, length?: number) => {
       if (typeof obj === "string") {
         throw new RangeError("Invalid code point 1114112");
       }
@@ -129,13 +129,13 @@ describe("entrySummary with a body that breaks the summary renderer", () => {
     // Three renderer calls for this one entry: the description at the cap, the
     // description untruncated, then the body.
     entrySummary(entry);
-    expect(vi.mocked(postBodySummary).mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(vi.mocked(getPostBodyText).mock.calls.length).toBeGreaterThanOrEqual(3);
     // One event for the description string, one for the entry: different
     // subjects, so each is worth knowing about.
     expect(sentry.captureException).toHaveBeenCalledTimes(2);
     expect(sentry.captureException).toHaveBeenCalledWith(
       expect.any(RangeError),
-      expect.objectContaining({ extra: expect.objectContaining({ where: "postBodySummary" }) })
+      expect.objectContaining({ extra: expect.objectContaining({ where: "getPostBodyText" }) })
     );
 
     entrySummary(entry);
@@ -170,7 +170,7 @@ describe("entrySummary with a body that breaks the summary renderer", () => {
     const wheres = vi
       .mocked(sentry.captureException)
       .mock.calls.map(([, ctx]: any) => ctx.extra.where);
-    expect(new Set(wheres)).toEqual(new Set(["catchPostImage", "postBodySummary"]));
+    expect(new Set(wheres)).toEqual(new Set(["catchPostImage", "getPostBodyText"]));
   });
 
   // The slimmer runs this inside the feed queryFn. A throw there rejects the
@@ -201,7 +201,7 @@ describe("entrySummary with a body that breaks the summary renderer", () => {
 describe("a broken summary does not take the server render down", () => {
   beforeEach(() => {
     vi.mocked(sentry.captureException).mockClear();
-    vi.mocked(postBodySummary).mockReset();
+    vi.mocked(getPostBodyText).mockReset();
     vi.mocked(catchPostImage).mockReset();
   });
 
@@ -252,9 +252,9 @@ describe("the unmocked renderer on a body that is not a string", () => {
       await vi.importActual<typeof import("@ecency/render-helper")>("@ecency/render-helper");
     const entry = brokenEntry({ body: { markdown: "hi" } as unknown as string });
 
-    expect(() => actual.postBodySummary(entry as any, ENTRY_SUMMARY_LENGTH)).toThrow(TypeError);
+    expect(() => actual.getPostBodyText(entry as any, ENTRY_SUMMARY_LENGTH)).toThrow(TypeError);
 
-    vi.mocked(postBodySummary).mockImplementation(actual.postBodySummary as any);
+    vi.mocked(getPostBodyText).mockImplementation(actual.getPostBodyText as any);
     expect(entrySummary(entry)).toBe("");
   });
 
@@ -262,7 +262,7 @@ describe("the unmocked renderer on a body that is not a string", () => {
   // paragraphs: the shape a key built from length + both ends collides on, which
   // would silently drop the second post's report.
   it("reports two same-length bodies that differ only in the middle", () => {
-    vi.mocked(postBodySummary).mockImplementation(() => {
+    vi.mocked(getPostBodyText).mockImplementation(() => {
       throw new RangeError("Invalid code point 1114112");
     });
     const head = "The same opening paragraph, repeated verbatim. ".repeat(4);

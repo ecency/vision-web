@@ -11,7 +11,7 @@ import { ByteBuffer } from './helpers/ByteBuffer'
 import { Serializer } from './helpers/serializer'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { config } from './config'
-import { callRPC, callRPCBroadcast, RPCError } from './helpers/call'
+import { callRPC, callRPCBroadcast, isDuplicateTransactionError } from './helpers/call'
 import { DigestData } from './types'
 import { sleep } from './helpers/sleep'
 
@@ -221,7 +221,7 @@ export class Transaction {
           Date.parse(this.transaction.expiration + 'Z') - config.broadcastTimeout - 5_000
       })
     } catch (e) {
-      if (e instanceof RPCError && e.message.includes('Duplicate transaction check failed')) {
+      if (isDuplicateTransactionError(e)) {
         // ignore duplicate transaction error as this can happen when we retry the broadcast
       } else {
         throw e

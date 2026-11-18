@@ -1,4 +1,4 @@
-import { catchPostImage, getEntryImageRawUrl } from "@ecency/render-helper";
+import { getEntryCardImage, getEntryImageRawUrl } from "@ecency/render-helper";
 import { hasExternalLink } from "@ecency/sdk";
 import { Entry } from "@/entities";
 import { parseEntryLocationFromBody } from "./entry-location";
@@ -68,7 +68,8 @@ function pickThumbnail(entry: Entry): string | undefined {
   // entry, while the body is still here to look at.
   //
   // Two steps, because they find different things. getEntryImageRawUrl is the
-  // regex fast path over raw markdown. catchPostImage in fast mode adds the
+  // regex fast path over raw markdown. getEntryCardImage (catchPostImage's fast
+  // mode, without the markdown renderer in the bundle, #2113) adds the
   // cases the regex alone missed, a YouTube poster and a <center>-wrapped bare
   // URL, still without rendering markdown. Measured on live posts, those two
   // were 4 of 29 rows that carry no metadata image, concentrated in the video
@@ -82,11 +83,11 @@ function pickThumbnail(entry: Entry): string | undefined {
   // class fast mode gives up is an ambiguous markdown image URL (one containing
   // a parenthesis), which the card then shows without a thumbnail.
   //
-  // catchPostImage(0, 0) returns the proxied /p/ URL, and re-proxying it at card
+  // getEntryCardImage(0, 0) returns the proxied /p/ URL, and re-proxying it at card
   // size reuses the same hash rather than nesting, so the card src stays
   // byte-identical to what it was before slimming.
   return (
-    getEntryImageRawUrl(entry) ?? catchPostImage(entry, 0, 0, "match", { fast: true }) ?? undefined
+    getEntryImageRawUrl(entry) ?? getEntryCardImage(entry) ?? undefined
   );
 }
 

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { setProxyBase } from "@ecency/render-helper";
-import { catchPostImageSafely } from "@/core/entries/catch-post-image-safely";
-import { postBodySummarySafely } from "@/core/entries/post-body-summary-safely";
+import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
+import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
 import defaults from "@/defaults";
 import { SearchResult } from "@/entities";
 import {
@@ -41,7 +41,7 @@ export function SearchListItem({ res }: Props) {
   // excerpt, not the results page: this list renders inside the client tree,
   // where an uncaught throw is caught by no route error.tsx and swaps the whole
   // app for global-error.
-  const img = useMemo(() => catchPostImageSafely(res.body, 600, 500), [res.body]);
+  const img = useMemo(() => getEntryCardImageSafely(res.body, 600, 500), [res.body]);
 
   const title = useMemo(
     () => transformMarkedContent(res.title_marked ? res.title_marked : res.title),
@@ -50,7 +50,7 @@ export function SearchListItem({ res }: Props) {
   const summary = useMemo(
     () =>
       transformMarkedContent(
-        res.body_marked ? res.body_marked : postBodySummarySafely(res.body, 200)
+        res.body_marked ? res.body_marked : postBodyTextSafely(res.body, 200)
       ),
     [res]
   );

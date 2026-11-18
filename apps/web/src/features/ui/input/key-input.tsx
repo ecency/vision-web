@@ -124,7 +124,14 @@ export const KeyInput = forwardRef<
         return null;
       }
 
-      setSigningKey(key);
+      // The shared slot pre-fills active-key signing elsewhere, so it only
+      // takes an active key: a memo, posting or owner key there would sign
+      // with the wrong authority. The derived key, never the text typed (a
+      // master password or seed must not stay in the store), and it is
+      // dropped after an idle window.
+      if (keyType === "active") {
+        setSigningKey(privateKey.toString());
+      }
 
       onSign?.(privateKey);
 

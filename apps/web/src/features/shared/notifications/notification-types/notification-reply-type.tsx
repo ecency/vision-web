@@ -1,4 +1,4 @@
-import { postBodySummary } from "@ecency/render-helper";
+import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
 import React, { ReactElement } from "react";
 import { ApiReplyNotification } from "@/entities";
 import i18next from "i18next";
@@ -81,10 +81,10 @@ export function NotificationReplyType({
               }
             }}
           >
-            {postBodySummary(notification.body, 100)}
+            {postBodyTextSafely(notification.body, 100)}
           </div>
         ) : (
-          postBodySummary(notification.body, 100) && (
+          postBodyTextSafely(notification.body, 100) && (
             <EntryLink
               entry={{
                 category: getNotificationEntryCategory(notification) ?? "created",
@@ -105,7 +105,7 @@ export function NotificationReplyType({
                   }
                 }}
               >
-                {postBodySummary(notification.body, 100)}
+                {postBodyTextSafely(notification.body, 100)}
               </div>
             </EntryLink>
           )

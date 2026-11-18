@@ -90,9 +90,17 @@ async function getMetaMaskSolanaWallet(): Promise<any> {
   return mmWallet;
 }
 
+/**
+ * Send SOL from the user's MetaMask Solana account.
+ *
+ * @param expectedFrom the linked SOL address; the send uses that account and is
+ *   blocked with ACCOUNT_MISMATCH when MetaMask does not hold it (funds safety,
+ *   as for ETH, BNB and BTC, #2129). Base58 addresses compare case-sensitively.
+ */
 export async function sendSolTransfer(
   to: string,
-  amountSol: string
+  amountSol: string,
+  expectedFrom?: string
 ): Promise<string> {
   const mmWallet = await getMetaMaskSolanaWallet();
 
@@ -100,12 +108,17 @@ export async function sendSolTransfer(
   const connectFeature = mmWallet.features["standard:connect"] as any;
   await connectFeature.connect();
 
-  const solAccount = mmWallet.accounts?.find(
-    (acc: any) => acc.chains?.some((c: string) => c.startsWith("solana:"))
+  const solAccounts = (mmWallet.accounts ?? []).filter((acc: any) =>
+    acc.chains?.some((c: string) => c.startsWith("solana:"))
   );
-
-  if (!solAccount) {
+  if (solAccounts.length === 0) {
     throw new Error("No Solana account found in MetaMask.");
+  }
+  const solAccount = expectedFrom
+    ? solAccounts.find((acc: any) => acc.address === expectedFrom)
+    : solAccounts[0];
+  if (!solAccount) {
+    throw new Error("ACCOUNT_MISMATCH");
   }
 
   // Use @solana/web3.js for transaction building (dynamic import to avoid bundle bloat)

@@ -48,7 +48,12 @@ export async function broadcastWithMethod(
   authority: AuthorityLevel = 'posting',
   fetchedKey?: string | null,
   fetchedToken?: string | null,
-  broadcastMode: BroadcastMode = 'async'
+  broadcastMode: BroadcastMode = 'async',
+  // The token-first attempt for a user who logged in another way (#2121): use
+  // the access token or fail, so the caller falls back to the user's own
+  // method. HiveSigner's hot-sign tab is for HiveSigner logins only; opened
+  // here it never settles the mutation.
+  tokenOnly = false
 ): Promise<TransactionConfirmation | BroadcastResult> {
   const adapter = auth?.adapter;
 
@@ -143,11 +148,17 @@ export async function broadcastWithMethod(
           return response.result;
         } catch (tokenError) {
           // Token broadcast failed — try platform-specific HiveSigner broadcast
-          if (adapter.broadcastWithHiveSigner && shouldTriggerAuthFallback(tokenError)) {
+          if (!tokenOnly && adapter.broadcastWithHiveSigner && shouldTriggerAuthFallback(tokenError)) {
             return await adapter.broadcastWithHiveSigner(username, ops, authority);
           }
           throw tokenError;
         }
+      }
+
+      if (tokenOnly) {
+        // Reads as an expired token to shouldTriggerAuthFallback, so the caller
+        // moves on to the user's own method.
+        throw new Error(`No HiveSigner access token for ${username}: token expired`);
       }
 
       // No token available — try platform-specific HiveSigner broadcast
@@ -245,7 +256,7 @@ async function broadcastWithFallback(
       ) {
         try {
           // Try HiveSigner API first (faster)
-          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode);
+          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode, true);
         } catch (error) {
           // Only fallback if this is an auth-related error
           // Otherwise, rethrow the original error (e.g., network errors, validation errors)
@@ -264,7 +275,7 @@ async function broadcastWithFallback(
         loginType === 'keychain'
       ) {
         try {
-          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode);
+          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode, true);
         } catch (error) {
           if (!shouldTriggerAuthFallback(error)) {
             throw error;
@@ -281,7 +292,7 @@ async function broadcastWithFallback(
       ) {
         try {
           // Try HiveSigner API first (faster)
-          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode);
+          return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode, true);
         } catch (error) {
           // Only fallback if this is an auth-related error
           // Otherwise, rethrow the original error (e.g., network errors, validation errors)
@@ -325,9 +336,11 @@ async function broadcastWithFallback(
 
     // loginType is null — user's auth method is unknown (e.g., incomplete login data)
     if (authority === 'posting') {
-      // For posting ops, try HiveSigner — access token is usually available for all logins
+      // For posting ops, try HiveSigner — access token is usually available for all logins.
+      // Token only: a missing or rejected token goes to the upgrade dialog below,
+      // not to a hot-sign tab that never settles (#2121).
       try {
-        return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode);
+        return await broadcastWithMethod('hivesigner', username, ops, auth, authority, undefined, undefined, broadcastMode, true);
       } catch (hsError) {
         if (shouldTriggerAuthFallback(hsError) && adapter.showAuthUpgradeUI) {
           const operationName = ops.length > 0 ? ops[0][0] : 'unknown';

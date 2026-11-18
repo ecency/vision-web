@@ -1,5 +1,7 @@
 import { markdown2Html as renderPostBody, setSlowRenderThresholdMs } from './markdown-2-html'
-import { catchPostImage, getEntryCardImageRawUrl, getEntryImageRawUrl } from './catch-post-image'
+import { catchPostImage } from './catch-post-image'
+import { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage } from './card-image'
+import { getPostBodyText } from './post-body-text'
 import { getPostBodySummary as postBodySummary } from './post-body-summary'
 import { setProxyBase, proxifyImageSrc, buildSrcSet, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl, isLegacySizedProxyUrl } from './proxify-image-src'
 import type { ProxifyOptions } from './proxify-image-src'
@@ -15,9 +17,12 @@ import type { SeoContext } from './types/seo-context.interface'
 export {
   renderPostBody,
   catchPostImage,
+  getEntryCardImage,
   getEntryCardImageRawUrl,
   getEntryImageRawUrl,
+  getEntryLcpImage,
   postBodySummary,
+  getPostBodyText,
   proxifyImageSrc,
   buildSrcSet,
   buildSrcSetForFormat,

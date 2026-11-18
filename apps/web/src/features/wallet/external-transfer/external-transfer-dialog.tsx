@@ -185,7 +185,8 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
       // open-time read is silent (eth_accounts) and only powers the proactive
       // warning; the hard guarantee lives in sendEvmTransfer, atomic with its
       // account read. The BTC send applies the same check against the connected
-      // MetaMask Bitcoin account. externalAddress is ignored for SOL.
+      // MetaMask Bitcoin account, and the SOL send uses the linked Solana account
+      // or refuses with the same ACCOUNT_MISMATCH (#2129).
       const result = await transfer.mutateAsync({ to, amount, expectedFrom: externalAddress });
       setTxHash(result.txHash);
       setStep("success");

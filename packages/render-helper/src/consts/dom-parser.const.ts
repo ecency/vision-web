@@ -12,6 +12,7 @@ function createParser() {
   })
 }
 
-export const DOMParser = createParser()
+// Pure: a bundle that never uses the parser drops it and @xmldom/xmldom (#2113).
+export const DOMParser = /* @__PURE__ */ createParser()
 
 export { XMLDOMSerializer as XMLSerializer }

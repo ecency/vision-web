@@ -1,5 +1,4 @@
 import {
-  createDoc,
   extractYtStartTime,
   moveBlockClosingTagOutOfParagraph,
   removeDuplicateAttributes,
@@ -11,6 +10,7 @@ import {
   stripQueryString,
   trimTrailingSlash
 } from './helper'
+import { createDoc } from './create-doc'
 
 describe('Helper Functions', () => {
   describe('isValidUsername', () => {

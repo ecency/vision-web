@@ -5,6 +5,8 @@ interface HiveEngineTokenProps {
   name: string;
   icon: string;
   precision: number;
+  /** False when the token's metadata did not load, so `precision` is a guess. */
+  precisionKnown?: boolean;
   stakingEnabled: boolean;
   delegationEnabled: boolean;
   balance: string;
@@ -20,6 +22,8 @@ export class HiveEngineToken {
   icon?: string;
 
   precision?: number;
+  /** False when the token's metadata did not load, so `precision` is a guess. */
+  precisionKnown: boolean;
   stakingEnabled?: boolean;
   delegationEnabled?: boolean;
   balance: number;
@@ -35,6 +39,7 @@ export class HiveEngineToken {
     this.icon = props.icon || "";
 
     this.precision = props.precision || 0;
+    this.precisionKnown = props.precisionKnown !== false;
     this.stakingEnabled = props.stakingEnabled || false;
     this.delegationEnabled = props.delegationEnabled || false;
     this.balance = parseFloat(props.balance) || 0;

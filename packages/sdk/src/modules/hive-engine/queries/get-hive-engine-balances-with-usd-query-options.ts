@@ -102,6 +102,7 @@ export function getHiveEngineBalancesWithUsdQueryOptions(
           name: token?.name ?? balance.symbol,
           icon: tokenMetadata?.icon ?? "",
           precision: token?.precision ?? 0,
+          precisionKnown: typeof token?.precision === "number",
           stakingEnabled: token?.stakingEnabled ?? false,
           delegationEnabled: token?.delegationEnabled ?? false,
           balance: balance.balance,

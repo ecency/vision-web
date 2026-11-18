@@ -54,7 +54,8 @@ export function TransferStep1({ titleLngKey }: Props) {
     memoError,
     setMemoError,
     exchangeWarning,
-    setAsset
+    setAsset,
+    setAmountEdited
   } = useTransferSharedState();
 
   const { data: activeUserPoints } = useQuery(
@@ -383,6 +384,7 @@ export function TransferStep1({ titleLngKey }: Props) {
                     value={amount}
                     onChange={(e) => {
                       const { value: amount } = e.target;
+                      setAmountEdited?.(true);
                       setAmount(amount);
                     }}
                     className={amount > balance && amountError ? "is-invalid" : ""}
@@ -415,10 +417,14 @@ export function TransferStep1({ titleLngKey }: Props) {
                     className="balance-num"
                     role="button"
                     tabIndex={0}
-                    onClick={() => setAmount(formatNumber(getBalance(), 3))}
+                    onClick={() => {
+                      setAmountEdited?.(true);
+                      setAmount(formatNumber(getBalance(), 3));
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
+                        setAmountEdited?.(true);
                         setAmount(formatNumber(getBalance(), 3));
                       }
                     }}

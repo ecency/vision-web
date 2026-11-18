@@ -4,9 +4,9 @@ import { useGlobalStore } from "@/core/global-store";
 import { EntryLink } from "@/features/shared";
 import { buildSrcSet, proxifyImageSrc } from "@ecency/render-helper";
 import {
-  catchPostImageSafely,
-  getEntryCardImageRawUrlSafely
-} from "@/core/entries/catch-post-image-safely";
+  getEntryCardImageRawUrlSafely,
+  getEntryCardImageSafely
+} from "@/core/entries/card-image-safely";
 import Image from "next/image";
 import { THUMB_SIZES } from "./thumb-lcp";
 
@@ -32,11 +32,11 @@ export function EntryListItemThumbnail({
   // proxified i.ecency.com URL — the same path post-body/cover images use — so
   // the old useImageDownloader blob→base64 round-trip (which gated this behind
   // JS download + hydration) is not needed.
-  // catchPostImageSafely, not catchPostImage: this runs during the SSR render
+  // getEntryCardImageSafely, not the raw export: this runs during the SSR render
   // of every feed row, with no boundary above it, and the extractor can throw on
   // an author-crafted body. A throw degrades to "no thumbnail" (the noImage
   // placeholder) instead of taking the page down.
-  const src = useMemo(() => catchPostImageSafely(entry, 600, 500, "match") || null, [entry]);
+  const src = useMemo(() => getEntryCardImageSafely(entry, 600, 500, "match") || null, [entry]);
 
   // The gif carve-out that used to live here moves rather than disappearing, and
   // the two halves point in OPPOSITE directions, so read both before touching it.
@@ -73,7 +73,7 @@ export function EntryListItemThumbnail({
     // Card precedence, NOT getEntryImageRawUrl: that one skips
     // json_metadata.thumbnails on purpose, so it can name a different file than
     // the one this card renders.
-    // Guarded for the same reason as the two catchPostImageSafely calls.
+    // Guarded for the same reason as the two getEntryCardImageSafely calls.
     const raw = getEntryCardImageRawUrlSafely(entry);
     return !!raw && /\.gif(?:[?#]|$)/i.test(raw);
   }, [entry]);
@@ -84,7 +84,7 @@ export function EntryListItemThumbnail({
   );
 
   const blurUrl = useMemo(() => {
-    const url = catchPostImageSafely(entry, 0, 0);
+    const url = getEntryCardImageSafely(entry, 0, 0);
     if (!url) return null;
     // Route the LQIP placeholder through the /p/ proxy so `blur=1` is honored.
     // Appending `?blur=1` to a bare upload URL hits the direct-serve route,

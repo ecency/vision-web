@@ -34,6 +34,21 @@ vi.mock("@ecency/render-helper", () => ({
   // extension survives — the proxied /p/<base58> URL hides it.
   // Card precedence: json_metadata.thumbnails first, then image, then body —
   // which is what the component must classify, not the body-image URL.
+  getEntryCardImage: vi.fn((entry: any, w?: number) =>
+    entry?.__noimg
+      ? null
+      : (w ?? 0) > 0
+        ? "https://i.ecency.com/p/HASH?format=match&mode=fit&width=600&height=500"
+        : "https://i.ecency.com/p/HASH?format=match&mode=fit"
+  ),
+  buildSrcSet: vi.fn(
+    () => "https://i.ecency.com/p/HASH?width=320 320w, https://i.ecency.com/p/HASH?width=600 600w"
+  ),
+  proxifyImageSrc: vi.fn(() => "https://i.ecency.com/p/HASH?blur=1"),
+  // The raw (pre-proxy) source URL, which is the only place the original file
+  // extension survives — the proxied /p/<base58> URL hides it.
+  // Card precedence: json_metadata.thumbnails first, then image, then body —
+  // which is what the component must classify, not the body-image URL.
   getEntryCardImageRawUrl: vi.fn((entry: TestEntry) =>
     entry?.__thumb ?? entry?.__raw ?? "https://img.host/photo.png"
   ),

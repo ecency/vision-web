@@ -92,12 +92,20 @@ export function Transfer(props: Props) {
   const [step, setStep] = useState(1);
   const [to, setTo] = useState(props.to ?? "");
   const [mode, setMode] = useState(props.mode);
-  const [amount, setAmount] = useState(props.amount ?? "0.000");
+  // The smallest amount a transfer takes, unless the caller passes one (a tip
+  // default); an existing delegation fills it in delegate mode (#2123).
+  const [amount, setAmount] = useState(props.amount ?? "0.001");
   const [exchangeWarning, setExchangeWarning] = useState("");
   const [inProgress, setInProgress] = useState(false);
   const [asset, setAsset] = useState(props.asset);
   const [amountError, setAmountError] = useState("");
   const [memoError, setMemoError] = useState("");
+  // The amount the dialog filled in itself (an existing delegation), kept
+  // here because step 1 unmounts on Next.
+  const [autoFilledAmount, setAutoFilledAmount] = useState<string | null>(null);
+  // Set by the user's own edits only, so a typed amount (even "0.001") is
+  // never taken for the default and replaced.
+  const [amountEdited, setAmountEdited] = useState(false);
 
   return (
     <TransferSharedStateContext.Provider
@@ -122,11 +130,17 @@ export function Transfer(props: Props) {
         setMemoError,
         memoError,
         setAmountError,
+        autoFilledAmount,
+        setAutoFilledAmount,
+        amountEdited,
+        setAmountEdited,
         reset: useCallback(() => {
           setStep(1);
+          setAutoFilledAmount(null);
+          setAmountEdited(false);
           setMemo(props.memo ?? "");
           setTo(props.to ?? "");
-          setAmount(props.amount ?? "");
+          setAmount(props.amount ?? "0.001");
           setMode(props.mode);
         }, [props.amount, props.memo, props.mode, props.to])
       }}

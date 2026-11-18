@@ -660,6 +660,17 @@ const withSentry = withSentryConfig(config, {
     deleteSourcemapsAfterUpload: true
   },
 
+  // A Sentry outage must not fail the deploy build. On 2026-11-17 the API
+  // answered 503 to `releases new` and the staging image did not build. With
+  // an error handler the plugin logs the failure and the build carries on
+  // without the upload; its file-deletion step still runs, so source maps do
+  // not ship publicly either way.
+  unstable_sentryWebpackPluginOptions: {
+    errorHandler: (err) => {
+      console.warn(`[sentry] release or source map upload failed, build continues: ${err && err.message}`);
+    }
+  },
+
   // Automatically tree-shake Sentry logger statements to reduce bundle size
   disableLogger: true,
 

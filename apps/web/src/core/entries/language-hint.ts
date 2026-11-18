@@ -1,4 +1,4 @@
-import { postBodySummary } from "@ecency/render-helper";
+import { getPostBodyText } from "@ecency/render-helper";
 import type { Entry } from "@/entities";
 import { MIN_DETECT_CHARS, francToIso1 } from "@/features/shared/entry-translate/iso639";
 
@@ -47,7 +47,7 @@ const RAW_SAMPLE_CHARS = 2000;
 const SAMPLE_CHARS = 600;
 
 export function detectionSample(text: string): string {
-  return postBodySummary(text.slice(0, RAW_SAMPLE_CHARS), 0).slice(0, SAMPLE_CHARS).trim();
+  return getPostBodyText(text.slice(0, RAW_SAMPLE_CHARS), 0).slice(0, SAMPLE_CHARS).trim();
 }
 
 export function isServerRuntime(): boolean {

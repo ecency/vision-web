@@ -13,7 +13,7 @@ export type TransferableCurrency =
 interface ExternalTransferPayload {
   to: string;
   amount: string;
-  /** EVM and BTC: the linked wallet address. The send is blocked if the active
+  /** EVM, BTC and SOL: the linked wallet address. The send is blocked if the active
    *  MetaMask account does not match it (funds safety). */
   expectedFrom?: string;
 }
@@ -32,7 +32,7 @@ export function useExternalTransfer(currency: TransferableCurrency) {
           return { txHash, currency };
         }
         case EcencyWalletCurrency.SOL: {
-          const signature = await sendSolTransfer(to, amount);
+          const signature = await sendSolTransfer(to, amount, expectedFrom);
           return { txHash: signature, currency };
         }
         case EcencyWalletCurrency.BTC: {

@@ -45,3 +45,31 @@ describe("entryLcpMatch", () => {
     expect(entryLcpMatch("not a url")).toBeNull();
   });
 });
+
+describe("entryLcpPreload (#2119)", () => {
+  // The body renders a YouTube poster as a plain format=match <img>; a link
+  // before the first image makes that poster the page's first image.
+  it("preloads the poster the body shows first", async () => {
+    const { entryLcpPreload } = await import("@/app/(dynamicPages)/entry/_helpers/entry-lcp-match");
+    const entry = mockEntry({
+      body: "Intro\n\nhttps://www.youtube.com/watch?v=O8xoAtKjnqs\n\n![](https://e.com/a.png)",
+      json_metadata: {}
+    } as never);
+    const target = entryLcpPreload(entry as never);
+    expect(target.rawCover).toBeNull();
+    expect(target.posterHref).toBe(
+      proxifyImageSrc("https://img.youtube.com/vi/O8xoAtKjnqs/hqdefault.jpg", 0, 0, "match")
+    );
+  });
+
+  it("keeps the cover preload when an image comes first", async () => {
+    const { entryLcpPreload } = await import("@/app/(dynamicPages)/entry/_helpers/entry-lcp-match");
+    const entry = mockEntry({
+      body: "![](https://e.com/a.png)\n\nhttps://www.youtube.com/watch?v=O8xoAtKjnqs",
+      json_metadata: {}
+    } as never);
+    const target = entryLcpPreload(entry as never);
+    expect(target.rawCover).toBe(getEntryImageRawUrl(entry as never));
+    expect(target.posterHref).toBeNull();
+  });
+});

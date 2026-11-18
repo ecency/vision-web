@@ -23,6 +23,11 @@ export const TransferSharedStateContext = createContext<{
   memoError: string;
   setMemoError: (memoError: string) => void;
   setAsset: (asset: TransferAsset) => void;
+  autoFilledAmount?: string | null;
+  setAutoFilledAmount?: (amount: string | null) => void;
+  /** The user changed the amount (typed it or took the balance). */
+  amountEdited?: boolean;
+  setAmountEdited?: (edited: boolean) => void;
 }>({
   memo: "",
   setMemo: () => {},
@@ -68,7 +73,11 @@ export function useTransferSharedState() {
     amountError,
     setAmountError,
     memoError,
-    setMemoError
+    setMemoError,
+    autoFilledAmount,
+    setAutoFilledAmount,
+    amountEdited,
+    setAmountEdited
   } = useContext(TransferSharedStateContext);
 
   return {
@@ -91,6 +100,10 @@ export function useTransferSharedState() {
     amountError,
     memoError,
     setMemoError,
-    setAsset
+    setAsset,
+    autoFilledAmount,
+    setAutoFilledAmount,
+    amountEdited,
+    setAmountEdited
   };
 }

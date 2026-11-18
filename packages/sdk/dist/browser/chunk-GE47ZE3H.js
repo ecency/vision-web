@@ -1,2 +1,0 @@
-import {g}from'./chunk-XGVQ452Z.js';import {b}from'./chunk-CNB64U7U.js';import {c as c$1}from'./chunk-YHZIU427.js';import {a}from'./chunk-PDIUUNDQ.js';function c(t,o,r){return c$1(["wallet","claim-interest"],t,e=>g(t,e.to,e.amount,e.memo,e.requestId),async()=>{await b(o?.adapter,r,[a.accounts.full(t),["ecency-wallets","asset-info",t],["wallet","portfolio","v2",t]]);},o,"active",{broadcastMode:r})}export{c as a};//# sourceMappingURL=chunk-GE47ZE3H.js.map
-//# sourceMappingURL=chunk-GE47ZE3H.js.map

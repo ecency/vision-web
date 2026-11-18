@@ -24,7 +24,9 @@ vi.mock("@/utils", async () => ({
 vi.mock("@ecency/render-helper", () => ({
   setProxyBase: vi.fn(),
   postBodySummary: vi.fn((entry: any) => `summary:${entry?.permlink ?? ""}`),
+  getPostBodyText: vi.fn((entry: any) => `summary:${entry?.permlink ?? ""}`),
   catchPostImage: vi.fn(() => "https://i.ecency.com/p/HASH?format=match&mode=fit&width=600&height=500"),
+  getEntryCardImage: vi.fn(() => "https://i.ecency.com/p/HASH?format=match&mode=fit&width=600&height=500"),
   getEntryCardImageRawUrl: vi.fn(() => "https://img.host/photo.png"),
   buildSrcSet: vi.fn(() => ""),
   proxifyImageSrc: vi.fn(() => ""),

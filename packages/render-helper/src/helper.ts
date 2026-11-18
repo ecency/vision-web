@@ -1,5 +1,3 @@
-import { DOMParser } from './consts'
-import type { Document } from '@xmldom/xmldom'
 import { decodeHTML, decodeHTMLAttribute, decodeHTMLStrict } from 'entities'
 
 /**
@@ -386,33 +384,6 @@ export function removeDuplicateAttributes(html: string): string {
   return out
 }
 
-export function createDoc(html: string): Document | null {
-  if (html.trim() === '') {
-    return null
-  }
-
-  // Preprocess to remove duplicate attributes which cause @xmldom/xmldom 0.9+ to throw fatalError
-  const cleanedHtml = removeDuplicateAttributes(html)
-
-  // Wrap in body tag to handle multiple root elements
-  // This is needed because markdownToHTML can generate multiple top-level elements
-  // (e.g., <center>...</center><hr />) which DOMParser doesn't accept without a wrapper
-  // Using <body> instead of <div> prevents conflicts with <div> elements in the content
-  //
-  // @xmldom/xmldom 0.9+ always throws a ParseError from its internal fatalError() path
-  // (see dom-parser.js:490) for severely malformed HTML — e.g., mismatched tags like
-  // <body>...<p>...</body> — regardless of the onError handler returning undefined.
-  // The onError handler only gets to observe; the throw still happens.
-  //
-  // Wrap in try/catch so that pathologically-malformed post bodies degrade gracefully
-  // (no image preload hint) instead of crashing the SSR render of /entry/[...]. Both
-  // callers in catch-post-image.ts already handle a null return.
-  try {
-    return DOMParser.parseFromString(`<body>${cleanedHtml}</body>`, 'text/html')
-  } catch {
-    return null
-  }
-}
 
 /**
  * FNV-1a over the UTF-16 code units. Not cryptographic: it only has to tell two

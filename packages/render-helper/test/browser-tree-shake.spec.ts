@@ -95,6 +95,15 @@ describe("the browser build is tree-shakeable", () => {
         expect(inputs.filter((p) => HEAVY.test(p))).toEqual([]);
     }, 60_000);
 
+    it("leaves the stack out of a feed card's bundle: card image, raw URLs and summary text (#2113)", async () => {
+        const inputs = await inputsOf(
+            `import { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getPostBodyText, proxifyImageSrc, buildSrcSet } from ${JSON.stringify(join(out, "browser", "index.js"))};
+             const e = { author: "a", permlink: "p", last_update: "x", body: "**hi** ![](https://x.test/a.png)", json_metadata: {} };
+             console.log(getEntryCardImage(e, 600, 500), getEntryCardImageRawUrl(e), getEntryImageRawUrl(e), getPostBodyText(e, 200), proxifyImageSrc("https://x.test/a.png"), buildSrcSet("https://x.test/a.png"));`
+        );
+        expect(inputs.filter((p) => HEAVY.test(p))).toEqual([]);
+    }, 60_000);
+
     it("keeps sideEffects: false, which the split depends on", () => {
         const pkg = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")) as { sideEffects?: unknown };
         expect(pkg.sideEffects).toBe(false);

@@ -2,7 +2,7 @@ import React from "react";
 import { render } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { catchPostImage, getEntryCardImageRawUrl } from "@ecency/render-helper";
+import { catchPostImage, getEntryCardImage, getEntryCardImageRawUrl } from "@ecency/render-helper";
 
 // The extractor is wrapped, not stubbed away: the package keeps its real
 // implementation and only `catchPostImage` becomes a spy, so the components
@@ -20,6 +20,7 @@ vi.mock("@ecency/render-helper", async () => {
   return {
     ...actual,
     catchPostImage: vi.fn(actual.catchPostImage),
+    getEntryCardImage: vi.fn(actual.getEntryCardImage),
     getEntryCardImageRawUrl: vi.fn(actual.getEntryCardImageRawUrl)
   };
 });
@@ -70,19 +71,23 @@ const mainImg = (c: HTMLElement) => c.querySelector("img");
 
 /** Make the extractor throw for the crafted author, work normally otherwise. */
 function throwForCraftedPosts() {
-  vi.mocked(catchPostImage).mockImplementation(((obj: any, ...rest: any[]) => {
+  const extractor = ((obj: any) => {
     const isCrafted = typeof obj === "string" ? obj.includes("boom") : obj?.author === "crafted";
     if (isCrafted) {
       throw new RangeError("Invalid code point 1114112");
     }
     return null;
-  }) as any);
+  }) as any;
+  // The feed card uses getEntryCardImage, other cards catchPostImage.
+  vi.mocked(catchPostImage).mockImplementation(extractor);
+  vi.mocked(getEntryCardImage).mockImplementation(extractor);
 }
 
 describe("feed thumbnail with a body that breaks the image extractor", () => {
   beforeEach(() => {
     vi.mocked(sentry.captureException).mockClear();
     vi.mocked(catchPostImage).mockReset();
+    vi.mocked(getEntryCardImage).mockReset();
   });
 
   // The end-to-end pin for the package fix in this change: the two bodies that
@@ -123,7 +128,7 @@ describe("feed thumbnail with a body that breaks the image extractor", () => {
     expect(sentry.captureException).toHaveBeenCalledTimes(1);
     expect(sentry.captureException).toHaveBeenCalledWith(
       expect.any(RangeError),
-      expect.objectContaining({ extra: expect.objectContaining({ where: "catchPostImage" }) })
+      expect.objectContaining({ extra: expect.objectContaining({ where: "getEntryCardImage" }) })
     );
 
     first.rerender(
@@ -165,6 +170,8 @@ describe("feed thumbnail when the animated-cover check throws", () => {
     );
     vi.mocked(catchPostImage).mockReset();
     vi.mocked(catchPostImage).mockImplementation(actual.catchPostImage);
+    vi.mocked(getEntryCardImage).mockReset();
+    vi.mocked(getEntryCardImage).mockImplementation(actual.getEntryCardImage);
     vi.mocked(getEntryCardImageRawUrl).mockReset();
     vi.mocked(getEntryCardImageRawUrl).mockImplementation(() => {
       throw new RangeError("Invalid code point 1114112");

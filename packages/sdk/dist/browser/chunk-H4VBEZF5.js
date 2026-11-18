@@ -1,0 +1,2 @@
+import {a}from'./chunk-PDIUUNDQ.js';import {m as m$1}from'./chunk-256XNI26.js';import {queryOptions}from'@tanstack/react-query';function m(){return queryOptions({queryKey:a.resourceCredits.resourceParams(),staleTime:1440*60*1e3,gcTime:1/0,queryFn:async()=>await m$1("rc_api.get_resource_params",{})})}export{m as a};//# sourceMappingURL=chunk-H4VBEZF5.js.map
+//# sourceMappingURL=chunk-H4VBEZF5.js.map

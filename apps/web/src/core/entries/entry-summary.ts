@@ -1,5 +1,5 @@
 import type { Entry } from "@/entities";
-import { postBodySummarySafely } from "./post-body-summary-safely";
+import { postBodyTextSafely } from "./post-body-text-safely";
 
 /** Length every feed card passes to postBodySummary. */
 export const ENTRY_SUMMARY_LENGTH = 200;
@@ -13,11 +13,11 @@ export const ENTRY_SUMMARY_LENGTH = 200;
  * so such a description still yields a bounded excerpt.
  */
 export function summarizeText(text: string, length: number = ENTRY_SUMMARY_LENGTH): string {
-  const summary = postBodySummarySafely(text, length).trim();
+  const summary = postBodyTextSafely(text, length).trim();
   if (summary) {
     return summary;
   }
-  const plain = postBodySummarySafely(text, 0).trim();
+  const plain = postBodyTextSafely(text, 0).trim();
   return plain ? Array.from(plain).slice(0, length).join("") : "";
 }
 
@@ -58,5 +58,5 @@ export function entrySummary(entry: Entry, length: number = ENTRY_SUMMARY_LENGTH
       return summary;
     }
   }
-  return postBodySummarySafely(entry, length).trim();
+  return postBodyTextSafely(entry, length).trim();
 }

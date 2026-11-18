@@ -39,6 +39,8 @@ describe('fenced code inside list items, app render', () => {
     '1. Install:\n    - on mac\n    - on linux\n\n    ~~~bash\n    a &lt; b\n    ~~~',
     '- a\n  - b\n    - c\n\n    ~~~\n    x &lt; y\n    ~~~',
     '10. Install:\n    - on mac\n\n    ~~~\n    a &lt; b\n    ~~~',
+    // A fence indented with spaces then a tab inside a list item (#2132).
+    '- a\n\t- b\n\n   \t~~~\n   \tx &lt; y\n   \t~~~',
     // A nested item indented with a tab on the parent's continuation line.
     '- a\n\t- ```\n\t  &amp; x\n\t  ```',
     '- a\n\n\t-\t~~~\n\t\t&lt;b&gt;\n\t\t~~~',
