@@ -2,6 +2,7 @@ import { decodeEntities, makeEntryCacheKey } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods/clean-reply.method'
+import { codeRanges } from './methods/code-ranges.method'
 
 /**
  * A post's summary text without the markdown renderer (#2113), for feed cards
@@ -101,14 +102,19 @@ const isLetter = (c: string) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 /**
  * One left-to-right scan: a tag (`<` + optional `/` + letter, up to the next
  * `>` with no `<` before it) is skipped whole; any other `<` that would start
- * a tag (left by one tag split by another, `<scr<b>ipt>`) is dropped alone.
- * Its output never holds `<` before a letter, `/` or `!` (entities decoded
- * later can still show one, as text). Linear: the search for `>` stops at the
- * next `<`, and each character is pushed and popped at most once.
+ * a tag (left by one tag split by another, `<scr<b>ipt>`) is dropped alone,
+ * unless no `>` follows anywhere, when it is text. Its output never holds a
+ * raw `<` before a letter, `/` or `!`: a `<` kept as text goes out as an
+ * entity, decoded with the rest later. Linear: the search for `>` stops at
+ * the next `<`, and each character is pushed and popped at most once.
  */
 function dropTags(text: string): string {
   // Characters in an array: dropping the last kept `<` is a pop, not a copy.
   const out: string[] = []
+  // Past the last `>` no tag can be completed, so a `<` there is text
+  // (`a<b`), as the renderer shows it. It goes out as an entity (decoded with
+  // the rest later), which the pop below never takes.
+  const lastGt = text.lastIndexOf('>')
   let i = 0
   while (i < text.length) {
     const c = text[i]
@@ -124,6 +130,11 @@ function dropTags(text: string): string {
     }
     const next = text[i + 1] ?? ''
     const opensTag = isLetter(next) || (next === '/' && isLetter(text[i + 2] ?? ''))
+    if (opensTag && i > lastGt) {
+      out.push('&lt;')
+      i++
+      continue
+    }
     if (opensTag) {
       let j = i + 1
       while (j < text.length && text[j] !== '>' && text[j] !== '<') j++
@@ -132,7 +143,9 @@ function dropTags(text: string): string {
       i = text[j] === '>' ? j + 1 : i + 1
       continue
     }
-    if (next !== '/' && next !== '!') {
+    if (i > lastGt) {
+      out.push('&lt;')
+    } else if (next !== '/' && next !== '!') {
       out.push(c)
     }
     i++
@@ -158,13 +171,30 @@ const joint = (arr: string[], limit = 200) => {
   return result.trim()
 }
 
+// Inside code the renderer escapes markup, so a summary shows `<div>` there
+// as written: its `<` becomes an entity here (decoded with the rest at the
+// end), and the tag pass below leaves it alone.
+function protectCode(md: string): string {
+  const ranges = codeRanges(md)
+  if (ranges.length === 0) return md
+  const parts: string[] = []
+  let from = 0
+  for (const [start, end] of ranges) {
+    if (start < from) continue
+    parts.push(md.slice(from, start), md.slice(start, end).replace(/</g, '&lt;'))
+    from = end
+  }
+  parts.push(md.slice(from))
+  return parts.join('')
+}
+
 function postBodyText(body: string, length: number): string {
   if (!body) {
     return ''
   }
   // The renderer escapes `"` and a bare `&` in text, and the summary is cut
   // before entities are decoded, so the cut lands where it does there.
-  const escaped = markdownToText(cleanReply(body))
+  const escaped = markdownToText(protectCode(cleanReply(body)))
     .replace(/&(?!#?[A-Za-z0-9]+;)/g, '&amp;')
     .replace(/"/g, '&quot;')
   let text = stripTags(escaped)
