@@ -35,6 +35,32 @@ describe("verifyHsAccessToken", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["older than its lifetime and a day", -9 * 24 * 3600],
+    ["dated in the future", 3600]
+  ])("refuses a token %s without asking HiveSigner", async (_label, offset) => {
+    const fetchSpy = meAnswers("alice");
+    const old = b64u({
+      signed_message: { type: "posting", app: "ecency.app" },
+      authors: ["alice"],
+      timestamp: Math.floor(Date.now() / 1000) + offset,
+      signatures: ["s"]
+    });
+    await expect(verifyHsAccessToken(old)).resolves.toEqual({ ok: false, reason: "invalid" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a token a few days old (refreshed in the background near expiry)", async () => {
+    meAnswers("alice");
+    const recent = b64u({
+      signed_message: { type: "posting", app: "ecency.app" },
+      authors: ["alice"],
+      timestamp: Math.floor(Date.now() / 1000) - 6 * 24 * 3600,
+      signatures: ["s"]
+    });
+    await expect(verifyHsAccessToken(recent)).resolves.toEqual({ ok: true, username: "alice" });
+  });
+
   it("refuses a token whose author is not the account HiveSigner names", async () => {
     meAnswers("bob");
     await expect(verifyHsAccessToken(token("posting", "ecency.app", ["alice"]))).resolves.toEqual({

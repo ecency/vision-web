@@ -21,7 +21,7 @@
 
 import { AuthorityTypes, KeyChainImpl, TxResponse } from "@/types";
 import type { PeakVaultApi } from "@/types/app-window";
-import { extensionErrorMessage, isUserCancellation, isRetryableNodeError } from "./extension-error";
+import { extensionErrorMessage, isUserCancellation, isUnsentBroadcastError } from "./extension-error";
 import publicNodes from "../../public/public-nodes.json";
 import i18next from "i18next";
 
@@ -440,6 +440,13 @@ function pingKeychain(keychain: KeyChainImpl, timeoutMs = 6000): Promise<void> {
 // broadcast (which could double-submit) by tying the retry to "no popup
 // appeared" -- the genuine dropped-request case.
 const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
+// A broadcast waits much longer: the extension answered the ping, so it is
+// alive, and the user may take minutes in the popup (reading a transfer,
+// finding a key). Failing at 30s while the popup is still open would report
+// a failure that a later approval turns into a broadcast, inviting a second
+// send. The long deadline only covers an extension that dies mid-request, as
+// on self-hosted (#2125).
+const KEYCHAIN_BROADCAST_TIMEOUT_MS = 10 * 60 * 1000;
 const KEYCHAIN_TIMEOUT_MESSAGE =
   "Keychain didn't respond. If no popup appeared, click its icon to wake it, then try again.";
 
@@ -509,7 +516,7 @@ function broadcastViaKeychain(
           settled = true;
           reject(new Error(KEYCHAIN_TIMEOUT_MESSAGE));
         }
-      }, KEYCHAIN_REQUEST_TIMEOUT_MS);
+      }, KEYCHAIN_BROADCAST_TIMEOUT_MS);
 
       keychain.requestBroadcast(
         account,
@@ -539,12 +546,15 @@ function broadcastViaKeychain(
     // known-good node so a flaky/outaged default node (e.g. the common
     // api.hive.blog default during maintenance) doesn't block the user. Gated to:
     //  - rpc == null (Keychain used the user's own node, not a caller-pinned one)
-    //  - a node/transport failure (isRetryableNodeError) — NOT a user cancel and
+    //  - a failure that proves nothing was sent (isUnsentBroadcastError): the
+    //    retry is a NEW signed transaction the chain cannot dedupe, so after a
+    //    timeout or gateway error, where the first may have been accepted, it
+    //    could send twice. NOT a user cancel and
     //    NOT a deterministic chain error (missing authority, RC, already
     //    broadcasted), which fail identically on any node and would only re-open
     //    the confirmation popup for nothing.
     const fallbackNode = rpc == null ? getKeychainFallbackRpc() : null;
-    if (fallbackNode && !isUserCancellation(response) && isRetryableNodeError(response)) {
+    if (fallbackNode && !isUserCancellation(response) && isUnsentBroadcastError(response)) {
       return attempt(fallbackNode).then((retry) => {
         if (retry.success) {
           return retry.result;

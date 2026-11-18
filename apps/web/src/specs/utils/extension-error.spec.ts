@@ -4,7 +4,7 @@ import {
   extensionErrorMessage,
   isExplicitUserCancellation,
   isUserCancellation,
-  isRetryableNodeError
+  isUnsentBroadcastError
 } from "../../utils/extension-error";
 
 describe("extensionErrorMessage", () => {
@@ -157,16 +157,15 @@ describe("cancellation string coverage", () => {
   );
 });
 
-describe("isRetryableNodeError", () => {
+describe("isUnsentBroadcastError", () => {
   it.each([
-    [{ message: "Request failed with status code 502" }],
     [{ message: "All origin servers are unavailable" }],
-    [{ error: "ETIMEDOUT" }],
-    [{ message: "timeout of 30000ms exceeded" }],
     [{ error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
-    [{ message: "bad gateway" }],
-  ])("retries node/transport failure %o", (resp) => {
-    expect(isRetryableNodeError(resp)).toBe(true);
+    [{ message: "getaddrinfo ENOTFOUND api.example.com" }],
+    [{ message: "Request failed with status code 503" }],
+    [{ message: "Service Unavailable" }],
+  ])("retries %o: nothing reached a node", (resp) => {
+    expect(isUnsentBroadcastError(resp)).toBe(true);
   });
 
   it.each([
@@ -175,12 +174,19 @@ describe("isRetryableNodeError", () => {
     [{ message: "insufficient resource credits" }],
     [{ error: "user_cancel" }],
     [{ message: "Transaction already in the blockchain" }],
-    // tightened: bare "network" and 500/"internal server error" must NOT retry —
-    // they can wrap deterministic chain rejections
     [{ message: "broadcast to network failed: missing authority" }],
     [{ message: "Request failed with status code 500" }],
     [{ message: "Internal Server Error" }],
-  ])("does NOT retry deterministic/cancel failure %o", (resp) => {
-    expect(isRetryableNodeError(resp)).toBe(false);
+    // The first transaction may already be on chain after these; a retry
+    // signs a new one the chain cannot dedupe.
+    [{ message: "Request failed with status code 502" }],
+    [{ message: "Request failed with status code 504" }],
+    [{ message: "bad gateway" }],
+    [{ error: "ETIMEDOUT" }],
+    [{ message: "timeout of 30000ms exceeded" }],
+    [{ error: "socket hang up" }],
+    [{ message: "Failed to fetch" }],
+  ])("does NOT retry %o", (resp) => {
+    expect(isUnsentBroadcastError(resp)).toBe(false);
   });
 });

@@ -352,3 +352,103 @@ describe("per-username extension preference", () => {
     expect(resolveKeychainInstance("carol")).toBe(keeper);
   });
 });
+
+/**
+ * A slow approval is not a failure: the extension answered the ping, so the
+ * broadcast waits for the wallet's own answer (as on self-hosted, #2125). A
+ * failure shown at 30s while the popup is still open, then a broadcast when
+ * the user approves, invites a second send.
+ */
+describe("broadcastWithExtension (slow approval)", () => {
+  beforeEach(() => {
+    const w = window as any;
+    delete w.hive_keychain;
+    delete w.hive;
+    delete w.hive_extension;
+    delete w.peakvault;
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as any).hive_keychain;
+    localStorage.clear();
+  });
+
+  it("resolves when the user approves after a minute", async () => {
+    vi.useFakeTimers();
+    let answer: ((r: any) => void) | undefined;
+    (window as any).hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: (_a: string, _o: any[], _t: string, cb: (r: any) => void) => {
+        answer = cb;
+      }
+    };
+
+    let settled: unknown = "pending";
+    const promise = broadcastWithExtension("alice", [["transfer", {}]], "active").then(
+      (r) => (settled = r),
+      (e) => (settled = e)
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).toBe("pending");
+
+    answer!({ success: true, result: { id: "tx" } });
+    await promise;
+    expect(settled).toEqual({ id: "tx" });
+  });
+});
+
+/**
+ * The fallback node signs a NEW transaction, which the chain cannot dedupe
+ * against the first. It is only safe when the first one surely never reached
+ * a node; after a timeout or a gateway error it may have been accepted.
+ */
+describe("broadcastWithExtension (fallback node)", () => {
+  beforeEach(() => {
+    const w = window as any;
+    delete w.hive_keychain;
+    delete w.hive;
+    delete w.hive_extension;
+    delete w.peakvault;
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    delete (window as any).hive_keychain;
+    localStorage.clear();
+  });
+
+  const keychainAnswering = (first: any) => {
+    const nodes: Array<string | null> = [];
+    (window as any).hive_keychain = {
+      requestHandshake: (cb: () => void) => cb(),
+      requestBroadcast: (_a: string, _o: any[], _t: string, cb: (r: any) => void, node: string | null) => {
+        nodes.push(node);
+        cb(nodes.length === 1 ? first : { success: true, result: { id: "retry" } });
+      }
+    };
+    return nodes;
+  };
+
+  it.each([
+    [{ success: false, message: "timeout of 30000ms exceeded" }],
+    [{ success: false, message: "Request failed with status code 504" }],
+    [{ success: false, message: "Request failed with status code 502" }],
+    [{ success: false, error: "socket hang up" }]
+  ])("does not retry after %o, where the first may have gone through", async (first) => {
+    const nodes = keychainAnswering(first);
+    await expect(broadcastWithExtension("alice", [["transfer", {}]], "active")).rejects.toThrow();
+    expect(nodes).toHaveLength(1);
+  });
+
+  it.each([
+    [{ success: false, error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
+    [{ success: false, message: "getaddrinfo ENOTFOUND api.example.com" }],
+    [{ success: false, message: "Request failed with status code 503" }]
+  ])("retries once after %o, where nothing was sent", async (first) => {
+    const nodes = keychainAnswering(first);
+    await expect(broadcastWithExtension("alice", [["transfer", {}]], "active")).resolves.toEqual({ id: "retry" });
+    expect(nodes).toHaveLength(2);
+  });
+});

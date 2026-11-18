@@ -167,43 +167,30 @@ export function isUserCancellation(
 }
 
 /**
- * True when a failure looks like a node/transport/connectivity problem, so
- * retrying the broadcast through a different RPC node could plausibly succeed.
- * Deterministic chain errors (missing authority, insufficient RC, invalid op,
- * already broadcasted) fail identically on any node, so they return false —
- * retrying them would only re-open the extension popup for no benefit. With no
- * usable signal at all we return false rather than blindly re-prompting.
+ * True when a broadcast failure shows the transaction never reached a node
+ * (the connection was refused, the name did not resolve, the node answered
+ * "unavailable" before reading it), so retrying through another node cannot
+ * send it twice. A retry from the extension signs a NEW transaction, which the
+ * chain does not dedupe against the first: after a timeout, a reset
+ * connection or a gateway error the first may already be on chain, so those
+ * return false, as do deterministic chain errors (missing authority, RC) that
+ * fail the same on any node. With no usable signal at all, false.
  */
-export function isRetryableNodeError(
+export function isUnsentBroadcastError(
   resp: Pick<TxResponse, "message" | "error">
 ): boolean {
   const text = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`.trim();
   if (!text) return false;
   return [
-    "timeout",
-    "timed out",
-    "etimedout",
     "connection refused",
     "econnrefused",
     "enotfound",
     "eai_again",
-    "econnreset",
-    "socket hang up",
-    "network error", // axios ERR_NETWORK
-    "networkerror", // browser "NetworkError when attempting to fetch"
-    "failed to fetch",
-    "fetch failed",
-    "bad gateway",
-    "gateway timeout",
+    "could not connect",
+    "unable to connect",
     "service unavailable",
     "temporarily unavailable",
     "origin servers are unavailable",
-    "could not connect",
-    "unable to connect",
-    // gateway/upstream statuses only — NOT 500, which can wrap deterministic
-    // chain rejections (missing authority, RC) that fail identically on retry.
-    "status code 502",
     "status code 503",
-    "status code 504",
   ].some((sig) => text.includes(sig));
 }
