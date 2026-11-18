@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { setProxyBase } from "@ecency/render-helper";
 import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
-import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
+import { searchSummary } from "./search-summary";
 import defaults from "@/defaults";
 import { SearchResult } from "@/entities";
 import {
@@ -47,13 +47,7 @@ export function SearchListItem({ res }: Props) {
     () => transformMarkedContent(res.title_marked ? res.title_marked : res.title),
     [res]
   );
-  const summary = useMemo(
-    () =>
-      transformMarkedContent(
-        res.body_marked ? res.body_marked : postBodyTextSafely(res.body, 200)
-      ),
-    [res]
-  );
+  const summary = useMemo(() => searchSummary(res.body_marked, res.body), [res]);
 
   return (
     <div className="search-list-item">

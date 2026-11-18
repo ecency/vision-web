@@ -435,7 +435,8 @@ describe("broadcastWithExtension (fallback node)", () => {
     [{ success: false, message: "timeout of 30000ms exceeded" }],
     [{ success: false, message: "Request failed with status code 504" }],
     [{ success: false, message: "Request failed with status code 502" }],
-    [{ success: false, error: "socket hang up" }]
+    [{ success: false, error: "socket hang up" }],
+    [{ success: false, message: "Request failed with status code 503" }]
   ])("does not retry after %o, where the first may have gone through", async (first) => {
     const nodes = keychainAnswering(first);
     await expect(broadcastWithExtension("alice", [["transfer", {}]], "active")).rejects.toThrow();
@@ -445,7 +446,7 @@ describe("broadcastWithExtension (fallback node)", () => {
   it.each([
     [{ success: false, error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
     [{ success: false, message: "getaddrinfo ENOTFOUND api.example.com" }],
-    [{ success: false, message: "Request failed with status code 503" }]
+    [{ success: false, message: "All origin servers are unavailable" }]
   ])("retries once after %o, where nothing was sent", async (first) => {
     const nodes = keychainAnswering(first);
     await expect(broadcastWithExtension("alice", [["transfer", {}]], "active")).resolves.toEqual({ id: "retry" });

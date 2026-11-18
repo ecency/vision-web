@@ -4131,7 +4131,8 @@
     "view-explorer": "View on explorer",
     "failed": "Transfer failed",
     "cancelled": "Transaction cancelled by user.",
-    "try-again": "Try again"
+    "try-again": "Try again",
+    "no-linked-wallet": "No wallet is linked for this currency any more. Link one in your profile, then try again."
   },
   "mobile-login-qr": {
     "title": "Log in to Mobile App",

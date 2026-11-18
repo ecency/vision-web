@@ -30,7 +30,7 @@ const SITES: { file: string; calls: number }[] = [
   // The card reader: two passes in summarizeText (capped, then untruncated)
   // plus the body fallback in entrySummary.
   { file: "core/entries/entry-summary.ts", calls: 3 },
-  { file: "features/shared/search-list-item/index.tsx", calls: 1 }
+  { file: "features/shared/search-list-item/search-summary.tsx", calls: 1 }
 ];
 
 const read = (file: string) => fs.readFileSync(path.join(SRC, file), "utf8");

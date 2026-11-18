@@ -431,14 +431,12 @@ function pingKeychain(keychain: KeyChainImpl, timeoutMs = 6000): Promise<void> {
   });
 }
 
-// Timeout for a Keychain sign/broadcast request AFTER the worker passed the 6s
+// Timeout for a Keychain sign request (login) AFTER the worker passed the 6s
 // liveness handshake. An idle/crashed Manifest V3 worker can answer
 // requestHandshake yet silently drop the actual request, so the callback never
-// fires; without this the user sees a dead 60s spinner. 30s surfaces that fast
-// with an actionable message while still leaving ample time to approve the
-// popup. The message deliberately steers the user away from a blind retry on a
-// broadcast (which could double-submit) by tying the retry to "no popup
-// appeared" -- the genuine dropped-request case.
+// fires; without this the user sees a dead spinner. 30s surfaces that fast
+// with an actionable message while still leaving time to approve the popup.
+// A broadcast waits longer, see below: a late approval there still sends.
 const KEYCHAIN_REQUEST_TIMEOUT_MS = 30000;
 // A broadcast waits much longer: the extension answered the ping, so it is
 // alive, and the user may take minutes in the popup (reading a transfer,

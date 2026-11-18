@@ -140,7 +140,7 @@ describe("ExternalTransferDialog: BTC", () => {
     await act(() => queryClient.refetchQueries());
     fireEvent.click(screen.getByRole("button", { name: /external-transfer.confirm-metamask/ }));
 
-    await waitFor(() => expect(screen.getByText("external-transfer.account-mismatch")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("external-transfer.no-linked-wallet")).toBeInTheDocument());
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

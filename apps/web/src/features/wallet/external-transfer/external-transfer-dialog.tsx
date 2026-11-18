@@ -183,9 +183,8 @@ export function ExternalTransferDialog({ currency, username, show, onHide }: Pro
     // nothing is sent.
     if (!externalAddress) {
       setErrorMessage(
-        i18next.t("external-transfer.account-mismatch", {
-          defaultValue:
-            "Your connected MetaMask account does not match your linked wallet. Switch to the linked account in MetaMask and try again."
+        i18next.t("external-transfer.no-linked-wallet", {
+          defaultValue: "No wallet is linked for this currency any more. Link one in your profile, then try again."
         })
       );
       setStep("error");

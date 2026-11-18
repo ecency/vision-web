@@ -1,7 +1,7 @@
 import React, { Fragment, JSX, useEffect, useRef, useState } from "react";
 import { proxifyImageSrc } from "@ecency/render-helper";
 import { getEntryCardImageSafely } from "@/core/entries/card-image-safely";
-import { postBodyTextSafely } from "@/core/entries/post-body-text-safely";
+import { searchSummary } from "@/features/shared/search-list-item/search-summary";
 import { useInViewport } from "react-in-viewport";
 import { voteSvg } from "../../icons";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -73,20 +73,14 @@ export const SearchListItem = ({
   const router = useRouter();
 
   const [title, setTitle] = useState(entry.title);
-  const [body, setBody] = useState(
-    entry.body_marked ? transformMarkedContent(entry.body_marked) : postBodyTextSafely(entry.body, 200)
-  );
+  const [body, setBody] = useState(searchSummary(entry.body_marked, entry.body));
   const [image, setImage] = useState(
     getEntryCardImageSafely(entry.body, 600, 500)
   );
 
   useEffect(() => {
     setTitle(entry.title_marked ? transformMarkedContent(entry.title_marked) : entry.title);
-    setBody(
-      entry.body_marked
-        ? transformMarkedContent(entry.body_marked)
-        : postBodyTextSafely(entry.body, 200)
-    );
+    setBody(searchSummary(entry.body_marked, entry.body));
   }, [entry]);
 
   useMount(() => {

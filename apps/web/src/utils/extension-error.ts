@@ -168,11 +168,11 @@ export function isUserCancellation(
 
 /**
  * True when a broadcast failure shows the transaction never reached a node
- * (the connection was refused, the name did not resolve, the node answered
- * "unavailable" before reading it), so retrying through another node cannot
- * send it twice. A retry from the extension signs a NEW transaction, which the
+ * (the connection was refused, the name did not resolve, Cloudflare could not
+ * reach the origin), so retrying through another node cannot send it twice. A retry from the extension signs a NEW transaction, which the
  * chain does not dedupe against the first: after a timeout, a reset
- * connection or a gateway error the first may already be on chain, so those
+ * connection or a gateway or "unavailable" answer (a proxy can send one after
+ * the node took the transaction) the first may already be on chain, so those
  * return false, as do deterministic chain errors (missing authority, RC) that
  * fail the same on any node. With no usable signal at all, false.
  */
@@ -188,9 +188,6 @@ export function isUnsentBroadcastError(
     "eai_again",
     "could not connect",
     "unable to connect",
-    "service unavailable",
-    "temporarily unavailable",
     "origin servers are unavailable",
-    "status code 503",
   ].some((sig) => text.includes(sig));
 }

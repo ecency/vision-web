@@ -1,6 +1,6 @@
 "use client";
 
-import { getAccessToken } from "@/utils";
+import { ensureValidToken, getAccessToken } from "@/utils";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "@ui/alert";
@@ -182,7 +182,9 @@ export function ProBlogClaim({ username, settleTimeoutMs = 10_000 }: Props) {
 
   const claim = useCallback(async () => {
     setError("");
-    const code = getAccessToken(username) ?? "";
+    // Renewed first if expired (the server refuses an old one); the cached
+    // token if renewing fails.
+    const code = (await ensureValidToken(username)) ?? getAccessToken(username) ?? "";
     if (!code) {
       setError(i18next.t("pro-blog.login-required"));
       return;

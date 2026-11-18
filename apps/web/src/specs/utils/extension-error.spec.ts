@@ -162,8 +162,6 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "All origin servers are unavailable" }],
     [{ error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
     [{ message: "getaddrinfo ENOTFOUND api.example.com" }],
-    [{ message: "Request failed with status code 503" }],
-    [{ message: "Service Unavailable" }],
   ])("retries %o: nothing reached a node", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(true);
   });
@@ -186,6 +184,8 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "timeout of 30000ms exceeded" }],
     [{ error: "socket hang up" }],
     [{ message: "Failed to fetch" }],
+    [{ message: "Request failed with status code 503" }],
+    [{ message: "Service Unavailable" }],
   ])("does NOT retry %o", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(false);
   });

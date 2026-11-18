@@ -2,7 +2,6 @@ import { decodeEntities, makeEntryCacheKey } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods/clean-reply.method'
-import { codeRanges } from './methods/code-ranges.method'
 
 /**
  * A post's summary text without the markdown renderer (#2113), for feed cards
@@ -171,30 +170,13 @@ const joint = (arr: string[], limit = 200) => {
   return result.trim()
 }
 
-// Inside code the renderer escapes markup, so a summary shows `<div>` there
-// as written: its `<` becomes an entity here (decoded with the rest at the
-// end), and the tag pass below leaves it alone.
-function protectCode(md: string): string {
-  const ranges = codeRanges(md)
-  if (ranges.length === 0) return md
-  const parts: string[] = []
-  let from = 0
-  for (const [start, end] of ranges) {
-    if (start < from) continue
-    parts.push(md.slice(from, start), md.slice(start, end).replace(/</g, '&lt;'))
-    from = end
-  }
-  parts.push(md.slice(from))
-  return parts.join('')
-}
-
 function postBodyText(body: string, length: number): string {
   if (!body) {
     return ''
   }
   // The renderer escapes `"` and a bare `&` in text, and the summary is cut
   // before entities are decoded, so the cut lands where it does there.
-  const escaped = markdownToText(protectCode(cleanReply(body)))
+  const escaped = markdownToText(cleanReply(body))
     .replace(/&(?!#?[A-Za-z0-9]+;)/g, '&amp;')
     .replace(/"/g, '&quot;')
   let text = stripTags(escaped)

@@ -74,8 +74,6 @@ describe('getPostBodyText', () => {
     '* * *\n\n* * *\n\n(Text below).\n---\n\n* * *\n\nThe post body.',
     '- - -\n\nAfter a rule.',
     'Steps\t\t\t17/11/2026\t\t\t3048\t\tDaily',
-    'Use \x60<div>\x60 for blocks, and <b>bold</b> stays plain.',
-    'Code:\n\n\x60\x60\x60html\n<span class="x">hi</span>\n\x60\x60\x60\n\nafter <i>it</i>',
     '1. ***\n\ntext',
     '1. - - -\n\ntext',
     '+ * * *\n\ntext',

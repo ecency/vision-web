@@ -13,10 +13,11 @@ export type HsVerifyResult =
   | { ok: true; username: string }
   | { ok: false; reason: "invalid" | "unavailable" };
 
-// An access token lives 7 days and the client renews it near expiry, in the
-// background on its next use; a day's grace covers a session picked up after
-// a few idle days. Its date is under HiveSigner's signature, so it cannot be
-// moved. A small allowance for clock skew the other way.
+// An access token lives 7 days and the client renews it near expiry; a day's
+// grace covers a session picked up after a few idle days. HiveSigner itself
+// enforces no expiry, so this is the only age limit. The date is under the
+// token's signature: only HiveSigner or the account's own key holder can set
+// it. A small allowance for clock skew the other way.
 const TOKEN_MAX_AGE_S = 8 * 24 * 60 * 60;
 const TOKEN_MAX_SKEW_S = 300;
 
