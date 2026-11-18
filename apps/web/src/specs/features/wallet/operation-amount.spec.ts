@@ -128,6 +128,40 @@ describe("availableForPowerDown", () => {
     expect(availableForPowerDown(1.0009, 0, 0)).toBe(1);
   });
 
+  it.each([
+    [1_000_000.0009995, 0, 0, 1_000_000],
+    [0.0009999995, 0, 0, 0],
+    [80.0009999995, 0, 0, 80],
+    [99_999_999.0009997, 0, 0, 99_999_999],
+    [10_000_000.00099997, 0, 0, 10_000_000],
+    [1_000_000.000999997, 0, 0, 1_000_000],
+    [134_217_728.0009995, 0, 0, 134_217_728],
+    [300_000_000.0009995, 0, 0, 300_000_000],
+    [100_000_000, 99_999_999.9990003, 0, 0],
+    [53251496.16843625, 21194934.226436343, 0, 32056561.941]
+  ])("never rounds %s less %s and %s up past the net amount", (hp, delegated, pending, expected) => {
+    // A remainder just short of the next thousandth is not float noise.
+    expect(availableForPowerDown(hp, delegated, pending)).toBe(expected);
+  });
+
+  it("is the largest thousandth within the net amount for inputs with extra decimals", () => {
+    for (let s = 1; s <= 40; s++) {
+      let seed = s;
+      const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 2000; i++) {
+        const hp = rand() * 10 ** Math.floor(rand() * 9);
+        const delegated = rand() * hp;
+        const value = availableForPowerDown(hp, delegated, 0);
+        const net = hp - delegated;
+        // The float subtraction is the reference here, so allow its own error.
+        const noise = Math.max(1, hp) * Number.EPSILON * 4;
+        expect(value).toBeLessThanOrEqual(net + noise);
+        expect(net - value).toBeLessThan(0.001 + noise);
+        expect(String(value).split(".")[1]?.length ?? 0).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
   it("is exact for 3-decimal balances of any size", () => {
     // Seeded so a failure repeats.
     let seed = 7;
@@ -135,8 +169,9 @@ describe("availableForPowerDown", () => {
     for (let i = 0; i < 20000; i++) {
       const hpMilli = Math.floor(rand() * 1e11);
       const delMilli = Math.floor(rand() * hpMilli);
-      const expected = (hpMilli - delMilli) / 1000;
-      expect(availableForPowerDown(hpMilli / 1000, delMilli / 1000, 0)).toBe(expected);
+      const pendMilli = Math.floor(rand() * (hpMilli - delMilli));
+      const expected = (hpMilli - delMilli - pendMilli) / 1000;
+      expect(availableForPowerDown(hpMilli / 1000, delMilli / 1000, pendMilli / 1000)).toBe(expected);
     }
   });
 

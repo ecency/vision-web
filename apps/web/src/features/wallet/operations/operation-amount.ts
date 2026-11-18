@@ -79,24 +79,33 @@ export function enginePrecisionStatus(
   return loading ? "loading" : "unavailable";
 }
 
+/** A finite number as the decimal it prints as: digits x 10^exp. */
+function decimalOf(v: number): { digits: bigint; exp: number } {
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(v));
+  if (!m) return { digits: BigInt(0), exp: 0 };
+  const frac = m[3] ?? "";
+  return { digits: BigInt(`${m[1]}${m[2]}${frac}`), exp: Number(m[4] ?? 0) - frac.length };
+}
+
 /**
  * HP that can be powered down: held, less delegated and already powering
  * down, cut down to whole thousandths (HP has 3 decimals) so it is never more
- * than is available (100.0006 - 20.0004 is 80.000, not 80.001). The cut
- * tolerates float noise at any size, so 0.3 - 0.1 is 0.200, not 0.199, and
- * the result passes the amount field's 0.001 step check.
+ * than is available (100.0006 - 20.0004 is 80.000, not 80.001).
+ *
+ * The sum is done on the decimals the numbers print as, not in floating
+ * point, so 0.3 - 0.1 is exactly 0.200 (not 0.199) and a balance just short
+ * of the next thousandth (1000000.0009995) is never rounded up, at any size
+ * a balance can have (exact up to 2^53 thousandths, about 9e12 HP).
  */
 export function availableForPowerDown(hp: number, delegated: number, pending: number): number {
-  const finite = (v: number) => (Number.isFinite(v) ? v : 0);
-  const net = finite(hp) - finite(delegated) - finite(pending);
-  if (!(net > 0)) return 0;
-  const units = net * 1000;
-  // A whole thousandth within float noise of the result is the exact value.
-  // The noise grows with the largest input (a small remainder of a large
-  // balance carries the large one's error), so the allowance does too;
-  // anything else is cut down, never up.
-  const scale = Math.max(Math.abs(finite(hp)), Math.abs(finite(delegated)), Math.abs(finite(pending))) * 1000;
-  const nearest = Math.round(units);
-  if (Math.abs(units - nearest) <= Math.max(1e-6, scale * 1e-12)) return nearest / 1000;
-  return Math.floor(units) / 1000;
+  const parts = [hp, delegated, pending].map((v) => decimalOf(Number.isFinite(v) ? v : 0));
+  const exp = Math.min(...parts.map((p) => p.exp));
+  const ten = BigInt(10);
+  const [h, d, p] = parts.map((x) => x.digits * ten ** BigInt(x.exp - exp));
+  const net = h - d - p;
+  if (net <= BigInt(0)) return 0;
+  // net x 10^exp HP, in thousandths, cut down (net is positive, so BigInt
+  // division is a floor).
+  const milli = exp + 3 >= 0 ? net * ten ** BigInt(exp + 3) : net / ten ** BigInt(-(exp + 3));
+  return Number(milli) / 1000;
 }
