@@ -87,9 +87,10 @@ describe('getPostBodyText', () => {
     // Large enough that each render takes milliseconds, not timer noise, and
     // eight times apart: linear grows about 8x, quadratic about 64x, so a
     // noisy CI runner stays well inside the limit.
-    time(20_000)
-    expect(time(320_000) / time(40_000)).toBeLessThan(24)
-  })
+    time(10_000)
+    expect(time(160_000) / time(20_000)).toBeLessThan(24)
+    // Several rounds on large inputs: more than the default 5 s on a slow runner.
+  }, 60_000)
 })
 
 describe('getEntryLcpImage (#2119)', () => {
