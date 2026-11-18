@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 // previous delegation. #2123: the hook pushed "0.001" into the amount on every
 // mount, over the caller's amount and over what the user typed before Back.
 
-const h = vi.hoisted(() => ({ delegations: [] as any[] }));
+const h = vi.hoisted(() => ({ delegations: [] as any[], delegationsLoaded: true }));
 
 vi.mock("@ecency/sdk", () => ({
   getBadActorsQueryOptions: () => ({ queryKey: ["bad"] }),
@@ -20,7 +20,10 @@ vi.mock("@tanstack/react-query", () => ({
     o.queryKey[0] === "dyn"
       ? { data: { hivePerMVests: 500 } }
       : { data: undefined, error: null, isLoading: false },
-  useInfiniteQuery: () => ({ data: { pages: [h.delegations] }, error: null, isLoading: false })
+  useInfiniteQuery: () =>
+    h.delegationsLoaded
+      ? { data: { pages: [h.delegations] }, error: null, isLoading: false, isSuccess: true }
+      : { data: undefined, error: null, isLoading: true, isSuccess: false }
 }));
 vi.mock("@/features/shared", () => ({ error: vi.fn() }));
 vi.mock("@/api/format-error", () => ({ formatError: vi.fn(() => [""]) }));
@@ -138,6 +141,22 @@ describe("useDebounceTransferAccountData", () => {
     state.to = "bob";
     renderHook(() => useDebounceTransferAccountData(), { wrapper });
     expect(state.amount).toBe("200");
+  });
+
+  it("keeps a filled delegation while the delegation list has not loaded", () => {
+    h.delegations = [];
+    h.delegationsLoaded = false;
+    const setAmount = vi.fn();
+    const wrapper = ({ children }: any) => (
+      <TransferSharedStateContext.Provider
+        value={{ to: "ecency", mode: "delegate", amount: "5000.000", autoFilledAmount: "5000", setAutoFilledAmount: vi.fn(), setAmount, setTo: vi.fn() } as any}
+      >
+        {children}
+      </TransferSharedStateContext.Provider>
+    );
+    renderHook(() => useDebounceTransferAccountData(), { wrapper });
+    expect(setAmount).not.toHaveBeenCalled();
+    h.delegationsLoaded = true;
   });
 
   it("keeps the amount it was given when there is no delegation (#2123)", () => {

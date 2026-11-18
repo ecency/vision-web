@@ -42,7 +42,8 @@ export function useDebounceTransferAccountData() {
   const {
     data: vestingDelegationsData,
     error: vestingDelegationsError,
-    isLoading: vestingLoading
+    isLoading: vestingLoading,
+    isSuccess: delegationsLoaded
   } = useInfiniteQuery(getVestingDelegationsQueryOptions(vestingDelegationUsername, 1000));
 
   const vestingDelegations = useMemo(
@@ -138,7 +139,9 @@ export function useDebounceTransferAccountData() {
       autoFilled.current !== null && !!typed && Number(typed) === Number(autoFilled.current);
     const untouched = !typed || ["0", "0.000", "0.001"].includes(typed) || isAutoFilled;
     if (amount === null) {
-      if (isAutoFilled) {
+      // "No delegation" only once the list has loaded: before that (or if it
+      // fails) a filled delegation stays, since the amount is absolute.
+      if (isAutoFilled && delegationsLoaded) {
         remember(null);
         filledFor.current = null;
         setAmount("0.001");
@@ -154,7 +157,7 @@ export function useDebounceTransferAccountData() {
       remember(amount);
       setAmount(amount);
     }
-  }, [amount, mode, setAmount, setAutoFilledAmount, to]);
+  }, [amount, delegationsLoaded, mode, setAmount, setAutoFilledAmount, to]);
 
   useEffect(() => {
     if (activeUser && activeUser.username && mode === "delegate") {
