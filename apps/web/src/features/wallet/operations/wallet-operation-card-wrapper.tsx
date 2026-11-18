@@ -37,7 +37,10 @@ export function WalletOperationCardWrapper({
 
         {balance !== undefined && Number.isFinite(balance) && (
           <div
-            className="animate-fade-in-up text-black dark:text-white font-semibold cursor-pointer hover:text-blue-dark-sky dark:hover:text-blue-dark-sky"
+            className={`animate-fade-in-up text-black dark:text-white font-semibold ${
+              // Only a balance that fills the amount looks clickable.
+              onBalanceClick ? "cursor-pointer hover:text-blue-dark-sky dark:hover:text-blue-dark-sky" : ""
+            }`}
             onClick={() => onBalanceClick?.(+balance)}
           >
             {balance}

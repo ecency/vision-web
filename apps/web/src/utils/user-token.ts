@@ -72,7 +72,10 @@ function refreshTokenInBackground(user: User): void {
     })
     .catch((err) => {
       console.error("Background token refresh failed:", err);
-      return user.accessToken;
+      // Not the token captured at the start: undefined, as ensureValidToken's
+      // own failed refresh gives. ensureValidTokenWithin then re-reads
+      // storage, where another tab may have stored a fresh token.
+      return undefined;
     })
     .finally(() => {
       pendingRefreshes.delete(user.username);

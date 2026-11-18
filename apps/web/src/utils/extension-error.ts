@@ -178,6 +178,22 @@ const AMBIGUOUS_BROADCAST_SIGNALS = [
   "backend",
 ];
 
+const ENDPOINT_PATH = "(?:/[a-z0-9/._~-]*)?";
+const ENDPOINT_NAME = new RegExp(
+  "^(?:" +
+    // scheme://host[:port][/path]
+    `[a-z][a-z0-9+.-]*://[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?::\\d+)?${ENDPOINT_PATH}` +
+    // host.domain[:port][/path], host:port[/path]
+    `|[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?::\\d+)?${ENDPOINT_PATH}` +
+    `|[a-z0-9-]+:\\d+${ENDPOINT_PATH}` +
+    ")$"
+);
+
+/** A URL, a dotted host name or a host:port, as a connection error names it. */
+function isEndpointName(operand: string): boolean {
+  return ENDPOINT_NAME.test(operand);
+}
+
 /**
  * True when a broadcast failure shows the transaction never reached a node
  * (the connection was refused, the name did not resolve, Cloudflare could not
@@ -194,10 +210,26 @@ export function isUnsentBroadcastError(
 ): boolean {
   const text = `${normalizeErrorText(resp.error)} ${(resp.message ?? "").toLowerCase()}`.trim();
   if (!text) return false;
+  // The name after a DNS or refused-connection code is the endpoint, not a
+  // diagnostic: "ENOTFOUND hive-gateway.example.com" says nothing about a
+  // gateway answering. Only that one operand goes, only when it ends cleanly
+  // ("...blog/:ETIMEDOUT" stays) and looks like an endpoint (a scheme, a port
+  // or an inner dot, so "ECONNREFUSED ETIMEDOUT" stays), and only when no
+  // part of it is itself a signal ("api.hive.blog.timeout" stays).
+  const diagnostic = text.replace(
+    /\b(enotfound|eai_again|econnrefused)\s+([a-z0-9.:\/_~+-]+)(?=$|[\s"',)\]}])/g,
+    (match, code: string, operand: string) =>
+      isEndpointName(operand) &&
+      !operand.split(/[.:/]/).some((label) => AMBIGUOUS_BROADCAST_SIGNALS.includes(label)) &&
+      // A path is the server's wording, not a host: any signal in it counts.
+      !AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => operand.replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^[^/]*/, "").includes(sig))
+        ? code
+        : match
+  );
   // Any sign that a server answered or the request was under way wins over a
   // connection phrase in the same failure (a gateway's "unable to connect to
   // upstream" after it may have passed the transaction on).
-  if (AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => text.includes(sig))) return false;
+  if (AMBIGUOUS_BROADCAST_SIGNALS.some((sig) => diagnostic.includes(sig))) return false;
   return [
     "connection refused",
     "econnrefused",

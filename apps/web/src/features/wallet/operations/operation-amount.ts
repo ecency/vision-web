@@ -109,3 +109,40 @@ export function availableForPowerDown(hp: number, delegated: number, pending: nu
   const milli = exp + 3 >= 0 ? net * ten ** BigInt(exp + 3) : net / ten ** BigInt(-(exp + 3));
   return Number(milli) / 1000;
 }
+
+/** An asset string ("200001.600000 VESTS") or integer count in millionths. */
+function micro(v: string | number | undefined, scaled: boolean): bigint {
+  const m = /^\s*(\d+)(?:\.(\d*))?/.exec(String(v ?? ""));
+  if (!m) return BigInt(0);
+  if (!scaled) return BigInt(m[1]);
+  return BigInt(m[1] + (m[2] ?? "").padEnd(6, "0").slice(0, 6));
+}
+
+interface PowerDownVests {
+  vesting_shares: string;
+  delegated_vesting_shares: string;
+  to_withdraw: string | number;
+  withdrawn: string | number;
+}
+
+/**
+ * HP that can be powered down, worked out from the account's VESTS: held,
+ * less delegated and still to withdraw, then converted and cut down to whole
+ * thousandths. The HP figures in the wallet parts are each rounded to 3
+ * decimals before they are subtracted (100.0008 - 20.0003 becomes
+ * 100.001 - 20.000 = 80.001), so they can allow more than the account has.
+ */
+export function powerDownAvailableFromVests(account: PowerDownVests, hivePerMVests: number): number {
+  const held = micro(account.vesting_shares, true);
+  const delegated = micro(account.delegated_vesting_shares, true);
+  const pending = micro(account.to_withdraw, false) - micro(account.withdrawn, false);
+  const net = held - delegated - (pending > BigInt(0) ? pending : BigInt(0));
+  if (net <= BigInt(0) || !(hivePerMVests > 0)) return 0;
+  // HP = microVESTS x hivePerMVests / 1e12, so thousandths of HP are
+  // microVESTS x hivePerMVests / 1e9, done on the decimal of hivePerMVests.
+  const rate = decimalOf(hivePerMVests);
+  const ten = BigInt(10);
+  const shift = rate.exp - 9;
+  const milli = shift >= 0 ? net * rate.digits * ten ** BigInt(shift) : (net * rate.digits) / ten ** BigInt(-shift);
+  return Number(milli) / 1000;
+}

@@ -9,13 +9,14 @@ import { renderWithQueryClient } from "@/specs/test-utils";
 
 const mocks = vi.hoisted(() => ({
   accessToken: "tok-alice" as string | undefined,
+  renewal: undefined as Promise<string | undefined> | undefined,
   templates: vi.fn(),
   tenant: vi.fn()
 }));
 
 vi.mock("@/utils", () => ({
   getAccessToken: () => mocks.accessToken,
-  ensureValidTokenWithin: async () => mocks.accessToken,
+  ensureValidTokenWithin: async () => (mocks.renewal ? mocks.renewal : mocks.accessToken),
   random: vi.fn()
 }));
 
@@ -55,6 +56,7 @@ describe("ProBlogClaim customize step", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.accessToken = "tok-alice";
+    mocks.renewal = undefined;
     mocks.templates.mockResolvedValue({ templates: TEMPLATES });
     // No blog yet: the probe 404s, so the customize form renders.
     mocks.tenant.mockRejectedValue(new Error("Tenant not found"));
@@ -106,6 +108,27 @@ describe("ProBlogClaim customize step", () => {
 
     // Success shows the claimed blog link.
     await screen.findByText("pro-blog.claimed-title");
+  });
+
+  it("is busy while the token renews, then sends one claim with the renewed token", async () => {
+    let renewed: (t: string) => void = () => {};
+    mocks.renewal = new Promise((r) => (renewed = r));
+    renderWithQueryClient(<ProBlogClaim username="alice" />);
+    await waitFor(() => expect(screen.getByDisplayValue("Alice in Chains")).toBeTruthy());
+    const button = screen.getByRole("button", { name: "pro-blog.claim" }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+
+    fireEvent.click(button);
+    // Renewal pending: the button is busy, so a second click sends nothing.
+    await waitFor(() => expect(button.disabled).toBe(true));
+    fireEvent.click(button);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    renewed("tok-renewed");
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string).code).toBe("tok-renewed");
+    await screen.findByText("pro-blog.claimed-title");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("shows the manage pointer instead of the form when the blog already exists", async () => {

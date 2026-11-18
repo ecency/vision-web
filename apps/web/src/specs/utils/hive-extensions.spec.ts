@@ -480,8 +480,13 @@ describe("broadcastWithExtension (no answer at all)", () => {
       requestBroadcast: vi.fn()
     };
     const promise = broadcastWithExtension("alice", [["transfer", {}]], "active");
-    const assertion = expect(promise).rejects.toThrow(/check your wallet history/i);
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    let settled = false;
+    promise.catch(() => {}).finally(() => (settled = true));
+    // The user may take minutes in the popup: still waiting just before ten.
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1);
+    expect(settled).toBe(false);
+    const assertion = expect(promise).rejects.toThrow("key-or-hot.keychain-broadcast-timeout");
+    await vi.advanceTimersByTimeAsync(1);
     await assertion;
   });
 });

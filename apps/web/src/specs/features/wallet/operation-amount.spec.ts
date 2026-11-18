@@ -4,7 +4,12 @@ import {
   operationAssetPrecision,
   truncateAmount
 } from "@/features/wallet/operations/operation-amount";
-import { availableForPowerDown, enginePrecisionStatus, isEngineLayer } from "@/features/wallet/operations/operation-amount";
+import {
+  availableForPowerDown,
+  enginePrecisionStatus,
+  isEngineLayer,
+  powerDownAvailableFromVests
+} from "@/features/wallet/operations/operation-amount";
 
 // #2127: the wallet operations dialog used 3 decimals for every asset, so a
 // Hive Engine token with 8 could not be sent below 0.001 and the rest of a
@@ -177,5 +182,36 @@ describe("availableForPowerDown", () => {
 
   it("is 0, not negative, when more is delegated than held", () => {
     expect(availableForPowerDown(5, 10, 0)).toBe(0);
+  });
+});
+
+describe("powerDownAvailableFromVests", () => {
+  const acct = (held: string, delegated: string, toWithdraw = "0", withdrawn = "0") => ({
+    vesting_shares: `${held} VESTS`,
+    delegated_vesting_shares: `${delegated} VESTS`,
+    to_withdraw: toWithdraw,
+    withdrawn
+  });
+
+  it("subtracts in VESTS before converting, so rounding cannot add a thousandth", () => {
+    // 1 VESTS = 0.0005 HP: 100.0008 HP held, 20.0003 HP delegated.
+    expect(powerDownAvailableFromVests(acct("200001.600000", "40000.600000"), 500)).toBe(80);
+  });
+
+  it("subtracts what is still to withdraw (to_withdraw and withdrawn are millionths)", () => {
+    // 200000 VESTS held, 50000 of 100000 still to withdraw: 150000 VESTS = 75 HP.
+    expect(powerDownAvailableFromVests(acct("200000.000000", "0.000000", "100000000000", "50000000000"), 500)).toBe(75);
+  });
+
+  it("is exact for a real-world rate", () => {
+    // 1000000 VESTS at 590.123456 HP per MVESTS is 590.123456 HP: cut to 590.123.
+    expect(powerDownAvailableFromVests(acct("1000000.000000", "0.000000"), 590.123456)).toBe(590.123);
+    expect(powerDownAvailableFromVests(acct("1694.915254", "0.000000"), 590)).toBe(0.999);
+  });
+
+  it("is 0 when everything is delegated or the rate is unknown", () => {
+    expect(powerDownAvailableFromVests(acct("100.000000", "200.000000"), 500)).toBe(0);
+    expect(powerDownAvailableFromVests(acct("100.000000", "0.000000"), 0)).toBe(0);
+    expect(powerDownAvailableFromVests(acct("100.000000", "0.000000"), Number.NaN)).toBe(0);
   });
 });

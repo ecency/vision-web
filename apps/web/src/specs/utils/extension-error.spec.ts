@@ -162,6 +162,11 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "All origin servers are unavailable" }],
     [{ error: { message: "connect ECONNREFUSED 1.2.3.4:443" } }],
     [{ message: "getaddrinfo ENOTFOUND api.example.com" }],
+    // A word like "gateway" in the node's own name is not a gateway answer.
+    [{ message: "getaddrinfo ENOTFOUND hive-gateway.example.com" }],
+    [{ message: "connect ECONNREFUSED https://upstream-node.example.com:8090/rpc" }],
+    [{ message: "getaddrinfo EAI_AGAIN upstream-node.example.com" }],
+    [{ message: "getaddrinfo ENOTFOUND node1:8091" }],
   ])("retries %o: nothing reached a node", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(true);
   });
@@ -190,6 +195,37 @@ describe("isUnsentBroadcastError", () => {
     [{ message: "Request failed with status code 504", error: "Unable to connect to upstream" }],
     [{ message: "Bad Gateway: could not connect to backend" }],
     [{ error: "ECONNREFUSED after timeout" }],
+    // The diagnostic itself reports a gateway error: still ambiguous.
+    [{ message: "502 Bad Gateway from api.example.com: could not connect" }],
+    [{ message: "Bad Gateway.Could not connect" }],
+    // Endpoint names are ignored only right after a DNS or refused-connection
+    // code: nothing else around them may be dropped with them.
+    [{ error: { cause: { url: "https://api.hive.blog", code: "ECONNRESET" } }, message: "Unable to connect to the node" }],
+    [{ error: { code: -32000, data: { url: "https://api.hive.blog", status: 504, name: "GatewayTimeout" } }, message: "Could not connect" }],
+    [{ error: { config: { url: "https://api.hive.blog/" }, code: "ETIMEDOUT", detail: "could not connect" } }],
+    [{ message: "Could not connect to https://api.hive.blog/:ETIMEDOUT" }],
+    [{ message: "Error: Could not connect. [https://api.hive.blog](ECONNRESET)" }],
+    [{ message: "Could not connect to node: requests.exceptions.ReadTimeout" }],
+    [{ message: "Unable to connect: java.net.SocketTimeoutException" }],
+    [{ message: "error.gateway.timeout could not connect" }],
+    [{ message: "gateway.go:88: could not connect to node" }],
+    [{ message: "unable to connect to upstream.rpc.internal:8090 (502)" }],
+    [{ message: "getaddrinfo ENOTFOUND https://api.hive.blog/:ETIMEDOUT" }],
+    [{ message: "connect ECONNREFUSED gateway.example.com:443/rpc;timeout" }],
+    // A word after the code is a diagnostic, not an endpoint.
+    [{ message: "broadcast failed: ECONNREFUSED ETIMEDOUT" }],
+    [{ message: "failed after 3 attempts: ECONNREFUSED ECONNRESET" }],
+    [{ message: "connect ECONNREFUSED timed out" }],
+    [{ message: "ECONNREFUSED status code 502" }],
+    [{ message: "ENOTFOUND socket hang up" }],
+    [{ message: "ECONNREFUSED timeout" }],
+    [{ message: "request failed: ECONNREFUSED timeout." }],
+    [{ message: "connect ECONNREFUSED upstream" }],
+    [{ message: "getaddrinfo ENOTFOUND api.hive.blog.Timeout" }],
+    [{ error: { errors: ["ECONNREFUSED ETIMEDOUT"] } }],
+    // A name that is itself a signal word is kept: no retry.
+    [{ message: "getaddrinfo ENOTFOUND backend:8091" }],
+    [{ message: "ECONNREFUSED http://x.example.com/504-gateway-timeout" }],
   ])("does NOT retry %o", (resp) => {
     expect(isUnsentBroadcastError(resp)).toBe(false);
   });

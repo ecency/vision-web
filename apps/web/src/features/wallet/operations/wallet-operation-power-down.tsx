@@ -1,5 +1,5 @@
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
-import { availableForPowerDown as availablePowerDown } from "./operation-amount";
+import { availableForPowerDown as availablePowerDown, powerDownAvailableFromVests } from "./operation-amount";
 import { getDynamicPropsQueryOptions, getAccountWalletAssetInfoQueryOptions } from "@ecency/sdk";
 import { Button } from "@/features/ui";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
@@ -66,8 +66,13 @@ export function WalletOperationPowerDown({ username, asset, onSubmit, showSubmit
   );
 
   const availableForPowerDown = useMemo(
-    () => availablePowerDown(hpBalance, outgoingDelegations, pendingPowerDown),
-    [hpBalance, outgoingDelegations, pendingPowerDown]
+    () =>
+      // The account's VESTS are exact; the wallet parts are only a stand-in
+      // until the account loads.
+      account && dynamicProps
+        ? powerDownAvailableFromVests(account, hivePerMVests)
+        : availablePowerDown(hpBalance, outgoingDelegations, pendingPowerDown),
+    [account, dynamicProps, hivePerMVests, hpBalance, outgoingDelegations, pendingPowerDown]
   );
 
   const maxAccountBalanceRef = useRef(availableForPowerDown);

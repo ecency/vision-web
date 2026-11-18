@@ -6,7 +6,7 @@ vi.unmock("@/utils/user-token");
 
 import * as ls from "@/utils/local-storage";
 import { encodeObj } from "@/utils/encoder";
-import { ensureValidTokenWithin } from "@/utils/user-token";
+import { ensureValidTokenWithin, getAccessToken } from "@/utils/user-token";
 
 // A renewal that never answers must not hold up the request that needs the
 // token: after the limit the helper returns the stored token as it is.
@@ -28,13 +28,45 @@ describe("ensureValidTokenWithin", () => {
     localStorage.clear();
   });
 
-  it("gives up after the limit when renewal stalls, with the stored token", async () => {
+  it("waits the whole limit for a stalled renewal, then gives the stored token", async () => {
     vi.useFakeTimers();
     storeExpired("alice");
-    renew.impl = () => new Promise(() => {});
-    const result = ensureValidTokenWithin("alice", 5000);
-    await vi.advanceTimersByTimeAsync(5000);
-    await expect(result).resolves.toBe("cached");
+    let answer: (v: unknown) => void = () => {};
+    renew.impl = () => new Promise((r) => (answer = r));
+    let settled: string | undefined | null = null;
+    void ensureValidTokenWithin("alice", 5000).then((t) => (settled = t));
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe("cached");
+
+    // The renewal finishes later and stores its token for the next call.
+    answer({ username: "alice", access_token: "fresh", refresh_token: "r2", expires_in: 604800 });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(ensureValidTokenWithin("alice", 5000)).resolves.toBe("fresh");
+  });
+
+  it("re-reads storage when a background renewal it joined fails", async () => {
+    storeExpired("dave");
+    let fail: (e: Error) => void = () => {};
+    renew.impl = () => new Promise((_, reject) => (fail = reject));
+    // A plain read starts a background renewal...
+    expect(getAccessToken("dave")).toBe("cached");
+    const result = ensureValidTokenWithin("dave", 5000);
+    // ...another tab stores a fresh token meanwhile, then the renewal fails.
+    ls.set(
+      "user_dave",
+      encodeObj({
+        username: "dave",
+        accessToken: "other-tab",
+        refreshToken: "refresh2",
+        expiresIn: 604800,
+        tokenObtainedAt: Date.now()
+      })
+    );
+    fail(new Error("down"));
+    await expect(result).resolves.toBe("other-tab");
   });
 
   it("returns the stored token when renewal fails, starting no second renewal", async () => {

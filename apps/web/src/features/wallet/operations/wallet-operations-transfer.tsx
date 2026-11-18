@@ -411,11 +411,11 @@ export function WalletOperationsTransfer({
           asset={asset}
           balance={displayBalance}
           username={username}
-          onBalanceClick={() =>
-            methods.setValue(
-              "amount",
-              +truncateAmount(displayBalance ?? 0, precision) || 0
-            )
+          onBalanceClick={
+            // Unknown precision: a fallback of 3 would cut an 8-decimal balance.
+            knownPrecision === null
+              ? undefined
+              : () => methods.setValue("amount", +truncateAmount(displayBalance ?? 0, knownPrecision) || 0)
           }
         />
         <WalletOperationCard
@@ -428,11 +428,11 @@ export function WalletOperationsTransfer({
             showSubmit &&
             ![AssetOperation.Unstake, AssetOperation.ClaimInterest].includes(operation)
           }
-          onBalanceClick={() =>
-            methods.setValue(
-              "amount",
-              +truncateAmount(recipientBalance ?? displayBalance ?? 0, precision) || 0
-            )
+          onBalanceClick={
+            // Unknown precision: a fallback of 3 would cut an 8-decimal balance.
+            knownPrecision === null
+              ? undefined
+              : () => methods.setValue("amount", +truncateAmount(recipientBalance ?? displayBalance ?? 0, knownPrecision) || 0)
           }
         />
       </div>
