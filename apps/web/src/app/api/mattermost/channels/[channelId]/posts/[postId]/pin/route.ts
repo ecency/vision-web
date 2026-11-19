@@ -5,6 +5,7 @@ import {
   handleMattermostError,
   mmUserFetch
 } from "@/server/mattermost";
+import { canPinInChannel } from "@/features/chat/utils/pin-permission";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ channelId: string; postId: string }> }) {
   const token = await getMattermostTokenFromCookies();
@@ -20,26 +21,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ channe
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
-    // Check permissions based on channel type
-    if (moderation.channel.type === "O") {
-      // Public/community channel - only moderators can pin
-      if (!moderation.canModerate) {
-        return NextResponse.json(
-          { error: "Only community moderators can pin messages in this channel." },
-          { status: 403 }
-        );
-      }
-    } else if (moderation.channel.type === "D" || moderation.channel.type === "G") {
-      // Direct message or group message - check membership
-      const member = await mmUserFetch(
-        `/channels/${encodeURIComponent(channelId)}/members/me`,
-        token
-      ).catch(() => null);
-
-      if (!member) {
-        return NextResponse.json({ error: "forbidden" }, { status: 403 });
-      }
-    }
+    const denied = await pinDenied(token, channelId, moderation, "pin");
+    if (denied) return denied;
 
     // Check 5-pin limit before pinning (server-side enforcement)
     const pinnedResponse = await mmUserFetch<{
@@ -79,26 +62,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ chan
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
 
-    // Check permissions based on channel type
-    if (moderation.channel.type === "O") {
-      // Public/community channel - only moderators can unpin
-      if (!moderation.canModerate) {
-        return NextResponse.json(
-          { error: "Only community moderators can unpin messages in this channel." },
-          { status: 403 }
-        );
-      }
-    } else if (moderation.channel.type === "D" || moderation.channel.type === "G") {
-      // Direct message or group message - check membership
-      const member = await mmUserFetch(
-        `/channels/${encodeURIComponent(channelId)}/members/me`,
-        token
-      ).catch(() => null);
-
-      if (!member) {
-        return NextResponse.json({ error: "forbidden" }, { status: 403 });
-      }
-    }
+    const denied = await pinDenied(token, channelId, moderation, "unpin");
+    if (denied) return denied;
 
     // Unpin the post via Mattermost API
     await mmUserFetch(`/posts/${encodeURIComponent(postId)}/unpin`, token, {
@@ -109,6 +74,28 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ chan
   } catch (error) {
     return handleMattermostError(error);
   }
+}
+
+// Community moderators, and the two people of a direct message; see
+// canPinInChannel. Membership is only looked up for a direct message, the one
+// case where it decides.
+async function pinDenied(
+  token: string,
+  channelId: string,
+  moderation: { channel: { type?: string }; canModerate: boolean },
+  verb: "pin" | "unpin"
+) {
+  const type = moderation.channel.type;
+  const isMember =
+    !moderation.canModerate && type === "D"
+      ? !!(await mmUserFetch(`/channels/${encodeURIComponent(channelId)}/members/me`, token).catch(() => null))
+      : false;
+  if (canPinInChannel({ type, isMember, canModerate: moderation.canModerate })) return null;
+  const error =
+    type === "O"
+      ? `Only community moderators can ${verb} messages in this channel.`
+      : `Only the people in a direct message can ${verb} messages here.`;
+  return NextResponse.json({ error }, { status: 403 });
 }
 
 // The checks above are for the channel in the URL, so they only cover its posts.

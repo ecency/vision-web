@@ -9,6 +9,7 @@ import {
   useMattermostUnpinPost
 } from "../mattermost-api";
 import { toMattermostEmojiName } from "../emoji-utils";
+import { canPinInChannel } from "@/features/chat/utils/pin-permission";
 
 interface UsePostActionsParams {
   channelId: string;
@@ -27,21 +28,15 @@ export function usePostActions({ channelId, channelData }: UsePostActionsParams)
   const pinPostMutation = useMattermostPinPost(channelId);
   const unpinPostMutation = useMattermostUnpinPost(channelId);
 
-  const canPin = useMemo(() => {
-    const channelType = channelData?.channel?.type;
-    const isModerator = channelData?.canModerate;
-    const isMember = !!channelData?.member;
-
-    if (channelType === "O") {
-      return isModerator || false;
-    }
-
-    if (channelType === "D" || channelType === "G" || channelType === "P") {
-      return isMember;
-    }
-
-    return false;
-  }, [channelData?.channel?.type, channelData?.canModerate, channelData?.member]);
+  const canPin = useMemo(
+    () =>
+      canPinInChannel({
+        type: channelData?.channel?.type,
+        isMember: !!channelData?.member,
+        canModerate: !!channelData?.canModerate
+      }),
+    [channelData?.channel?.type, channelData?.canModerate, channelData?.member]
+  );
 
   const handleDelete = useCallback(
     (post: MattermostPost) => {
