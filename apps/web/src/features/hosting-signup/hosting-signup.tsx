@@ -140,6 +140,9 @@ export function HostingSignup() {
   // could not cover the difference for a running term is kept as standard time, and that blog
   // cannot attach a domain, so domain setup is offered only when this is "pro".
   const [resultPlan, setResultPlan] = useState<"standard" | "pro" | null>(null);
+  // A blog on the custom-domain plan renews on that plan whatever is chosen while it has a domain or
+  // time left (#2137), so the add-on is switched on and locked for it.
+  const [domainPlanRenewal, setDomainPlanRenewal] = useState(false);
   const [method, setMethod] = useState<Method>("card");
   const [methods, setMethods] = useState<HostingPaymentMethods | null>(null);
   const [instructions, setInstructions] = useState<Instructions | null>(null);
@@ -431,6 +434,9 @@ export function HostingSignup() {
       }
       setIsFreshReservation(true);
       setRunningStandardTerm(false);
+      // Leaving a locked renewal for another blog: drop the add-on it switched on.
+      if (domainPlanRenewal) setCustomDomain(false);
+      setDomainPlanRenewal(false);
       setStep("payment");
     } catch (e) {
       const msg = (e as Error).message;
@@ -472,6 +478,14 @@ export function HostingSignup() {
       // checkActivation confirms on active status alone.
       renewBaselineExpiryRef.current =
         existing.subscriptionStatus === "active" ? (existing.subscriptionExpiresAt ?? null) : null;
+      // Same rule as the server (Pricing.renewalPlan): a blog on the custom-domain plan renews on it
+      // while it has a domain or time left.
+      const renewsOnDomainPlan =
+        existing.subscriptionPlan === "pro" &&
+        (!!existing.customDomain ||
+          (!!existing.subscriptionExpiresAt && new Date(existing.subscriptionExpiresAt).getTime() > Date.now()));
+      setDomainPlanRenewal(renewsOnDomainPlan);
+      if (renewsOnDomainPlan) setCustomDomain(true);
       setRunningStandardTerm(
         existing.subscriptionPlan !== "pro" &&
           !!existing.subscriptionExpiresAt &&
@@ -490,7 +504,8 @@ export function HostingSignup() {
     styleTemplate,
     accent,
     fontPreset,
-    activeUser
+    activeUser,
+    domainPlanRenewal
   ]);
 
   // Mint a one-time handoff CODE as soon as the success screen shows: the
@@ -599,9 +614,12 @@ export function HostingSignup() {
       setResumeName(null);
       setIsFreshReservation(true);
       setRunningStandardTerm(false);
+      // Leaving a locked renewal for another blog: drop the add-on it switched on.
+      if (domainPlanRenewal) setCustomDomain(false);
+      setDomainPlanRenewal(false);
       setStep("payment");
     }
-  }, [resumeName, step, tenantUsername, activeUser]);
+  }, [resumeName, step, tenantUsername, activeUser, domainPlanRenewal]);
 
   // Deep-link from an unclaimed *.blogs.ecency.com subdomain's claim landing: ?claim=<name>
   // prefills the form so the visitor arrives ready to reserve that exact name. A hive-<digits>
@@ -662,8 +680,10 @@ export function HostingSignup() {
     return t.subscriptionStatus === "active" && advanced;
   }, []);
 
+  // Read on every success step, not only when the add-on was chosen: a redirecting wallet reloads
+  // the page and loses that choice, while the blog's plan says whether domain setup applies.
   useEffect(() => {
-    if (step !== "success" || !customDomain) return;
+    if (step !== "success" || !tenantUsername) return;
     let cancelled = false;
     setResultPlan(null);
     hostingApi
@@ -672,13 +692,14 @@ export function HostingSignup() {
         if (!cancelled) setResultPlan(t.subscriptionPlan === "pro" ? "pro" : "standard");
       })
       .catch(() => {
-        // Unknown: offer the setup as before; attaching a domain checks the plan server side.
-        if (!cancelled) setResultPlan("pro");
+        // Unknown: offer nothing rather than a setup the blog may not have; the hosting page's
+        // manage panel offers it whenever the plan allows.
+        if (!cancelled) setResultPlan(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [step, customDomain, tenantUsername]);
+  }, [step, tenantUsername]);
 
   const checkActivation = useCallback(async () => {
     setError("");
@@ -1086,7 +1107,7 @@ export function HostingSignup() {
           {methods && canManageDomain && (
             <button
               onClick={() => setCustomDomain((v) => !v)}
-              disabled={payLocked}
+              disabled={payLocked || domainPlanRenewal}
               className={`text-left px-4 py-3 rounded-lg border ${
                 customDomain
                   ? "border-blue-dark-sky bg-blue-dark-sky/10"
@@ -1135,8 +1156,12 @@ export function HostingSignup() {
             </button>
           </div>
 
-          {customDomain && (
+          {customDomain && !domainPlanRenewal && (
             <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-included-note")}</p>
+          )}
+
+          {domainPlanRenewal && (
+            <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-plan-renewal")}</p>
           )}
 
           {customDomain && runningStandardTerm && cardEnabled && (
@@ -1311,8 +1336,7 @@ export function HostingSignup() {
               community the tenant is the community id while the logged-in owner authorizes.
               Compare the normalized tenantUsername (not the raw field) so "Alice"/"alice "
               still shows the manager for tenant "alice". */}
-          {customDomain &&
-            resultPlan === "pro" &&
+          {resultPlan === "pro" &&
             activeUser &&
             (isCommunity || tenantUsername === activeUser.username) && (
               <CustomDomainManager

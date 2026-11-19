@@ -65,11 +65,11 @@ const Pricing = await import('./pricing');
 const months = (n: number) => new Date(Date.now() + n * 30.5 * 24 * 3600 * 1000).toISOString();
 const transfer = { trxId: 'tx1', blockNum: 1, from: 'alice', memo: 'blog:alice:domain' };
 
-function pay(amount: number, credited: number, requested = 1) {
+function pay(amount: number, credited: number, requested = 1, domainMemo = true) {
   const listener = new PaymentListener() as unknown as {
     processSubscription: (t: unknown, u: string, m: number, a: number, pro: boolean, min: number) => Promise<void>;
   };
-  return listener.processSubscription(transfer, 'alice', credited, amount, true, requested);
+  return listener.processSubscription(transfer, 'alice', credited, amount, domainMemo, requested);
 }
 const planUpdate = () => calls.find((c) => /UPDATE tenants/.test(c.sql));
 // What the upgrade quote asks for the months left on this term.
@@ -182,5 +182,64 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     tenantRow!.subscription_expires_at = new Date(Date.now() - 86400000).toISOString();
     await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1);
     expect(planUpdate()?.params[3]).toBe('pro');
+  });
+});
+
+describe('a plain renewal of a blog on the custom-domain plan (#2137)', () => {
+  const STD = Pricing.MONTHLY_PRICE_HBD;
+  const PRO = Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+  beforeEach(() => {
+    calls.length = 0;
+    logged.length = 0;
+    createdConcurrently = undefined;
+    tenantRow = {
+      id: 't1',
+      username: 'alice',
+      owner: 'alice',
+      subscription_status: 'active',
+      subscription_plan: 'pro',
+      custom_domain: 'blog.alice.example',
+      subscription_started_at: new Date().toISOString(),
+      subscription_expires_at: months(2),
+    };
+  });
+  const update = () => calls.find((c) => /UPDATE tenants/.test(c.sql));
+  const creditedMonths = () => calls.find((c) => /status = 'processed'/.test(c.sql))?.params[3];
+
+  it('with its domain, is priced at the custom-domain rate: the standard amount buys the time it pays for', async () => {
+    const from = new Date(String(tenantRow!.subscription_expires_at));
+    await pay(STD, Math.floor(STD / STD), 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(0);
+    expect((update()?.params[2] as Date).getTime() - from.getTime()).toBe(Pricing.hbdAsTimeMs(STD, PRO));
+  });
+
+  it('with its domain, a full custom-domain month is one month', async () => {
+    await pay(PRO, Math.floor(PRO / STD), 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('without a domain but with time left, stays on the plan: a gift cannot take away paid time', async () => {
+    tenantRow!.custom_domain = null;
+    await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1, 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('without a domain and with no time left, renews as standard and goes back to standard', async () => {
+    tenantRow!.custom_domain = null;
+    tenantRow!.subscription_status = 'expired';
+    tenantRow!.subscription_expires_at = new Date(Date.now() - 86400000).toISOString();
+    await pay(STD, 1, 1, false);
+    expect(update()?.params[3]).toBe('standard');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('a standard blog renewing plainly keeps its plan untouched', async () => {
+    tenantRow!.subscription_plan = 'standard';
+    tenantRow!.custom_domain = null;
+    await pay(STD, 1, 1, false);
+    expect(update()?.params[3]).toBeNull();
   });
 });

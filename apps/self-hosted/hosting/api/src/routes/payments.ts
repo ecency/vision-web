@@ -16,6 +16,7 @@ import {
   remainingMonths,
   customDomainUpgradeHbd,
   hbd,
+  renewalPlan,
 } from '../pricing';
 
 export const paymentRoutes = new Hono();
@@ -94,14 +95,28 @@ paymentRoutes.get('/instructions/:username', async (c) => {
   const domain = c.req.query('domain') === '1' || c.req.query('domain') === 'true';
 
   const paymentAccount = PAYMENT_ACCOUNT;
-  const monthlyPrice = domain ? CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : MONTHLY_PRICE_HBD;
+  const tenant = await TenantService.getByUsername(username);
+  // Plan-aware renewal (#2137): a blog on the custom-domain plan renews at that rate even without
+  // the add-on while it has a domain or time left, as the payment listener will charge it.
+  const pricedAsDomain =
+    renewalPlan(
+      tenant
+        ? {
+            plan: tenant.subscriptionPlan,
+            customDomain: tenant.customDomain ?? null,
+            expiresAt: tenant.subscriptionExpiresAt ? new Date(tenant.subscriptionExpiresAt) : null,
+          }
+        : null,
+      domain,
+      new Date()
+    ) === 'pro';
+  const monthlyPrice = pricedAsDomain ? CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : MONTHLY_PRICE_HBD;
   // The add-on on a standard blog with time left moves that whole term to the custom-domain
   // plan, so the quote carries the prorated premium for it: the amount the payment listener
   // requires before it credits new months. Remaining months only shrink, so a payment made
   // against this quote is never short when it lands.
   let upgradePremium = 0;
   if (domain) {
-    const tenant = await TenantService.getByUsername(username);
     // Any standard blog with time left, a suspended one included (the listener charges it too).
     if (tenant && tenant.subscriptionPlan !== 'pro') {
       upgradePremium = customDomainUpgradeHbd(
@@ -121,7 +136,7 @@ paymentRoutes.get('/instructions/:username', async (c) => {
     monthlyPrice: hbd(monthlyPrice) + ' HBD',
     months,
     totalAmount: totalAmount + ' HBD',
-    customDomain: domain,
+    customDomain: pricedAsDomain,
     upgradePremium: hbd(upgradePremium) + ' HBD',
     instructions: [
       `Send ${totalAmount} HBD to @${paymentAccount}`,

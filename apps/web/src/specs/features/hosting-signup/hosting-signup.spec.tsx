@@ -439,6 +439,66 @@ describe("HostingSignup one-click HBD pay", () => {
     expect(sessionStorage.getItem("ecency:hosting:pending-hbd")).toBeNull();
   });
 
+  it("after returning from a redirecting wallet, offers domain setup when the blog is on the custom-domain plan", async () => {
+    // The add-on choice does not survive the redirect; the blog's plan decides.
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    sessionStorage.setItem(
+      "ecency:hosting:pending-hbd",
+      JSON.stringify({ tenant: "alice", blogUrl: "https://alice.blogs.ecency.com", baseline: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    await screen.findByText("hosting.success-title");
+    expect(await screen.findByText("custom-domain-manager")).toBeTruthy();
+  });
+
+  it("does not offer domain setup when the plan cannot be read", async () => {
+    hostingApi.tenant.mockResolvedValueOnce({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "standard",
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    hostingApi.tenant.mockRejectedValue(new Error("network"));
+    sessionStorage.setItem(
+      "ecency:hosting:pending-hbd",
+      JSON.stringify({ tenant: "alice", blogUrl: "https://alice.blogs.ecency.com", baseline: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    await screen.findByText("hosting.success-title");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("custom-domain-manager")).toBeNull();
+  });
+
+  it("renews a blog that has a custom domain on the custom-domain plan, add-on locked on", async () => {
+    // #2137: such a blog renews at the custom-domain rate whatever is chosen, so the page
+    // shows that price and says how to go back to standard.
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      customDomain: "blog.alice.example",
+      subscriptionExpiresAt: new Date(Date.now() + 40 * 86400000).toISOString()
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    expect(await screen.findByText("hosting.custom-domain-plan-renewal")).toBeTruthy();
+    // The domain is already set: no "add and verify it after checkout" line.
+    expect(screen.queryByText("hosting.custom-domain-included-note")).toBeNull();
+    const toggle = screen.getByText("hosting.custom-domain-option").closest("button") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    await waitFor(() => expect(hostingApi.paymentInstructions).toHaveBeenCalledWith("alice", 1, true));
+  });
+
   it("locks the one-click button after a broadcast whose activation times out (no duplicate send)", async () => {
     hostingApi.tenant.mockResolvedValue({
       username: "alice",

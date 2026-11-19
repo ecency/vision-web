@@ -68,6 +68,8 @@ export interface TenantInfo {
   subscriptionPlan?: "standard" | "pro";
   subscriptionExpiresAt?: string | null;
   blogUrl?: string;
+  customDomain?: string | null;
+  customDomainVerified?: boolean;
 }
 
 export interface OwnedTenant {

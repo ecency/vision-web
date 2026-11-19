@@ -99,6 +99,25 @@ export function creditCustomDomainPayment(
   };
 }
 
+/**
+ * The plan a payment renews a blog on (#2137): the custom-domain plan when the payment asks for the
+ * add-on, or when the blog is already on that plan and still has a custom domain set or time left,
+ * whatever the memo or card product; the standard plan otherwise. So a blog on the custom-domain
+ * plan goes back to standard only once its term has ended with no domain: removing the domain and
+ * letting the term end is the way down, and no payment (renewals can come from anyone) can take
+ * away custom-domain time already paid for.
+ */
+export function renewalPlan(
+  tenant: { plan: string; customDomain: string | null; expiresAt: Date | null } | null,
+  askedForDomain: boolean,
+  now: Date
+): 'pro' | 'standard' {
+  if (askedForDomain) return 'pro';
+  if (tenant?.plan !== 'pro') return 'standard';
+  const timeLeft = !!tenant.expiresAt && tenant.expiresAt.getTime() > now.getTime();
+  return tenant.customDomain || timeLeft ? 'pro' : 'standard';
+}
+
 /** The time an amount buys at a monthly price, in milliseconds (average-length months). */
 export function hbdAsTimeMs(paid: number, monthlyPrice: number): number {
   const priceMillis = Math.round(monthlyPrice * 1000);

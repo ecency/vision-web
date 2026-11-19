@@ -71,3 +71,31 @@ describe('GET /instructions with the custom-domain add-on', () => {
     expect(hbdOf(q.amount)).toBeCloseTo(Pricing.MONTHLY_PRICE_HBD, 3);
   });
 });
+
+describe('GET /instructions for a plain renewal (#2137)', () => {
+  beforeEach(() => mocks.getByUsername.mockReset());
+
+  it('quotes the custom-domain rate for a blog on that plan that still has its domain', async () => {
+    mocks.getByUsername.mockResolvedValue({
+      username: 'alice',
+      subscriptionPlan: 'pro',
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: IN_A_YEAR,
+      customDomain: 'blog.alice.example',
+    });
+    const q = await quote('months=2');
+    expect(hbdOf(q.amount)).toBeCloseTo(2 * Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 3);
+  });
+
+  it('quotes the standard rate for a blog on that plan with no domain and no time left', async () => {
+    mocks.getByUsername.mockResolvedValue({
+      username: 'alice',
+      subscriptionPlan: 'pro',
+      subscriptionStatus: 'expired',
+      subscriptionExpiresAt: new Date(Date.now() - 86400000),
+      customDomain: null,
+    });
+    const q = await quote('months=2');
+    expect(hbdOf(q.amount)).toBeCloseTo(2 * Pricing.MONTHLY_PRICE_HBD, 3);
+  });
+});

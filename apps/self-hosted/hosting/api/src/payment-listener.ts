@@ -327,7 +327,7 @@ export class PaymentListener {
     amount: number,
     // A ':domain' memo activates on the custom-domain ('pro') tier. Set the plan on activation so a
     // one-step blog:name:months:domain payment both creates/extends the blog AND unlocks custom
-    // domains. A standard memo passes false and never downgrades an existing pro tenant.
+    // domains. A standard memo passes false; Pricing.renewalPlan then decides the plan (#2137).
     pro: boolean = false
   ) {
     console.log('[PaymentListener] Processing subscription:', username, 'for', requestedMonths, 'months');
@@ -428,6 +428,22 @@ export class PaymentListener {
         // or activated by another request since the first lookup carries the premium too.
         let keptAsStandardTimeMs: number | undefined;
         let extraMs = 0;
+        // Plan-aware renewal (#2137): a plain memo for a blog on the custom-domain plan is priced as a
+        // custom-domain payment while it has a domain or time left; with neither it goes back to
+        // standard (see Pricing.renewalPlan).
+        const renewsOn = Pricing.renewalPlan(
+          row
+            ? {
+                plan: row.subscription_plan,
+                customDomain: row.custom_domain ?? null,
+                expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+              }
+            : null,
+          pro,
+          new Date()
+        );
+        const downgrade = renewsOn === 'standard' && row?.subscription_plan === 'pro';
+        if (renewsOn === 'pro') pro = true;
         if (pro && row) {
           const credit = Pricing.creditCustomDomainPayment(
             amount,
@@ -468,9 +484,10 @@ export class PaymentListener {
                updated_at = NOW()
            WHERE id = $1
            RETURNING *`,
-          // COALESCE: a ':domain' payment upgrades to 'pro'; a standard payment ($4 = null) keeps
-          // the current plan, so a plain renewal never downgrades a pro tenant to standard.
-          [row.id, startedAt, newExpiry, pro ? 'pro' : null]
+          // COALESCE: a custom-domain payment sets 'pro'; a plain renewal of a 'pro' blog with no
+          // domain and no time left sets 'standard' (#2137); any other standard payment ($4 = null)
+          // keeps the plan.
+          [row.id, startedAt, newExpiry, pro ? 'pro' : downgrade ? 'standard' : null]
         );
 
         // 5. Mark the payment processed in the SAME transaction.
