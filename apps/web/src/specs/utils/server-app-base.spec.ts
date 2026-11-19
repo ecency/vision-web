@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The base URL written into canonical links, feeds and share metadata comes
-// from the request only when the host is one of the site's own. Any other
-// Host or X-Forwarded-Host value falls back to the configured base.
+// from the request's Host only when it is one of the site's own web hosts.
+// X-Forwarded-Host is never read, and any other host falls back to the
+// configured base.
 
 const h = vi.hoisted(() => ({ headers: {} as Record<string, string> }));
 vi.mock("next/headers", () => ({
@@ -26,7 +27,7 @@ afterEach(() => {
 describe("getServerAppBase", () => {
   it.each([
     [{ host: "ecency.com" }, "https://ecency.com"],
-    [{ "x-forwarded-host": "alpha.ecency.com", "x-forwarded-proto": "https" }, "https://alpha.ecency.com"],
+    [{ host: "alpha.ecency.com", "x-forwarded-proto": "https" }, "https://alpha.ecency.com"],
     [{ host: "ECENCY.com:9999" }, "https://ecency.com"]
   ])("uses the site's own host %j", async (headers, base) => {
     h.headers = headers;
@@ -38,6 +39,11 @@ describe("getServerAppBase", () => {
     { host: "example.org" },
     { host: "ecency.com.example.org" },
     { host: "evil-ecency.com" },
+    // Another app on a subdomain (a hosted blog) is not this site.
+    { host: "alice.blogs.ecency.com" },
+    { host: "ecency.com", "x-forwarded-host": "alice.blogs.ecency.com" },
+    // The forwarded host is set by whoever sends the request: never used.
+    { host: "ecency.com", "x-forwarded-host": "alpha.ecency.com" },
     { host: "ecency.com", "x-forwarded-proto": "javascript" }
   ])("falls back to the configured base for %j", async (headers) => {
     h.headers = headers;
