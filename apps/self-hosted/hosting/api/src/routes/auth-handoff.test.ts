@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   challengeStore: { set: vi.fn(), get: vi.fn(), delete: vi.fn() },
   auditLog: vi.fn(),
   fetch: vi.fn(),
+  getByOwner: vi.fn(),
 }));
 
 vi.mock('../utils/redis', () => ({
@@ -21,7 +22,9 @@ vi.mock('@ecency/sdk/hive', () => ({
   callRPC: vi.fn(),
   config: {},
 }));
-vi.mock('../services/tenant-service', () => ({ TenantService: {} }));
+vi.mock('../services/tenant-service', () => ({
+  TenantService: { getByOwner: (...args: unknown[]) => mocks.getByOwner(...args) },
+}));
 vi.mock('../services/audit-service', () => ({
   AuditService: { log: (...args: unknown[]) => mocks.auditLog(...args) },
   parseClientIp: () => '203.0.113.9',
@@ -62,6 +65,10 @@ describe('handoff mint and exchange', () => {
     mocks.fetch.mockResolvedValue(ME_OK);
     mocks.handoffSet.mockResolvedValue(undefined);
     mocks.handoffCountMint.mockResolvedValue(1);
+    // alice owns one blog, which signs in through its own HiveSigner app.
+    mocks.getByOwner.mockResolvedValue([
+      { username: 'alice', config: { configuration: { general: { hivesigner: { clientId: 'alice.blog' } } } } },
+    ]);
   });
 
   it('mints a one-time code for the account the token belongs to', async () => {
@@ -106,6 +113,27 @@ describe('handoff mint and exchange', () => {
   it("accepts an access token from a blog's own HiveSigner app", async () => {
     const response = await post('/handoff', { accessToken: hsToken('alice', 'alice.blog') });
     expect(response.status).toBe(200);
+  });
+
+  it.each(['/handoff', '/hivesigner'])(
+    '%s refuses a token from any other HiveSigner app, without asking HiveSigner',
+    async (path) => {
+      const response = await post(path, { accessToken: hsToken('alice', 'someotherapp') });
+      expect(response.status).toBe(401);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses another owner's blog app for this account", async () => {
+    mocks.getByOwner.mockResolvedValue([]);
+    const response = await post('/hivesigner', { accessToken: hsToken('alice', 'alice.blog') });
+    expect(response.status).toBe(401);
+  });
+
+  it('signs in with the shared app without a tenant lookup', async () => {
+    const response = await post('/hivesigner', { accessToken: ALICE_TOKEN });
+    expect(response.status).toBe(200);
+    expect(mocks.getByOwner).not.toHaveBeenCalled();
   });
 
   it('refuses a token whose author is not the account HiveSigner names', async () => {
