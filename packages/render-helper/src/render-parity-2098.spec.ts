@@ -74,24 +74,31 @@ describe('fenced code inside list items, app render', () => {
   })
 
   it('stays linear on a long line of list markers', () => {
-    // A backtracking pattern hung here. Growth, not wall-clock time: four
-    // times the markers costs about four times as long on a linear scan.
+    // A backtracking pattern hung here. Growth, not wall-clock time: eight
+    // times the markers costs about eight times as long on a linear scan and
+    // about 64 times on a quadratic one.
     let run = 0
-    // Best of three, each a fresh body (the render caches): one GC pause must
+    // Best of five, each a fresh body (the render caches): one GC pause must
     // not decide the ratio.
     const time = (markers: number) => {
       let best = Infinity
-      for (let k = 0; k < 3; k++) {
+      for (let k = 0; k < 5; k++) {
         const body = '- '.repeat(markers) + `~~~\n&amp; ${run++}\n`
         const started = performance.now()
         render(body, true)
         best = Math.min(best, performance.now() - started)
       }
-      return Math.max(best, 1)
+      return best
     }
-    time(500)
-    expect(time(20000) / time(5000)).toBeLessThan(10)
-  })
+    // The base size doubles until a render takes milliseconds, so the ratio
+    // measures real work rather than timer noise (a 1.5 ms base once read
+    // 10.2x on a shared CI runner while a linear scan reads about 3x here).
+    let markers = 5000
+    while (time(markers) < 5 && markers < 320_000) markers *= 2
+    // Same limit as the other growth specs: between a noisy linear run and
+    // quadratic.
+    expect(time(8 * markers) / time(markers)).toBeLessThan(40)
+  }, 60_000)
 })
 
 describe('an escaped ampersand before an entity in a non-http destination', () => {

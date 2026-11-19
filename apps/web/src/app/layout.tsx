@@ -8,7 +8,8 @@ import { BannerManager } from "@/features/banners";
 import { ServiceWorkerRecovery } from "@/features/pwa-install";
 import React from "react";
 import Script from "next/script";
-import { Inter, Lora } from "next/font/google";
+import { interFamily, loraFamily } from "@/fonts/site";
+import type { CSSProperties } from "react";
 import { Metadata, Viewport } from "next";
 import defaults from "@/defaults.json";
 import { JsonLd, buildOrganizationJsonLd } from "@/features/structured-data";
@@ -65,30 +66,13 @@ export const viewport: Viewport = {
 };
 
 /*
-  Only Inter's latin subset is preloaded. The generated @font-face rules keep
-  every subset via unicode-range, so cyrillic text still upgrades to the
-  webfont after a fallback-first paint. The four preloaded woff2 (~126 KB,
-  priority High) were racing the last render-blocking stylesheet on the same
-  connection and delaying first paint (#1600).
+  Inter and Lora ship with the repo (src/fonts, #2136). Only their latin
+  subsets are preloaded: the other subsets load by unicode-range when a page
+  uses them. Inter's four extra preloads were racing the last render-blocking
+  stylesheet and delaying first paint (#1600). Lora's latin IS preloaded:
+  without it the swap repainted text-heavy posts seconds late (#1670).
 */
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap"
-});
-
-/* Lora IS preloaded (latin), deliberately: without the preload its file is
-   only discovered from CSS after the first layout (measured start 1.5-3.3s),
-   and the swap then repaints the whole article seconds after it looked done
-   on text-heavy posts (#1670). One ~37 KB file in the preload wave costs
-   ~60 ms of transfer contention; the late repaint cost 1.5-2.7 s of visual
-   settle plus a layout shift. */
-const lora = Lora({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-lora",
-  display: "swap"
-});
+const fontVariables = { "--font-inter": interFamily, "--font-lora": loraFamily } as CSSProperties;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The theme cookie used to be read here, which kept every route request-time
@@ -117,7 +101,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${lora.variable} ${inter.variable}`}
+      style={fontVariables}
     >
       <head>
         {/*
