@@ -9,6 +9,7 @@ import { renderWithQueryClient } from "@/specs/test-utils";
 
 // Hoisted so the vi.mock factories (which run before top-level consts initialize) can reference them.
 const mocks = vi.hoisted(() => ({
+  activeUser: { username: "alice" } as { username: string } | null,
   mutateAsync: vi.fn(),
   authLoginType: "keychain" as string,
   accessToken: undefined as string | undefined,
@@ -37,7 +38,7 @@ vi.mock("@/features/hosting-signup/hosting-api", async () => {
 });
 
 vi.mock("@/core/hooks/use-active-account", () => ({
-  useActiveAccount: () => ({ activeUser: { username: "alice" } })
+  useActiveAccount: () => ({ activeUser: mocks.activeUser })
 }));
 
 // getLoginType drives whether the in-page one-click button is offered: Keychain-family extensions
@@ -52,7 +53,12 @@ vi.mock("@/core/global-store", () => ({
   useGlobalStore: (selector: (s: any) => unknown) => selector({ toggleUiProp: vi.fn() })
 }));
 vi.mock("@/features/hosting-signup/custom-domain-manager", () => ({
-  CustomDomainManager: () => <div>custom-domain-manager</div>
+  CustomDomainManager: ({ tenant }: { tenant?: string }) => (
+    <div>
+      <div>custom-domain-manager</div>
+      <div>{`manager-target:${tenant ?? "own"}`}</div>
+    </div>
+  )
 }));
 
 import { HostingSignup } from "@/features/hosting-signup/hosting-signup";
@@ -63,6 +69,7 @@ const INSTRUCTIONS = { to: "ecency.hosting", amount: "2.000 HBD", memo: "blog:al
 describe("HostingSignup one-click HBD pay", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.activeUser = { username: "alice" };
     sessionStorage.clear();
     localStorage.clear();
     window.history.replaceState(null, "", "/"); // clear any ?resume= from a prior test
@@ -457,6 +464,106 @@ describe("HostingSignup one-click HBD pay", () => {
     expect(await screen.findByText("custom-domain-manager")).toBeTruthy();
   });
 
+  it("keeps the locked add-on on when the owner logs out and back in on the page", async () => {
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      customDomain: "blog.alice.example",
+      subscriptionExpiresAt: new Date(Date.now() + 40 * 86400000).toISOString()
+    });
+    const view = renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findByText("hosting.custom-domain-plan-renewal");
+    mocks.activeUser = null;
+    view.rerender(<HostingSignup />);
+    mocks.activeUser = { username: "alice" };
+    view.rerender(<HostingSignup />);
+    // Back as the owner: the add-on is on again, so the card product and price are the plan's.
+    expect(await screen.findByText("hosting.custom-domain-added")).toBeTruthy();
+  });
+
+  it("after a redirect for a community payment, reads and sets up the community that was paid for", async () => {
+    hostingApi.tenant.mockImplementation(async (name: string) =>
+      name === "hive-123456"
+        ? { username: "hive-123456", owner: "alice", subscriptionStatus: "active", subscriptionPlan: "pro", subscriptionExpiresAt: "2026-08-16T00:00:00.000Z" }
+        : { username: name, owner: name, subscriptionStatus: "active", subscriptionPlan: "standard", subscriptionExpiresAt: "2026-08-16T00:00:00.000Z" }
+    );
+    sessionStorage.setItem(
+      "ecency:hosting:pending-hbd",
+      JSON.stringify({ tenant: "hive-123456", blogUrl: "https://hive-123456.blogs.ecency.com", baseline: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    await screen.findByText("hosting.success-title");
+    // The community's plan decides, not the owner's personal blog the form still names.
+    expect(await screen.findByText("manager-target:hive-123456")).toBeTruthy();
+    expect(hostingApi.tenant).toHaveBeenCalledWith("hive-123456");
+  });
+
+  it("after a redirect for a gift to someone else's blog, offers no domain setup", async () => {
+    hostingApi.tenant.mockResolvedValue({
+      username: "bob",
+      owner: "bob",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    sessionStorage.setItem(
+      "ecency:hosting:pending-hbd",
+      JSON.stringify({ tenant: "bob", blogUrl: "https://bob.blogs.ecency.com", baseline: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    await screen.findByText("hosting.success-title");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("custom-domain-manager")).toBeNull();
+  });
+
+  it("lifts a lock held only by time left once that time has passed", async () => {
+    // No domain: the blog is on the plan only while its term runs; past expiry it renews as standard.
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      customDomain: null,
+      subscriptionExpiresAt: new Date(Date.now() + 1500).toISOString()
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findByText("hosting.custom-domain-plan-renewal");
+    await waitFor(() => expect(screen.queryByText("hosting.custom-domain-plan-renewal")).toBeNull(), { timeout: 4000 });
+    const toggle = screen.getByText("hosting.custom-domain-option").closest("button") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(false);
+  });
+
+  it("does not lift the lock while a payment is in flight", async () => {
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "pro",
+      customDomain: null,
+      subscriptionExpiresAt: new Date(Date.now() + 1500).toISOString()
+    });
+    mutateAsync.mockImplementation(() => new Promise(() => {})); // the broadcast never settles
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findByText("hosting.custom-domain-plan-renewal");
+    const payBtn = (await screen.findByRole("button", { name: "hosting.pay-hbd-oneclick" })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await new Promise((r) => setTimeout(r, 2500));
+    // Past expiry, but the payment is still out: the add-on and its note stay as paid for.
+    expect(screen.getByText("hosting.custom-domain-plan-renewal")).toBeTruthy();
+  });
+
   it("does not offer domain setup when the plan cannot be read", async () => {
     hostingApi.tenant.mockResolvedValueOnce({
       username: "alice",
@@ -540,6 +647,7 @@ describe("HostingSignup one-click HBD pay", () => {
 describe("HostingSignup customize step", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.activeUser = { username: "alice" };
     sessionStorage.clear();
     localStorage.clear();
     window.history.replaceState(null, "", "/");
@@ -645,6 +753,7 @@ describe("HostingSignup customize step", () => {
 describe("HostingSignup customize step: coverage the mutation review demanded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.activeUser = { username: "alice" };
     sessionStorage.clear();
     localStorage.clear();
     window.history.replaceState(null, "", "/");
@@ -794,6 +903,7 @@ describe("HostingSignup customize step: coverage the mutation review demanded", 
 describe("HostingSignup reservation grace notice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.activeUser = { username: "alice" };
     sessionStorage.clear();
     localStorage.clear();
     window.history.replaceState(null, "", "/");
@@ -840,6 +950,7 @@ describe("HostingSignup reservation grace notice", () => {
 describe("HostingSignup reservation grace notice: renewals stay silent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.activeUser = { username: "alice" };
     sessionStorage.clear();
     localStorage.clear();
     window.history.replaceState(null, "", "/");

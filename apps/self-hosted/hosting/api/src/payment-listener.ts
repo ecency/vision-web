@@ -56,6 +56,9 @@ export function parseAbandonedGraceDays(raw: string | undefined): number {
 // every pending claim on the next sweep, including one made minutes ago.
 export const DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS = 14;
 
+// Blogs that have been served at some point; only these take payments below one whole month.
+const RUN_STATUSES = new Set(['active', 'expired', 'suspended']);
+
 // Configuration. Payment amounts come from the shared pricing module so the listener validates
 // against exactly what every quoting route tells the user to pay.
 const CONFIG = {
@@ -275,6 +278,19 @@ export class PaymentListener {
       const priceMillis = Math.round(monthlyPrice * 1000);
       const monthsFromAmount = priceMillis > 0 ? Math.floor(amountMillis / priceMillis) : 0;
 
+      // An existing blog is never refused for a short or uneven payment: what it pays for is
+      // credited as time at the rate of the plan it renews on (#2137). Only a brand-new blog needs
+      // at least one whole month.
+      const shortOrUneven = monthsFromAmount < 1 || parsed.months > monthsFromAmount;
+      const existingBlog =
+        shortOrUneven && amountMillis > 0 ? await TenantService.getByUsername(parsed.username) : null;
+      // Only a blog that has run (active, expired or suspended) takes part-payments: a reservation
+      // or an abandoned name still needs a whole month, so a dust transfer cannot pin it.
+      if (existingBlog && RUN_STATUSES.has(existingBlog.subscriptionStatus)) {
+        await this.processSubscription(transfer, parsed.username, monthsFromAmount, amount, parsed.customDomain);
+        return;
+      }
+
       if (monthsFromAmount < 1) {
         console.log('[PaymentListener] Insufficient amount:', amount, 'HBD for', parsed.username);
         await this.logPayment(transfer, amount, 'failed', 0, null, 'Insufficient amount for subscription');
@@ -360,6 +376,12 @@ export class PaymentListener {
         let row = (
           await client.query(`SELECT * FROM tenants WHERE username = $1 FOR UPDATE`, [username])
         ).rows[0];
+
+        // A part-payment (less than one whole month) is checked again on the locked row: the blog
+        // may have been released or never run, and then a whole month is required.
+        if (requestedMonths < 1 && (!row || !RUN_STATUSES.has(row.subscription_status))) {
+          throw Object.assign(new Error('Insufficient amount for subscription'), { permanent: true });
+        }
 
         // 2. Claim the transfer (dedup via unique trx_id).
         const insertResult = await client.query(
@@ -458,6 +480,13 @@ export class PaymentListener {
           months = credit.months;
           keptAsStandardTimeMs = credit.timeMs;
           extraMs = credit.extraMs ?? 0;
+        } else {
+          // Standard: what is left after the whole months is added as time at the standard rate,
+          // so an uneven payment (or one quoted at the custom-domain rate for a term that ended
+          // before it landed) is never partly kept.
+          const leftMillis =
+            Math.round(amount * 1000) - months * Math.round(CONFIG.MONTHLY_PRICE_HBD * 1000);
+          if (leftMillis > 0) extraMs = Pricing.hbdAsTimeMs(leftMillis / 1000, CONFIG.MONTHLY_PRICE_HBD);
         }
 
         // 4. Extend from the later of now / current expiry (same rule as activateSubscription).
