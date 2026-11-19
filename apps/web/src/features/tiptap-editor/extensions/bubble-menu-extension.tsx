@@ -46,6 +46,7 @@ export function BubbleMenu({ editor }: Props) {
 
   const hideAll = useCallback(() => {
     isEditingLinkRef.current = false;
+    selectionRectRef.current.rect = null;
     setShow(false);
     setMode(undefined);
     setLinkHref(undefined);
@@ -118,7 +119,6 @@ export function BubbleMenu({ editor }: Props) {
       // The anchor still reads this editor; don't leave the menu on a swapped
       // or destroyed one.
       hideAll();
-      selectionRectRef.current.rect = null;
     };
   }, [editor, refs, hideAll, anchorToSelection]);
 

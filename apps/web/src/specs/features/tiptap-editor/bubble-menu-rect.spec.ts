@@ -117,4 +117,29 @@ describe("bubble menu selection reference (#2140)", () => {
 
     expect(measured).toEqual([10, 10]);
   });
+
+  it("does not throw after the editor is destroyed", () => {
+    const editor = makeEditor();
+    editor.commands.setTextSelection(34);
+    const memory: SelectionRectMemory = { rect: null };
+    const ref = createSelectionReference(editor, memory);
+    const good = ref.getBoundingClientRect();
+    editor.destroy();
+
+    expect(() => ref.getBoundingClientRect()).not.toThrow();
+    expect(ref.getBoundingClientRect()).toBe(good);
+  });
+
+  it("does not keep an all-zero rect from a detached node as the last good one", () => {
+    const editor = makeEditor();
+    editor.commands.setTextSelection(34);
+    const memory: SelectionRectMemory = { rect: null };
+    const zero = { x: 0, y: 0, top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+    editor.view.coordsAtPos = () => zero;
+
+    const rect = createSelectionReference(editor, memory).getBoundingClientRect();
+
+    expect(memory.rect).toBeNull();
+    expect([rect.x, rect.y, rect.width, rect.height]).toEqual([100, 200, 300, 40]);
+  });
 });
