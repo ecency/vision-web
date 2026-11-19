@@ -16,6 +16,10 @@ per subset with that subset's `unicode-range`; `stack.ts` joins them into one
 font stack, latin first and the size-adjusted fallback last (see its comment
 for why the order is the reverse of Google's CSS).
 
+Each family folder holds its upstream `OFL.txt` (copyright notice and the full
+license text, from `github.com/google/fonts/ofl/<family>`); keep it next to the
+files whenever they are updated.
+
 To update a family: fetch
 `https://fonts.googleapis.com/css2?family=<Family>:wght@<weights>&display=swap`
 with a current Chrome user agent, save each subset's woff2 as

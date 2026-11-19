@@ -47,6 +47,18 @@ describe("self-hosted fonts (#2136)", () => {
     }
   });
 
+  it("every bundled family carries its copyright notice and the full OFL text", () => {
+    const families = fs.readdirSync(FONTS, { withFileTypes: true }).filter((e) => e.isDirectory());
+    expect(families.length).toBeGreaterThan(0);
+    for (const family of families) {
+      const license = path.join(FONTS, family.name, "OFL.txt");
+      expect(fs.existsSync(license), family.name).toBe(true);
+      const text = fs.readFileSync(license, "utf8");
+      expect(text, family.name).toMatch(/^Copyright \d{4} The .+ Project Authors/m);
+      expect(text, family.name).toContain("SIL OPEN FONT LICENSE Version 1.1");
+    }
+  });
+
   it("each face keeps its unicode range, and only latin faces are preloaded", () => {
     for (const mod of fontModules()) {
       const calls = fs.readFileSync(mod, "utf8").split("localFont({").slice(1);
