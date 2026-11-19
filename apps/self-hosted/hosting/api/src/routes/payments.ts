@@ -95,7 +95,21 @@ paymentRoutes.get('/instructions/:username', async (c) => {
 
   const paymentAccount = PAYMENT_ACCOUNT;
   const monthlyPrice = domain ? CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : MONTHLY_PRICE_HBD;
-  const totalAmount = (monthlyPrice * months).toFixed(3);
+  // The add-on on a standard blog with time left moves that whole term to the custom-domain
+  // plan, so the quote carries the prorated premium for it: the amount the payment listener
+  // requires before it credits new months. Remaining months only shrink, so a payment made
+  // against this quote is never short when it lands.
+  let upgradePremium = 0;
+  if (domain) {
+    const tenant = await TenantService.getByUsername(username);
+    if (tenant && tenant.subscriptionPlan !== 'pro' && tenant.subscriptionStatus === 'active') {
+      upgradePremium = customDomainUpgradeHbd(
+        tenant.subscriptionExpiresAt ? new Date(tenant.subscriptionExpiresAt) : null,
+        new Date()
+      );
+    }
+  }
+  const totalAmount = (Math.round((monthlyPrice * months + upgradePremium) * 1000) / 1000).toFixed(3);
   // blog:name / blog:name:months, with a trailing :domain for the custom-domain tier.
   const memo = `blog:${username}${months > 1 ? ':' + months : ''}${domain ? ':domain' : ''}`;
 
@@ -107,6 +121,7 @@ paymentRoutes.get('/instructions/:username', async (c) => {
     months,
     totalAmount: totalAmount + ' HBD',
     customDomain: domain,
+    upgradePremium: hbd(upgradePremium) + ' HBD',
     instructions: [
       `Send ${totalAmount} HBD to @${paymentAccount}`,
       `Use memo: ${memo}`,

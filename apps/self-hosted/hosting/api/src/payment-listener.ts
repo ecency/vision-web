@@ -305,7 +305,14 @@ export class PaymentListener {
 
       // Grant only the months that were paid for
       const months = monthsFromAmount;
-      await this.processSubscription(transfer, parsed.username, months, amount, parsed.customDomain);
+      await this.processSubscription(
+        transfer,
+        parsed.username,
+        months,
+        amount,
+        parsed.customDomain,
+        parsed.months
+      );
     } else if (parsed.action === 'upgrade') {
       // The amount is validated inside processUpgrade against the PRORATED custom-domain cost
       // (which depends on the tenant's remaining term). No flat pre-gate here: a flat
@@ -318,14 +325,19 @@ export class PaymentListener {
   private async processSubscription(
     transfer: any,
     username: string,
-    months: number,
+    requestedMonths: number,
     amount: number,
     // A ':domain' memo activates on the custom-domain ('pro') tier. Set the plan on activation so a
     // one-step blog:name:months:domain payment both creates/extends the blog AND unlocks custom
     // domains. A standard memo passes false and never downgrades an existing pro tenant.
-    pro: boolean = false
+    pro: boolean = false,
+    // The months the memo named: a payment that covers fewer after the premium is refused,
+    // never credited short of what was asked for.
+    minMonths: number = 1
   ) {
-    console.log('[PaymentListener] Processing subscription:', username, 'for', months, 'months');
+    console.log('[PaymentListener] Processing subscription:', username, 'for', requestedMonths, 'months');
+    // Fewer when a custom-domain payment first covers the premium for the current term.
+    let months = requestedMonths;
 
     let updatedTenant: any = null;
 
@@ -350,6 +362,29 @@ export class PaymentListener {
         let row = (
           await client.query(`SELECT * FROM tenants WHERE username = $1 FOR UPDATE`, [username])
         ).rows[0];
+
+        // A ':domain' payment on a standard blog with time left moves that whole term to the
+        // custom-domain plan, so it carries the prorated premium for the months already paid at
+        // the standard rate: the same amount the upgrade quote asks for. Only what is left after
+        // the premium buys new months; too little for one is refused, never credited as standard.
+        if (pro && row && row.subscription_plan !== 'pro' && row.subscription_status === 'active') {
+          const remainingPremium = Pricing.customDomainUpgradeHbd(
+            row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+            new Date()
+          );
+          const left = Math.round(amount * 1000) - Math.round(remainingPremium * 1000);
+          const affordable = Math.floor(left / Math.round(CONFIG.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
+          if (affordable < Math.max(1, minMonths)) {
+            throw Object.assign(
+              new Error(
+                `Insufficient for the custom-domain plan: the ${Pricing.hbd(remainingPremium)} HBD ` +
+                  'premium for the months left on the current term comes first (see the upgrade quote)'
+              ),
+              { permanent: true }
+            );
+          }
+          months = Math.min(months, affordable);
+        }
 
         // 2. Claim the transfer (dedup via unique trx_id).
         const insertResult = await client.query(

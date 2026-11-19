@@ -100,6 +100,8 @@ interface Instructions {
   to: string;
   amount: string;
   memo: string;
+  /** With the add-on on a blog with time left: the premium for that time, already in `amount`. */
+  upgradePremium?: string;
 }
 
 export function HostingSignup() {
@@ -621,7 +623,8 @@ export function HostingSignup() {
     hostingApi
       .paymentInstructions(tenantUsername, months, customDomain)
       .then((r) => {
-        if (!stale) setInstructions({ to: r.to, amount: r.amount, memo: r.memo });
+        if (!stale)
+          setInstructions({ to: r.to, amount: r.amount, memo: r.memo, upgradePremium: r.upgradePremium });
       })
       .catch(() => {
         if (!stale) setInstructions(null);
@@ -788,6 +791,11 @@ export function HostingSignup() {
   const usdPer = customDomain ? HOSTING_CUSTOM_DOMAIN_MONTHLY_USD : usdPerBase;
   const hbdPer = customDomain ? hbdPerBase + 1 : hbdPerBase;
   const cardSku = customDomain ? hostingProSkuForMonths(months) : hostingSkuForMonths(months);
+  // What the HBD transfer sends: the quote once it has loaded (it can include the premium for the
+  // time left on a current term), the list price until then.
+  const quotedHbd = instructions ? parseFloat(instructions.amount) : NaN;
+  const hbdTotal = (Number.isFinite(quotedHbd) ? quotedHbd : hbdPer * months).toFixed(3);
+  const termPremium = instructions?.upgradePremium ? parseFloat(instructions.upgradePremium) : 0;
   // The payment-step selection controls are locked while a card submit is in flight
   // (cardSubmitting) and stay locked once the payment is confirmed (paying).
   const payLocked = paying || cardSubmitting;
@@ -1089,7 +1097,7 @@ export function HostingSignup() {
                   : "border-[--border-color]"
               } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              {i18next.t("hosting.pay-hbd", { amount: (hbdPer * months).toFixed(3) })}
+              {i18next.t("hosting.pay-hbd", { amount: hbdTotal })}
             </button>
           </div>
 
@@ -1122,9 +1130,16 @@ export function HostingSignup() {
                     full={true}
                   >
                     {i18next.t("hosting.pay-hbd-oneclick", {
-                      amount: (hbdPer * months).toFixed(3)
+                      amount: hbdTotal
                     })}
                   </Button>
+                  {termPremium > 0 && (
+                    <p className="text-sm opacity-75">
+                      {i18next.t("hosting.custom-domain-term-premium", {
+                        amount: termPremium.toFixed(3)
+                      })}
+                    </p>
+                  )}
                   {/* While sending, reassure; once a transfer is out but not yet confirmed, `paying`
                       stays true (button disabled to prevent a duplicate send) and we funnel to the
                       manual re-check via the auto-opened section below. */}

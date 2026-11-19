@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithQueryClient } from "@/specs/test-utils";
@@ -157,6 +158,26 @@ describe("HostingSignup one-click HBD pay", () => {
     await waitFor(() =>
       expect(hostingApi.paymentInstructions).toHaveBeenCalledWith("alice", 1, true)
     );
+  });
+
+  it("shows the quoted amount, premium for the current term included, on the pay button", async () => {
+    // An active standard blog with time left: the add-on quote carries the
+    // premium for the months left, so the label must show what is sent.
+    hostingApi.paymentInstructions.mockImplementation(async (_u: string, _m: number, domain: boolean) =>
+      domain
+        ? { ...INSTRUCTIONS, amount: "15.000 HBD", memo: "blog:alice:domain", upgradePremium: "12.000 HBD" }
+        : INSTRUCTIONS
+    );
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+
+    await waitFor(() =>
+      expect(i18next.t).toHaveBeenCalledWith("hosting.pay-hbd-oneclick", { amount: "15.000" })
+    );
+    expect(i18next.t).toHaveBeenCalledWith("hosting.custom-domain-term-premium", { amount: "12.000" });
+    expect(await screen.findByText("hosting.custom-domain-term-premium")).toBeTruthy();
   });
 
   it("broadcasts the exact transfer and advances to success", async () => {

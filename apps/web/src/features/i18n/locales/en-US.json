@@ -85,6 +85,7 @@
     "free-with-pro": "Free with Ecency Pro. Pro members get a blog at no extra cost.",
     "custom-domain-option": "Custom domain",
     "custom-domain-price": "+$1 / +1 HBD /mo",
+    "custom-domain-term-premium": "Includes {{amount}} HBD to move the months left on your current term to the custom-domain plan.",
     "custom-domain-added": "Added",
     "custom-domain-explainer": "Use your own domain like blog.yoursite.com. Adds +$1/mo by card or +1 HBD/mo, billed with your hosting.",
     "custom-domain-included-note": "Your custom domain is included. Add and verify it right after checkout.",
