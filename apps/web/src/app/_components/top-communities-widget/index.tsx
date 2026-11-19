@@ -9,9 +9,6 @@ import { formattedNumber, makePath } from "@/utils";
 import { AllFilter } from "@/enums";
 import { seededShuffle } from "@/utils/seeded-shuffle";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
-import * as ls from "@/utils/local-storage";
-import Cookies from "js-cookie";
 import { getAccountSubscriptionsQueryOptions, getCommunitiesQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
@@ -42,13 +39,15 @@ export const TopCommunitiesWidget = () => {
   const { data: subscriptions, isLoading, failureCount } = useQuery(
     getAccountSubscriptionsQueryOptions(username ?? undefined)
   );
-  // The active user is restored from storage in a mount effect, so on a full
-  // page load the first renders have no user even for a logged-in reader.
-  // Until mount, and while a stored account is waiting to be restored, hold
-  // the skeleton instead of mounting Discover and firing its requests.
+  // On a full page load the active user is restored in ClientInit's mount
+  // effect, so the server render and the first client render have no user even
+  // for a logged-in reader. ClientInit sits before the page in the tree, so its
+  // effect has run by the time this one does: holding the skeleton until mount
+  // keeps Discover (and its requests) from starting for a reader who turns out
+  // to be logged in, and the server and first client render still match.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const restorePending = !username && (!mounted || hasRestorableAccount());
+  const restorePending = !username && !mounted;
   // A failed first attempt falls back to Discover instead of waiting out the
   // client's retries behind a skeleton.
   const subscriptionsLoading = !!username && isLoading && failureCount === 0;
@@ -74,15 +73,15 @@ export const TopCommunitiesWidget = () => {
   return <DiscoverCommunities />;
 };
 
-/** Mirrors the restore on page load: a stored name with a saved session. */
-function hasRestorableAccount() {
-  const name = ls.get("active_user") ?? Cookies.get(ACTIVE_USER_COOKIE_NAME);
-  return typeof name === "string" && !!name && !!ls.get(`user_${name}`);
-}
-
 function SidebarSkeleton() {
+  // Both cards open with a heading and link to Explore communities, so the
+  // skeleton reserves the heading and keeps that link in the server HTML.
   return (
     <div className="feed-communities">
+      <div
+        className="feed-sidebar-heading h-5 w-40 rounded bg-gray-100 dark:bg-gray-800 animate-pulse"
+        aria-hidden="true"
+      />
       <div className="flex flex-col gap-6">
         {Array.from({ length: 3 }, (_, i) => (
           <div
@@ -92,6 +91,9 @@ function SidebarSkeleton() {
           />
         ))}
       </div>
+      <Link href="/communities" className="feed-sidebar-link">
+        {i18next.t("top-communities.explore")}
+      </Link>
     </div>
   );
 }

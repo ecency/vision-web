@@ -263,35 +263,57 @@ describe("feed community suggestions", () => {
       expect(rankedFetch).not.toHaveBeenCalled();
     });
 
-    it("does not mount discover while a returning reader's account is being restored", async () => {
-      // A real page load restores the active user in a mount effect, so the
-      // first renders have no user even for a logged-in reader.
+    it("does not start discover for a reader whose account is restored on mount", async () => {
+      // A real page load restores the active user in ClientInit's mount effect,
+      // which sits before the page in the tree. Model that order: the server
+      // render and the first client render have no user.
       subscriptions = subscribed(2);
+      activeUsername = null;
+      function Page() {
+        const [, rerender] = React.useState(0);
+        return (
+          <>
+            <Restore onMount={() => {
+              activeUsername = "alice";
+              rerender(1);
+            }} />
+            <TopCommunitiesWidget />
+          </>
+        );
+      }
+      function Restore({ onMount }: { onMount: () => void }) {
+        React.useEffect(onMount, []);
+        return null;
+      }
+      renderWithQueryClient(<Page />);
+      await waitFor(() => expect(joinedLinks()).toHaveLength(2));
+      expect(rankedFetch).not.toHaveBeenCalled();
+    });
+
+    it("shows discover in a logged-out tab after another tab logs in", async () => {
+      // The other tab writes the stored account; this tab's store stays empty.
       activeUsername = null;
       localStorage.setItem("ecency_active_user", "alice");
       localStorage.setItem("ecency_user_alice", "e30=");
-      try {
-        const view = renderWithQueryClient(<TopCommunitiesWidget />);
-        await new Promise((r) => setTimeout(r, 50));
-        expect(screen.queryByText("top-communities.discover-title")).not.toBeInTheDocument();
-        activeUsername = "alice";
-        view.rerender(<TopCommunitiesWidget />);
-        await waitFor(() => expect(joinedLinks()).toHaveLength(2));
-        expect(rankedFetch).not.toHaveBeenCalled();
-      } finally {
-        localStorage.clear();
-      }
-    });
-
-    it("shows discover when the stored account has no saved session", async () => {
-      activeUsername = null;
-      localStorage.setItem("ecency_active_user", "alice");
       try {
         renderWithQueryClient(<TopCommunitiesWidget />);
         expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
       } finally {
         localStorage.clear();
       }
+    });
+
+    it("renders the skeleton, not discover, on the server", async () => {
+      const { renderToString } = await import("react-dom/server");
+      const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+      activeUsername = null;
+      const html = renderToString(
+        <QueryClientProvider client={new QueryClient()}>
+          <TopCommunitiesWidget />
+        </QueryClientProvider>
+      );
+      expect(html).not.toContain("top-communities.discover-title");
+      expect(html).toContain('href="/communities"');
     });
 
     it("falls back to discover when the reader has no subscriptions", async () => {
