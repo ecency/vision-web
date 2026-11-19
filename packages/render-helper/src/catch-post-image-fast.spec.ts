@@ -438,7 +438,9 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
-  it('stays linear on a body with thousands of mismatched anchors', () => {
+  // Seven passes over up to 20,000 anchors: a runner several times slower than
+  // a workstation needs more than vitest's 5 s default.
+  it('stays linear on a body with thousands of mismatched anchors', { timeout: 60_000 }, () => {
     // Growth, not wall time: a busy runner slows both sizes alike, while a
     // quadratic scan grows ~64x from N to 8N against ~8x for a linear one.
     // Each call gets a fresh permlink, so no run is answered from the memo.
