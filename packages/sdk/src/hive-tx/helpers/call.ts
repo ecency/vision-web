@@ -55,7 +55,7 @@ export const rpcProxyStats = {
   fallback: 0,
   /** Reads that went straight to the nodes because the breaker was open. */
   skipped: 0,
-  fallbackByReason: { status: 0, rpcerror: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
+  fallbackByReason: { status: 0, rpcerror: 0, ratelimited: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
 }
 
 /**
@@ -64,8 +64,14 @@ export const rpcProxyStats = {
  * argument). The read still falls back so the caller sees the node's answer
  * unchanged, but the proxy was healthy, so it does not count toward the
  * breaker; the other reasons do.
+ *
+ * `ratelimited` is a 503 tagged `X-Ssr-Cache: RATELIMITED`: every node behind
+ * the proxy is rate-limiting the host. Also a healthy proxy answer, so also
+ * outside the breaker: opening it would send every following read straight to
+ * the same throttling nodes, per process and without the proxy's coalescing.
+ * This read still falls back, since the node pool is not the proxy's pool.
  */
-type ProxyMissReason = 'status' | 'rpcerror' | 'timeout' | 'transport' | 'validate' | 'parse'
+type ProxyMissReason = 'status' | 'rpcerror' | 'ratelimited' | 'timeout' | 'transport' | 'validate' | 'parse'
 
 class ProxyMiss extends Error {
   constructor(
@@ -133,7 +139,9 @@ async function proxyRpcCall<T>(
       throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', errorMessage(e))
     }
     if (res.status !== 200) {
-      const relayed = res.status === 502 && (res.headers.get('x-ssr-cache') ?? '').toUpperCase() === 'RPCERROR'
+      const tag = (res.headers.get('x-ssr-cache') ?? '').toUpperCase()
+      const relayed = res.status === 502 && tag === 'RPCERROR'
+      const throttled = res.status === 503 && tag === 'RATELIMITED'
       let unknownMethod = false
       if (relayed) {
         // The relayed body is the node's error message (`{"error": "..."}`),
@@ -154,8 +162,8 @@ async function proxyRpcCall<T>(
         }
       }
       throw new ProxyMiss(
-        relayed ? 'rpcerror' : 'status',
-        relayed ? 'proxy relayed a node error' : `proxy answered ${res.status}`,
+        relayed ? 'rpcerror' : throttled ? 'ratelimited' : 'status',
+        relayed ? 'proxy relayed a node error' : throttled ? 'proxy upstream rate-limited' : `proxy answered ${res.status}`,
         unknownMethod,
         !relayed && res.status === 404
       )
@@ -1832,10 +1840,11 @@ const callRPCCore = async <T = any>(
           rpcProxyStats.fallback++
           const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
           rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
-          if (reason === 'rpcerror') {
+          if (reason === 'rpcerror' || reason === 'ratelimited') {
             // A relayed node error is a healthy proxy answer: it closes the
             // count like a served call. Crawler-made feed URLs produce these in
             // runs, and counting them opened the breaker on a working proxy.
+            // Upstream throttling likewise: the proxy answered correctly.
             proxyConsecutiveMisses = 0
           } else if (++proxyConsecutiveMisses >= proxy.failureThreshold) {
             proxyOpenUntil = Date.now() + proxy.cooldownMs

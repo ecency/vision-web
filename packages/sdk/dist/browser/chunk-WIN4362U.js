@@ -1,2 +1,0 @@
-import {m}from'./chunk-256XNI26.js';import {queryOptions}from'@tanstack/react-query';function a(t){return queryOptions({queryKey:["wallet","vesting-delegation-expirations",t],queryFn:async()=>t?(await m("database_api.find_vesting_delegation_expirations",{account:t})).delegations:[],enabled:!!t})}export{a};//# sourceMappingURL=chunk-WIN4362U.js.map
-//# sourceMappingURL=chunk-WIN4362U.js.map

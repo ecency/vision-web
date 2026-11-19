@@ -12,7 +12,7 @@ const stats = {
   served: 0,
   fallback: 0,
   skipped: 0,
-  fallbackByReason: { status: 0, rpcerror: 0, timeout: 0, transport: 0, validate: 0, parse: 0 }
+  fallbackByReason: { status: 0, rpcerror: 0, ratelimited: 0, timeout: 0, transport: 0, validate: 0, parse: 0 }
 };
 const manager = {
   setPrivateApiHost: vi.fn(),
@@ -116,7 +116,7 @@ describe("sdk-init server rpc proxy", () => {
       await vi.advanceTimersByTimeAsync(REPORT_MS);
       expect(log).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenLastCalledWith(
-        "[rpc-proxy] served=0 fallback=0 (status=0 rpcerror=0 timeout=0 transport=0 validate=0 parse=0) skipped=0"
+        "[rpc-proxy] served=0 fallback=0 (status=0 rpcerror=0 ratelimited=0 timeout=0 transport=0 validate=0 parse=0) skipped=0"
       );
 
       // Nothing moved: silence, not a repeat.
@@ -127,11 +127,12 @@ describe("sdk-init server rpc proxy", () => {
       stats.fallback = 5;
       stats.fallbackByReason.transport = 2;
       stats.fallbackByReason.rpcerror = 3;
+      stats.fallbackByReason.ratelimited = 4;
       stats.skipped = 7;
       await vi.advanceTimersByTimeAsync(REPORT_MS);
       expect(log).toHaveBeenCalledTimes(2);
       expect(log).toHaveBeenLastCalledWith(
-        "[rpc-proxy] served=41 fallback=5 (status=0 rpcerror=3 timeout=0 transport=2 validate=0 parse=0) skipped=7"
+        "[rpc-proxy] served=41 fallback=5 (status=0 rpcerror=3 ratelimited=4 timeout=0 transport=2 validate=0 parse=0) skipped=7"
       );
     });
 
