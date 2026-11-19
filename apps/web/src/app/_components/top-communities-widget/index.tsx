@@ -9,6 +9,9 @@ import { formattedNumber, makePath } from "@/utils";
 import { AllFilter } from "@/enums";
 import { seededShuffle } from "@/utils/seeded-shuffle";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { ACTIVE_USER_COOKIE_NAME } from "@/consts";
+import * as ls from "@/utils/local-storage";
+import Cookies from "js-cookie";
 import { getAccountSubscriptionsQueryOptions, getCommunitiesQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
@@ -36,9 +39,19 @@ const MY_SLOTS = 5;
  */
 export const TopCommunitiesWidget = () => {
   const { username } = useActiveAccount();
-  const { data: subscriptions, isLoading } = useQuery(
+  const { data: subscriptions, isLoading, failureCount } = useQuery(
     getAccountSubscriptionsQueryOptions(username ?? undefined)
   );
+  // The active user is restored from storage in a mount effect, so on a full
+  // page load the first renders have no user even for a logged-in reader.
+  // Until mount, and while a stored account is waiting to be restored, hold
+  // the skeleton instead of mounting Discover and firing its requests.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const restorePending = !username && (!mounted || hasRestorableAccount());
+  // A failed first attempt falls back to Discover instead of waiting out the
+  // client's retries behind a skeleton.
+  const subscriptionsLoading = !!username && isLoading && failureCount === 0;
   // Once discovery is on screen for a reader it stays for this page load.
   // Joining a suggestion updates the subscriptions optimistically, and the card
   // must not swap to "My communities" under the reader's click. And after a
@@ -49,7 +62,8 @@ export const TopCommunitiesWidget = () => {
 
   const showMine =
     !!username && !discoverLatched && !!subscriptions && subscriptions.length > 0;
-  const showDiscover = !showMine && (discoverLatched || !(username && isLoading));
+  const showDiscover =
+    !showMine && (discoverLatched || (!restorePending && !subscriptionsLoading));
 
   useEffect(() => {
     if (showDiscover && username) setDiscoverFor(username);
@@ -59,6 +73,12 @@ export const TopCommunitiesWidget = () => {
   if (!showDiscover) return <SidebarSkeleton />;
   return <DiscoverCommunities />;
 };
+
+/** Mirrors the restore on page load: a stored name with a saved session. */
+function hasRestorableAccount() {
+  const name = ls.get("active_user") ?? Cookies.get(ACTIVE_USER_COOKIE_NAME);
+  return typeof name === "string" && !!name && !!ls.get(`user_${name}`);
+}
 
 function SidebarSkeleton() {
   return (

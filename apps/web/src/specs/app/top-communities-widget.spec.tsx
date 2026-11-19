@@ -13,6 +13,7 @@ let failTown = false;
 let failRanked = false;
 let subscriptions: string[][] = [];
 let failSubscriptions = false;
+let subscriptionsRetry: false | { retry: number; retryDelay: number } = false;
 let activeUsername: string | null = "alice";
 const rankedFetch = vi.fn();
 
@@ -53,7 +54,7 @@ vi.mock("@ecency/sdk", async () => ({
   getAccountSubscriptionsQueryOptions: (username?: string) => ({
     queryKey: ["subscriptions", username],
     enabled: !!username,
-    retry: false,
+    ...(subscriptionsRetry || { retry: false }),
     queryFn: async () => {
       if (failSubscriptions) throw new Error("Subscriptions unavailable");
       return subscriptions;
@@ -73,6 +74,7 @@ describe("feed community suggestions", () => {
     failTown = false;
     failRanked = false;
     failSubscriptions = false;
+    subscriptionsRetry = false;
     activeUsername = "alice";
     subscriptions = [];
     town = mockCommunity({ name: "hive-125125", title: "Town Square" });
@@ -261,6 +263,37 @@ describe("feed community suggestions", () => {
       expect(rankedFetch).not.toHaveBeenCalled();
     });
 
+    it("does not mount discover while a returning reader's account is being restored", async () => {
+      // A real page load restores the active user in a mount effect, so the
+      // first renders have no user even for a logged-in reader.
+      subscriptions = subscribed(2);
+      activeUsername = null;
+      localStorage.setItem("ecency_active_user", "alice");
+      localStorage.setItem("ecency_user_alice", "e30=");
+      try {
+        const view = renderWithQueryClient(<TopCommunitiesWidget />);
+        await new Promise((r) => setTimeout(r, 50));
+        expect(screen.queryByText("top-communities.discover-title")).not.toBeInTheDocument();
+        activeUsername = "alice";
+        view.rerender(<TopCommunitiesWidget />);
+        await waitFor(() => expect(joinedLinks()).toHaveLength(2));
+        expect(rankedFetch).not.toHaveBeenCalled();
+      } finally {
+        localStorage.clear();
+      }
+    });
+
+    it("shows discover when the stored account has no saved session", async () => {
+      activeUsername = null;
+      localStorage.setItem("ecency_active_user", "alice");
+      try {
+        renderWithQueryClient(<TopCommunitiesWidget />);
+        expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      } finally {
+        localStorage.clear();
+      }
+    });
+
     it("falls back to discover when the reader has no subscriptions", async () => {
       renderWithQueryClient(<TopCommunitiesWidget />);
       expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
@@ -289,6 +322,13 @@ describe("feed community suggestions", () => {
       expect(await screen.findByRole("button", { name: "community.subscribed" })).toBeInTheDocument();
       expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
       expect(screen.queryByText("top-communities.my-title")).not.toBeInTheDocument();
+    });
+
+    it("falls back to discover after the first failed attempt, not after every retry", async () => {
+      failSubscriptions = true;
+      subscriptionsRetry = { retry: 3, retryDelay: 60_000 };
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
     });
 
     it("shows discover to a logged-out reader", async () => {
