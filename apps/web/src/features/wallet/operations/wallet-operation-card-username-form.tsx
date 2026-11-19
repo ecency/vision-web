@@ -5,7 +5,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import { UilEnter } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
 import { Controller, useForm } from "react-hook-form";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as yup from "yup";
 import { getBadActorsQueryOptions, lookupAccountsQueryOptions } from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,6 +36,10 @@ export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
 
   const error = methods.formState.errors.username?.message?.toString();
   const [isFocused, setIsFocused] = useState(false);
+  // Hides the suggestions shortly after blur, so a click on one still lands. Cleared on unmount so
+  // it never sets state on a form that is gone.
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(blurTimer.current), []);
   const usernameValue = methods.watch("username") ?? "";
   const normalizedUsername = useMemo(() => usernameValue.trim(), [usernameValue]);
   const [debouncedUsername, setDebouncedUsername] = useState(normalizedUsername);
@@ -109,14 +113,18 @@ export function WalletOperationCardUsernameForm({ onUsernameSubmit }: Props) {
                 placeholder={i18next.t("g.username")}
                 aria-invalid={!!error}
                 autoComplete="off"
-                onFocus={() => setIsFocused(true)}
+                onFocus={() => {
+                  clearTimeout(blurTimer.current);
+                  setIsFocused(true);
+                }}
                 onChange={(event) => {
                   const sanitizedValue = event.target.value.replace(/^@/, "").toLowerCase();
                   field.onChange(sanitizedValue);
                 }}
                 onBlur={(event) => {
                   field.onBlur();
-                  setTimeout(() => setIsFocused(false), 150);
+                  clearTimeout(blurTimer.current);
+                  blurTimer.current = setTimeout(() => setIsFocused(false), 150);
                   submit(event);
                 }}
               />
