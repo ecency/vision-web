@@ -135,15 +135,7 @@ export function CommunitySelectorBrowser({ onSelect, onHide }: BrowserProps) {
       return [];
     }
 
-    const tuples = (subscriptions as unknown[]).filter(
-      (subscription): subscription is [string, string] =>
-        Array.isArray(subscription) &&
-        subscription.length >= 2 &&
-        typeof subscription[0] === "string" &&
-        typeof subscription[1] === "string"
-    );
-
-    return tuples
+    return subscriptions
       .filter(
         ([name, title]) =>
           matchesQuery(name, matchableQuery) || matchesQuery(title, matchableQuery)

@@ -2,7 +2,11 @@ import { CONFIG } from "@/modules/core";
 import { callRPC, callRPCWithFallback } from "@/modules/core/hive-tx";
 import { AccountRelationship, Profile } from "@/modules/accounts/types";
 import { Community } from "@/modules/communities/types/community";
-import { Subscription } from "@/modules/communities/types/subscription";
+import {
+  AccountSubscription,
+  normalizeAccountSubscriptions,
+  Subscription
+} from "@/modules/communities/types/subscription";
 import { Entry } from "@/modules/posts/types";
 import { filterDmcaEntry } from "@/modules/posts/utils/filter-dmca-entries";
 import { normalizeEntry } from "@/modules/posts/utils/normalize-entry";
@@ -324,8 +328,9 @@ export async function normalizePost(post: unknown): Promise<Entry | null> {
   return resp ? validateEntry(resp) : resp;
 }
 
-export async function getSubscriptions(account: string): Promise<Subscription[] | null> {
-  return bridgeApiCall<Subscription[] | null>("list_all_subscriptions", { account });
+export async function getSubscriptions(account: string): Promise<AccountSubscription[] | null> {
+  const resp = await bridgeApiCall<unknown>("list_all_subscriptions", { account });
+  return resp == null ? null : normalizeAccountSubscriptions(resp);
 }
 
 export async function getSubscribers(community: string): Promise<Subscription[] | null> {
