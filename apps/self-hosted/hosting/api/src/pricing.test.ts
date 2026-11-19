@@ -37,6 +37,35 @@ describe('remainingMonths', () => {
     // must count that as ONE remaining month, not two.
     expect(remainingMonths(new Date('2026-03-03T00:00:00.000Z'), jan31)).toBe(1);
   });
+
+  it('never rises as time passes, so a quoted premium stays payable (month-end crossing)', () => {
+    const expiry = new Date('2027-03-03T12:00:00Z');
+    expect(remainingMonths(expiry, new Date('2027-02-01T00:00:01Z'))).toBeLessThanOrEqual(
+      remainingMonths(expiry, new Date('2027-01-31T23:59:59Z'))
+    );
+    // Every hour up to each expiry: the count only goes down.
+    for (const exp of ['2027-03-03T12:00:00Z', '2026-12-31T00:00:00Z', '2027-05-01T08:00:00Z']) {
+      const e = new Date(exp);
+      let prev = Infinity;
+      for (let t = Date.UTC(2025, 10, 1); t < e.getTime(); t += 3600 * 1000) {
+        const m = remainingMonths(e, new Date(t));
+        if (m > prev) expect.fail(`rose to ${m} at ${new Date(t).toISOString()} for expiry ${exp}`);
+        prev = m;
+      }
+    }
+  });
+
+  it('counts a freshly bought N-month term as N months, from any start day', () => {
+    for (let d = 0; d < 800; d++) {
+      const start = new Date(Date.UTC(2026, 0, 1) + d * 86400000 + 13 * 3600000);
+      for (let n = 1; n <= 24; n++) {
+        const expiry = new Date(start.getTime());
+        expiry.setMonth(expiry.getMonth() + n);
+        const m = remainingMonths(expiry, start);
+        if (m !== n) expect.fail(`${start.toISOString()} +${n} months counted as ${m}`);
+      }
+    }
+  });
 });
 
 describe('customDomainUpgradeHbd', () => {

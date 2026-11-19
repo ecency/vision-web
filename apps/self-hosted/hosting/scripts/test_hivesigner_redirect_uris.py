@@ -160,6 +160,27 @@ class CustomDomainEntries(unittest.TestCase):
         ]
         self.assertEqual(registrar.custom_domain_entries(existing, rows, BASE), [])
 
+    def test_finds_a_domain_that_was_verified_once_and_removed_since(self):
+        # Removing a domain clears the tenant row, so only the verification history
+        # still names it; its old callback must not escape the prune.
+        rows = [("alice", None, False)]
+        self.assertEqual(
+            registrar.custom_domain_entries(self.existing, rows, BASE, history=["Evil.Example"]),
+            ["https://evil.example/auth"],
+        )
+
+    def test_history_never_picks_an_ecency_or_hosted_host(self):
+        existing = ["https://chat.ecency.com/auth", "https://bob.blogs.ecency.com/auth"]
+        history = ["chat.ecency.com", "bob.blogs.ecency.com"]
+        self.assertEqual(registrar.custom_domain_entries(existing, [], BASE, history=history), [])
+
+    def test_lists_other_external_callbacks_for_review_without_picking_them(self):
+        custom = ["https://evil.example/auth"]
+        self.assertEqual(
+            registrar.unmatched_external_entries(self.existing, BASE, custom),
+            ["https://hand-added.example/auth"],
+        )
+
     def test_confirms_a_removal_only_once_it_is_on_chain(self):
         reads = iter([["https://evil.example/auth"], []])
         original = (registrar.fetch_account, registrar.current_metadata, registrar.CONFIRM_DELAY_SECONDS)

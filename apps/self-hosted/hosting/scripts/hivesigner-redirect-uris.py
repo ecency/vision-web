@@ -222,7 +222,9 @@ def uris_for_tenants(rows: list[tuple], base_domain: str) -> list[str]:
     return [f"https://{row[0].lower()}.{base_domain}{REDIRECT_PATH}" for row in rows]
 
 
-def custom_domain_entries(existing: list[str], rows: list[tuple], base_domain: str) -> list[str]:
+def custom_domain_entries(
+    existing: list[str], rows: list[tuple], base_domain: str, history: tuple[str, ...] | list[str] = ()
+) -> list[str]:
     """
     Registered callbacks for a tenant's VERIFIED custom domain: exactly
     https://<custom domain>/auth, for any tenant row, live or not. Only verified
@@ -233,16 +235,57 @@ def custom_domain_entries(existing: list[str], rows: list[tuple], base_domain: s
     the hosting base domain is never picked, whatever a row claims: those are
     Ecency's own callbacks or tenant subdomains. Anything else registered by hand
     is left alone because it is not an exact match.
-    """
-    def ours(host: str) -> bool:
-        return any(host == d or host.endswith(f".{d}") for d in ("ecency.com", base_domain))
 
+    `history` is every domain the API ever verified (its audit log). Removing a
+    domain clears the tenant row, so without it the callback of a domain an owner
+    removed or replaced would escape the prune.
+    """
+    domains = [row[1] for row in rows if row[1] and row[2]] + [d for d in history if d]
     callbacks = {
-        f"https://{row[1].strip().lower()}{REDIRECT_PATH}"
-        for row in rows
-        if row[1] and row[2] and not ours(row[1].strip().lower())
+        f"https://{d.strip().lower()}{REDIRECT_PATH}"
+        for d in domains
+        if not is_ecency_host(d.strip().lower(), base_domain)
     }
     return [uri for uri in existing if uri in callbacks]
+
+
+def is_ecency_host(host: str, base_domain: str) -> bool:
+    return any(host == d or host.endswith(f".{d}") for d in ("ecency.com", base_domain))
+
+
+def unmatched_external_entries(existing: list[str], base_domain: str, custom: list[str]) -> list[str]:
+    """
+    Callbacks on a host outside Ecency that no verified domain accounts for: hand
+    registrations (sites that use the shared app themselves) or a custom domain the
+    audit log missed. Listed for review only, never removed automatically.
+    """
+    picked = set(custom)
+    out = []
+    for uri in existing:
+        try:
+            host = (urllib.parse.urlsplit(uri).hostname or "").lower()
+        except ValueError:
+            continue
+        if host and not is_ecency_host(host, base_domain) and uri not in picked:
+            out.append(uri)
+    return out
+
+
+def verified_domain_history(database_url: str) -> list[str]:
+    """Every domain the API ever logged as verified, removed ones included."""
+    import psycopg
+
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT lower(event_data->>'domain')
+                  FROM audit_log
+                 WHERE event_type = 'domain.verified'
+                   AND event_data ? 'domain'
+                """
+            )
+            return [row[0] for row in cursor.fetchall() if row[0]]
 
 
 def prune_uris(existing: list[str], remove: list[str]) -> list[str]:
@@ -572,10 +615,17 @@ def main() -> int:
 
     # Custom-domain callbacks from before only subdomains were registered. Always
     # reported; removed only when asked, since removing is a broadcast.
-    custom = custom_domain_entries(existing, rows, args.base_domain)
+    custom = custom_domain_entries(
+        existing, rows, args.base_domain, history=verified_domain_history(args.database_url)
+    )
     if custom:
         log("\ncustom-domain callbacks on the shared app (remove with --prune-custom-domains):")
         for uri in custom:
+            log(f"  {uri}")
+    unmatched = unmatched_external_entries(existing, args.base_domain, custom)
+    if unmatched:
+        log("\nother callbacks outside Ecency, kept (remove by hand any that belonged to a blog):")
+        for uri in unmatched:
             log(f"  {uri}")
     pruned = bool(custom) and args.prune_custom_domains
     if pruned:

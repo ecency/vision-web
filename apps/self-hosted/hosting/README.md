@@ -205,8 +205,11 @@ Only tenant subdomains (`https://<name>.blogs.ecency.com/auth`) are registered o
 app. A custom domain is never put there, verified or not: it is a host the tenant controls, so
 the blog app hides the shared app's Hivesigner button on a custom domain, and an owner who wants
 Hivesigner there names their own app (`general.hivesigner.clientId`), registered for that domain.
-Custom-domain callbacks registered for verified custom domains before this rule are listed on every pass and removed with
-`--prune-custom-domains` (a broadcast, so it is run by hand).
+Callbacks registered before this rule for custom domains that were verified at any time (the
+tenant row, or a `domain.verified` entry in the audit log for domains removed since) are listed on
+every pass and removed with `--prune-custom-domains` (a broadcast, so it is run by hand). Any other
+callback outside Ecency is listed for review and never removed by the script: some are sites that
+use the shared app themselves.
 
 Registration and enablement are one operation, run on a schedule by
 `scripts/hivesigner-redirect-uris.py`. Each pass:

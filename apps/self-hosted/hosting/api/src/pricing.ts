@@ -32,31 +32,23 @@ export const CUSTOM_DOMAIN_UPGRADE_DELTA_HBD = Math.max(
 // Whole months remaining on a subscription, rounding a partial month UP (so an active tenant with
 // any remaining term pays for at least one month of the add-on). Returns 0 for a null/past expiry.
 //
-// Counts by repeatedly adding one calendar month — the SAME setMonth() arithmetic the activation
-// paths use to build the expiry — rather than a raw month-index difference. That matters for JS
-// end-of-month rollover: a 1-month term bought on Jan 31 becomes March 3 (Feb has no 31st), and a
-// month-index diff would miscount that as 2 months and double-charge the upgrade. Stepping with
-// setMonth reproduces the rollover, so Jan 31 -> March 3 is one month.
+// Counted from the time left, in average-length months, so the count can only go DOWN as time
+// passes: the quote and the listener each use their own "now", and a payment made exactly as
+// quoted must never meet a higher amount later. Stepping calendar months from "now" was not
+// monotonic (an expiry of Mar 3 counted 1 month at Jan 31 23:59 and 2 at Feb 1 00:00).
 //
-// Both the quote and the listener use this at their own "now"; since time only moves forward,
-// remaining only shrinks, so a payment made against an earlier (equal-or-higher) quote is never
-// later rejected as insufficient.
+// The 3-day slack absorbs calendar months shorter or longer than the average, including the
+// setMonth() rollover the activation paths use to build an expiry (a month bought on Jan 31 ends
+// on Mar 3), so a freshly bought N-month term always counts as N. The cost is that a partial
+// month of 3 days or less is not charged.
+const AVERAGE_MONTH_MS = (365.2425 / 12) * 24 * 60 * 60 * 1000;
+const MONTH_SLACK_MS = 3 * 24 * 60 * 60 * 1000;
+
 export function remainingMonths(expiresAt: Date | null, now: Date): number {
-  if (!expiresAt || expiresAt.getTime() <= now.getTime()) return 0;
-  // Count how many whole calendar months fit before expiry: step `now` forward a month at a time
-  // while the step stays at/before expiry.
-  let months = 0;
-  const step = new Date(now.getTime());
-  step.setMonth(step.getMonth() + 1);
-  while (step.getTime() <= expiresAt.getTime() && months < 600) {
-    months += 1;
-    step.setMonth(step.getMonth() + 1);
-  }
-  // If those whole months don't reach expiry exactly, a partial month remains and rounds up.
-  const atMonths = new Date(now.getTime());
-  atMonths.setMonth(atMonths.getMonth() + months);
-  if (atMonths.getTime() < expiresAt.getTime()) months += 1;
-  return Math.max(1, months);
+  if (!expiresAt) return 0;
+  const left = expiresAt.getTime() - now.getTime();
+  if (left <= 0) return 0;
+  return Math.max(1, Math.ceil((left - MONTH_SLACK_MS) / AVERAGE_MONTH_MS));
 }
 
 // Prorated HBD cost to add a custom domain to an active tenant for the rest of its current term.
