@@ -154,7 +154,7 @@ def is_safe_redirect_uri(uri: str, base_domain: str) -> bool:
     The database is the authority on WHICH hosts belong to tenants; this is the
     shape check that stops a malformed or surprising value from getting there:
     exactly https, exactly the callback path, no credentials, no port, no query,
-    and nothing under ecency.com that is not a tenant subdomain.
+    and nothing but a tenant subdomain.
     """
     parts = urllib.parse.urlsplit(uri)
     if parts.scheme != "https":
@@ -180,51 +180,80 @@ def is_safe_redirect_uri(uri: str, base_domain: str) -> bool:
         return False
     if not DOMAIN_RE.match(host):
         return False
-    if host.endswith(f".{base_domain}"):
-        return True
-    # Anything else has to be a custom domain, and a custom domain is never ours.
-    # hosting/origin/sync-custom-domains.py refuses these for the same reason.
-    return host != "ecency.com" and not host.endswith(".ecency.com")
+    # Only a tenant subdomain. A custom domain is a host the tenant controls and
+    # can repoint, let lapse or hand on, and a callback registered here keeps
+    # receiving the shared app's access tokens after that. A blog that wants
+    # Hivesigner on its own domain registers that domain on its own app.
+    return host.endswith(f".{base_domain}")
 
 
-def wanted_uris(database_url: str, base_domain: str) -> list[str]:
+def tenant_rows(database_url: str) -> list[tuple]:
+    """(username, custom_domain, custom_domain_verified) for every tenant row."""
+    try:
+        import psycopg
+    except ImportError:  # pragma: no cover - depends on the operator's box
+        raise SystemExit("psycopg is required: pip install 'psycopg[binary]'") from None
+
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT username, custom_domain, custom_domain_verified, subscription_status
+                  FROM tenants
+                 ORDER BY username
+                """
+            )
+            return cursor.fetchall()
+
+
+def uris_for_tenants(rows: list[tuple], base_domain: str) -> list[str]:
     """
-    The URIs every served instance needs, derived from the tenant table.
+    The URIs every live instance needs: its subdomain callback, nothing else.
 
     Mirrored by tenantRedirectUris() in the hosting API, which decides which
     tenants may have a client id. The two are allowed to drift only in the safe
     direction: the API checks the chain for what it REQUIRES, so registering too
     little leaves the method off and registering too much enables nothing extra.
 
-    One config file serves the subdomain AND the verified custom domain, and the
-    SPA builds its redirect_uri from window.location.origin, so both have to be
-    here or the API will not enable either of them.
+    A verified custom domain is not registered: on the shared app, a host the
+    tenant controls would keep receiving its access tokens after the domain is
+    repointed or lost. The blog hides the shared app's button there instead.
     """
-    try:
-        import psycopg
-    except ImportError:  # pragma: no cover - depends on the operator's box
-        raise SystemExit("psycopg is required: pip install 'psycopg[binary]'") from None
+    return [f"https://{row[0].lower()}.{base_domain}{REDIRECT_PATH}" for row in rows]
 
-    uris: list[str] = []
-    with psycopg.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT username, custom_domain, custom_domain_verified
-                  FROM tenants
-                 WHERE subscription_status = ANY(%s)
-                 ORDER BY username
-                """,
-                (list(LIVE_STATUSES),),
-            )
-            for username, custom_domain, verified in cursor.fetchall():
-                uris.append(f"https://{username.lower()}.{base_domain}{REDIRECT_PATH}")
-                # An unverified claim is not the tenant's domain yet. Registering
-                # it would let whoever actually controls that name receive
-                # callbacks for the app.
-                if custom_domain and verified:
-                    uris.append(f"https://{custom_domain.lower()}{REDIRECT_PATH}")
-    return uris
+
+def custom_domain_entries(existing: list[str], rows: list[tuple], base_domain: str) -> list[str]:
+    """
+    Registered callbacks for a tenant's VERIFIED custom domain: exactly
+    https://<custom domain>/auth, for any tenant row, live or not. Only verified
+    domains were ever registered, and an unverified claim is just text an owner
+    typed, so it can never pick a callback someone registered by hand.
+
+    The column holds whatever an owner typed, so a host on or under ecency.com or
+    the hosting base domain is never picked, whatever a row claims: those are
+    Ecency's own callbacks or tenant subdomains. Anything else registered by hand
+    is left alone because it is not an exact match.
+    """
+    def ours(host: str) -> bool:
+        return any(host == d or host.endswith(f".{d}") for d in ("ecency.com", base_domain))
+
+    callbacks = {
+        f"https://{row[1].strip().lower()}{REDIRECT_PATH}"
+        for row in rows
+        if row[1] and row[2] and not ours(row[1].strip().lower())
+    }
+    return [uri for uri in existing if uri in callbacks]
+
+
+def prune_uris(existing: list[str], remove: list[str]) -> list[str]:
+    """The registered array without exactly these entries, order kept."""
+    drop = set(remove)
+    return [uri for uri in existing if uri not in drop]
+
+
+def wanted_uris(rows: list[tuple], base_domain: str) -> list[str]:
+    """The URIs of the live tenants."""
+    return uris_for_tenants([row for row in rows if row[3] in LIVE_STATUSES], base_domain)
 
 
 def merge_uris(existing: list[str], wanted: list[str]) -> tuple[list[str], list[str]]:
@@ -347,6 +376,26 @@ def confirm_registered(rpc_url: str, account: str, wanted: list[str]) -> list[st
     raise SystemExit(
         "broadcast did not appear on chain after "
         f"{CONFIRM_ATTEMPTS * CONFIRM_DELAY_SECONDS}s; {len(missing)} URI(s) still missing"
+    )
+
+
+def confirm_removed(rpc_url: str, account: str, removed: list[str]) -> None:
+    """Re-read the array until none of the pruned callbacks is on it."""
+    seen: list[str] = []
+    for attempt in range(CONFIRM_ATTEMPTS):
+        if attempt:
+            time.sleep(CONFIRM_DELAY_SECONDS)
+        try:
+            _, seen = current_metadata(fetch_account(rpc_url, account))
+        except (urllib.error.URLError, TimeoutError, ValueError, RpcError) as error:
+            log(f"  confirmation read failed ({error}), retrying")
+            continue
+        if not any(uri in seen for uri in removed):
+            return
+    still = [uri for uri in removed if uri in seen]
+    raise SystemExit(
+        "removal did not appear on chain after "
+        f"{CONFIRM_ATTEMPTS * CONFIRM_DELAY_SECONDS}s; {len(still)} URI(s) still registered"
     )
 
 
@@ -479,6 +528,11 @@ def main() -> int:
         help="file holding the hosting API's shared internal secret (mode 0600)",
     )
     parser.add_argument("--max-additions", type=int, default=DEFAULT_MAX_ADDITIONS)
+    parser.add_argument(
+        "--prune-custom-domains",
+        action="store_true",
+        help="also remove registered callbacks on tenant custom domains (a broadcast)",
+    )
     args = parser.parse_args()
 
     if not args.database_url:
@@ -513,7 +567,19 @@ def main() -> int:
 
     account = fetch_account(args.rpc, args.account)
     metadata, existing = current_metadata(account)
-    wanted = wanted_uris(args.database_url, args.base_domain)
+    rows = tenant_rows(args.database_url)
+    wanted = wanted_uris(rows, args.base_domain)
+
+    # Custom-domain callbacks from before only subdomains were registered. Always
+    # reported; removed only when asked, since removing is a broadcast.
+    custom = custom_domain_entries(existing, rows, args.base_domain)
+    if custom:
+        log("\ncustom-domain callbacks on the shared app (remove with --prune-custom-domains):")
+        for uri in custom:
+            log(f"  {uri}")
+    pruned = bool(custom) and args.prune_custom_domains
+    if pruned:
+        existing = prune_uris(existing, custom)
 
     unsafe = [uri for uri in wanted if not is_safe_redirect_uri(uri, args.base_domain)]
     if unsafe:
@@ -553,7 +619,7 @@ def main() -> int:
             log(f"  {uri}")
 
     if not args.broadcast:
-        if missing:
+        if missing or pruned:
             path = write_private(serialized, args.out)
             log(f"\npayload written to {path}")
             log("broadcast it as posting_json_metadata (account_update2, posting authority).")
@@ -563,10 +629,12 @@ def main() -> int:
         log("\nnothing to add")
         return 0
 
-    if missing:
-        log(f"\nbroadcasting {len(missing)} addition(s) as {args.account}...")
+    if missing or pruned:
+        log(f"\nbroadcasting {len(missing)} addition(s), {len(custom) if pruned else 0} removal(s) as {args.account}...")
         broadcast_metadata(args.account, serialized, key, args.rpc.split(","))
         confirm_registered(args.rpc, args.account, wanted)
+        if pruned:
+            confirm_removed(args.rpc, args.account, custom)
         log("confirmed on chain")
     else:
         log("\nnothing to add")

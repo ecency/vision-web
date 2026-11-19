@@ -201,6 +201,13 @@ account's on-chain `posting_json_metadata`. Exact string match, no wildcards, so
 method when the instance has no usable client, which is why hosted blogs currently offer Keychain
 and HiveAuth only.
 
+Only tenant subdomains (`https://<name>.blogs.ecency.com/auth`) are registered on the shared
+app. A custom domain is never put there, verified or not: it is a host the tenant controls, so
+the blog app hides the shared app's Hivesigner button on a custom domain, and an owner who wants
+Hivesigner there names their own app (`general.hivesigner.clientId`), registered for that domain.
+Custom-domain callbacks registered for verified custom domains before this rule are listed on every pass and removed with
+`--prune-custom-domains` (a broadcast, so it is run by hand).
+
 Registration and enablement are one operation, run on a schedule by
 `scripts/hivesigner-redirect-uris.py`. Each pass:
 
@@ -234,13 +241,13 @@ instance, and neither is a bug in the script.
   empty registration; treating it as empty would withdraw the login method from every tenant at
   once on one bad RPC response.
 - **Overlapping runs are prevented** by a lock file, and would be harmless anyway: every pass
-  merges onto whatever is on chain at the time and never removes an entry.
+  merges onto whatever is on chain at the time and never removes an entry unless asked to with
+  `--prune-custom-domains`.
 - **A config save racing the reconcile cannot lose.** The listing the pass iterates is a
   snapshot, so each tenant's row is re-read `FOR UPDATE` and the decision is taken again from
   it, inside the transaction that then writes. Without that, an owner saving their own
   Hivesigner app in that window would have it overwritten with the shared one and never
-  restored, and a custom domain verified in that window would be enabled on one origin while
-  the other was still unregistered.
+  restored.
 - **The served file cannot go stale either.** The same hazard applies one step later: a row
   committed a moment ago is the wrong thing to write to disk if something else committed after
   it. Both writers of a tenant's file publish by name through `publishConfigFile`, which

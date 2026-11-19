@@ -60,8 +60,10 @@ class SafeRedirectUri(unittest.TestCase):
         # labels under the base domain.
         self.accepts("https://louis.random.blogs.ecency.com/auth")
 
-    def test_accepts_a_custom_domain(self):
-        self.accepts("https://blog.example.org/auth")
+    def test_refuses_a_custom_domain(self):
+        # The shared app's callbacks carry its access tokens; a host the
+        # tenant controls (and can repoint or lose) must never be one.
+        self.refuses("https://blog.example.org/auth")
 
     def test_refuses_plain_http(self):
         self.refuses("http://alice.blogs.ecency.com/auth")
@@ -102,6 +104,86 @@ class SafeRedirectUri(unittest.TestCase):
     def test_refuses_a_hostname_that_is_not_a_hostname(self):
         self.refuses("https://-bad-.example/auth")
         self.refuses("https://localhost/auth")
+
+
+class TenantUris(unittest.TestCase):
+    """Only the tenant's own subdomain goes on the shared app, verified domain or not."""
+
+    def test_a_verified_custom_domain_is_not_registered(self):
+        rows = [("alice", "evil.example", True)]
+        self.assertEqual(
+            registrar.uris_for_tenants(rows, BASE), ["https://alice.blogs.ecency.com/auth"]
+        )
+
+    def test_lowercases_the_account_name(self):
+        self.assertEqual(
+            registrar.uris_for_tenants([("Bob", None, False)], BASE),
+            ["https://bob.blogs.ecency.com/auth"],
+        )
+
+
+class CustomDomainEntries(unittest.TestCase):
+    """Custom-domain callbacks registered before the rule changed, found and removable."""
+
+    existing = [
+        "https://ecency.com/auth",
+        "https://alice.blogs.ecency.com/auth",
+        "https://evil.example/auth",
+        "https://hand-added.example/auth",
+    ]
+
+    def test_an_unverified_claim_never_picks_a_hand_registered_host(self):
+        rows = [("mallory", "evil.example", False)]
+        self.assertEqual(registrar.custom_domain_entries(self.existing, rows, BASE), [])
+
+    def test_finds_the_entries_of_any_verified_tenant_custom_domain(self):
+        rows = [("alice", "Evil.Example", True), ("bob", None, False)]
+        self.assertEqual(
+            registrar.custom_domain_entries(self.existing, rows, BASE), ["https://evil.example/auth"]
+        )
+
+    def test_never_picks_an_ecency_or_hosted_host_whatever_a_tenant_claimed(self):
+        # The column holds whatever an owner typed; Ecency's own callbacks stay.
+        existing = [
+            "https://ecency.com/auth",
+            "https://ecency.com/auth/hs-callback",
+            "https://chat.ecency.com/auth",
+            "https://bob.blogs.ecency.com/auth",
+            "https://evil.example/other",
+            "https://[bad/auth",
+        ]
+        rows = [
+            ("mallory", "ecency.com", False),
+            ("eve", "bob.blogs.ecency.com", False),
+            ("carol", "chat.ecency.com", True),
+            ("dan", "evil.example", True),
+        ]
+        self.assertEqual(registrar.custom_domain_entries(existing, rows, BASE), [])
+
+    def test_confirms_a_removal_only_once_it_is_on_chain(self):
+        reads = iter([["https://evil.example/auth"], []])
+        original = (registrar.fetch_account, registrar.current_metadata, registrar.CONFIRM_DELAY_SECONDS)
+        registrar.fetch_account = lambda *_: {}
+        registrar.current_metadata = lambda _account: ({}, next(reads))
+        registrar.CONFIRM_DELAY_SECONDS = 0
+        try:
+            registrar.confirm_removed("rpc", "ecency.app", ["https://evil.example/auth"])
+            reads = iter([["https://evil.example/auth"]] * registrar.CONFIRM_ATTEMPTS)
+            with self.assertRaises(SystemExit):
+                registrar.confirm_removed("rpc", "ecency.app", ["https://evil.example/auth"])
+        finally:
+            registrar.fetch_account, registrar.current_metadata, registrar.CONFIRM_DELAY_SECONDS = original
+
+    def test_prune_drops_only_those_entries(self):
+        kept = registrar.prune_uris(self.existing, ["https://evil.example/auth"])
+        self.assertEqual(
+            kept,
+            [
+                "https://ecency.com/auth",
+                "https://alice.blogs.ecency.com/auth",
+                "https://hand-added.example/auth",
+            ],
+        )
 
 
 class MergeUris(unittest.TestCase):

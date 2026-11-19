@@ -134,13 +134,15 @@ describe('tenantRedirectUris', () => {
     ).toEqual(['https://alice.blogs.ecency.com/auth']);
   });
 
-  it('adds the custom domain once it is VERIFIED, because both origins serve the same config', () => {
+  it('never includes a custom domain, even a VERIFIED one', () => {
+    // A host the tenant controls can be repointed or lost, and a callback on the
+    // shared app keeps receiving its access tokens after that.
     expect(
       tenantRedirectUris(
         { username: 'alice', customDomain: 'alice.example', customDomainVerified: true },
         BASE
       )
-    ).toEqual(['https://alice.blogs.ecency.com/auth', 'https://alice.example/auth']);
+    ).toEqual(['https://alice.blogs.ecency.com/auth']);
   });
 
   it('never includes a custom domain that has only been CLAIMED', () => {
@@ -154,13 +156,13 @@ describe('tenantRedirectUris', () => {
     ).toEqual(['https://alice.blogs.ecency.com/auth']);
   });
 
-  it('lower-cases both hosts, since the match on chain is exact', () => {
+  it('lower-cases the host, since the match on chain is exact', () => {
     expect(
       tenantRedirectUris(
         { username: 'Alice', customDomain: 'Alice.Example', customDomainVerified: true },
         BASE
       )
-    ).toEqual(['https://alice.blogs.ecency.com/auth', 'https://alice.example/auth']);
+    ).toEqual(['https://alice.blogs.ecency.com/auth']);
   });
 });
 
@@ -386,10 +388,10 @@ describe('reconcileHivesignerClientIds', () => {
     expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
   });
 
-  it('does not enable on an origin set that grew after the listing was taken', async () => {
-    // A custom domain verified in that window adds a second serving origin the
-    // listing knew nothing about. Enabling on the strength of the first one is
-    // exactly the button that fails for everyone arriving on the second.
+  it('enables on the subdomain alone, whatever custom domain was verified meanwhile', async () => {
+    // Only the subdomain is ever registered on the shared app; the blog hides
+    // that app's button on its custom domain, so a domain verified after the
+    // listing changes nothing here.
     chainHas('https://alice.blogs.ecency.com/auth');
     mocks.getActiveTenants.mockResolvedValue([tenant()]);
     mocks.lockedRow.mockReturnValue([
@@ -398,8 +400,7 @@ describe('reconcileHivesignerClientIds', () => {
 
     const result = await reconcileHivesignerClientIds(APP);
 
-    expect(result.enabled).toEqual([]);
-    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
+    expect(result.enabled).toEqual(['alice']);
   });
 
   it('writes nothing for a tenant whose row disappeared after the listing', async () => {
@@ -493,7 +494,7 @@ describe('reconcileHivesignerClientIds', () => {
     expect(publishedConfig('alice')).toBeUndefined();
   });
 
-  it('requires BOTH origins before enabling a tenant that serves a verified custom domain', async () => {
+  it('enables a tenant with a verified custom domain on its subdomain registration', async () => {
     chainHas('https://alice.blogs.ecency.com/auth');
     mocks.getActiveTenants.mockResolvedValue([
       tenant({ customDomain: 'alice.example', customDomainVerified: true }),
@@ -501,7 +502,6 @@ describe('reconcileHivesignerClientIds', () => {
 
     const result = await reconcileHivesignerClientIds(APP);
 
-    expect(result.enabled).toEqual([]);
-    expect(mocks.applyConfigDocument).not.toHaveBeenCalled();
-  });
+    expect(result.enabled).toEqual(['alice']);
+});
 });

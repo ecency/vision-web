@@ -1,4 +1,4 @@
-import { resolveHivesignerClientId } from '@/features/auth/utils/hivesigner';
+import { isSharedAppHost, resolveHivesignerClientId } from '@/features/auth/utils/hivesigner';
 
 /**
  * What the owner is told when Hivesigner is configured but cannot work.
@@ -18,13 +18,17 @@ export const HIVESIGNER_SETUP_NOTICE =
  * never disagree. Telling a managed owner to email support would send them to
  * ask for something that completes on its own within minutes, and the wait is
  * the only part they need explained.
- *
- * A verified custom domain is called out because it is the one case where a
- * working button goes away again for a few minutes: the new origin has to be
- * registered before either address may be offered.
  */
 export const HIVESIGNER_MANAGED_SETUP_NOTICE =
-  "Hivesigner is listed as a login method but this site's address is not registered with the shared Hivesigner app yet, so the button stays hidden. Registration is automatic on a managed blog and completes within a few minutes of the site going live, and again after a custom domain is verified. Add your own app id under General Settings > Hivesigner if you would rather not wait.";
+  "Hivesigner is listed as a login method but this site's address is not registered with the shared Hivesigner app yet, so the button stays hidden. Registration is automatic on a managed blog and completes within a few minutes of the site going live. Add your own app id under General Settings > Hivesigner if you would rather not wait.";
+
+/**
+ * A managed blog on its custom domain. The shared app registers only the hosted
+ * subdomain, so its button is hidden here for good, not for a few minutes: the
+ * owner's own app, registered for this domain, is the way to offer it.
+ */
+export const HIVESIGNER_CUSTOM_DOMAIN_NOTICE =
+  "Hivesigner is listed as a login method, but the shared Hivesigner app is only offered on your blogs.ecency.com address, so the button is hidden on this custom domain. To offer it here, register this domain on your own Hivesigner app and add its id under General Settings > Hivesigner.";
 
 const MANAGED_PATH = [
   'configuration',
@@ -66,7 +70,10 @@ function readPath(source: unknown, path: readonly string[]): unknown {
  * document rather than reading the loaded one, so the editor can check what is
  * on screen, unsaved edits included.
  */
-export function getHivesignerSetupNotice(config: unknown): string | null {
+export function getHivesignerSetupNotice(
+  config: unknown,
+  hostname: string = typeof window === 'undefined' ? '' : window.location.hostname,
+): string | null {
   const auth = readPath(config, AUTH_PATH);
   // Same rule the app applies: absent means off, and with login off there is no
   // button to miss.
@@ -75,14 +82,17 @@ export function getHivesignerSetupNotice(config: unknown): string | null {
   const methods = readKey(auth, 'methods');
   if (!Array.isArray(methods) || !methods.includes('hivesigner')) return null;
 
-  if (resolveHivesignerClientId(readPath(config, CLIENT_ID_PATH)) !== null) {
-    return null;
-  }
-
   // `managed` is injected into the served config by the hosting service and is
   // never stored, so it cannot be set by a self-hosted config claiming a
   // registration nobody is going to perform for it.
-  return readPath(config, MANAGED_PATH) === true
-    ? HIVESIGNER_MANAGED_SETUP_NOTICE
-    : HIVESIGNER_SETUP_NOTICE;
+  const managed = readPath(config, MANAGED_PATH) === true;
+  const configured = readPath(config, CLIENT_ID_PATH);
+  if (resolveHivesignerClientId(configured, { managed, hostname }) !== null) {
+    return null;
+  }
+  // Named the shared app, on a custom domain where it is never registered.
+  if (managed && resolveHivesignerClientId(configured) !== null && !isSharedAppHost(hostname)) {
+    return HIVESIGNER_CUSTOM_DOMAIN_NOTICE;
+  }
+  return managed ? HIVESIGNER_MANAGED_SETUP_NOTICE : HIVESIGNER_SETUP_NOTICE;
 }
