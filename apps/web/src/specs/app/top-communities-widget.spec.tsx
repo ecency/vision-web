@@ -12,9 +12,15 @@ let town: Community | null = null;
 let failTown = false;
 let failRanked = false;
 let subscriptions: string[][] = [];
+let failSubscriptions = false;
+let activeUsername: string | null = "alice";
+const rankedFetch = vi.fn();
 
 vi.mock("@/core/hooks/use-active-account", () => ({
-  useActiveAccount: () => ({ activeUser: { username: "alice" } })
+  useActiveAccount: () => ({
+    activeUser: activeUsername ? { username: activeUsername } : null,
+    username: activeUsername
+  })
 }));
 vi.mock("@/features/shared", () => ({
   LoginRequired: ({ children }: React.PropsWithChildren) => <>{children}</>
@@ -39,13 +45,19 @@ vi.mock("@ecency/sdk", async () => ({
   getCommunitiesQueryOptions: () => ({
     queryKey: ["ranked"],
     queryFn: async () => {
+      rankedFetch();
       if (failRanked) throw new Error("Ranked communities unavailable");
       return ranked;
     }
   }),
-  getAccountSubscriptionsQueryOptions: () => ({
-    queryKey: ["subscriptions"],
-    queryFn: async () => subscriptions
+  getAccountSubscriptionsQueryOptions: (username?: string) => ({
+    queryKey: ["subscriptions", username],
+    enabled: !!username,
+    retry: false,
+    queryFn: async () => {
+      if (failSubscriptions) throw new Error("Subscriptions unavailable");
+      return subscriptions;
+    }
   })
 }));
 vi.mock("@/api/sdk-mutations", () => ({
@@ -60,6 +72,8 @@ describe("feed community suggestions", () => {
     vi.clearAllMocks();
     failTown = false;
     failRanked = false;
+    failSubscriptions = false;
+    activeUsername = "alice";
     subscriptions = [];
     town = mockCommunity({ name: "hive-125125", title: "Town Square" });
     ranked = [
@@ -166,5 +180,124 @@ describe("feed community suggestions", () => {
       "href",
       "/communities"
     );
+  });
+
+  describe("my communities", () => {
+    const subscribed = (n: number) =>
+      Array.from({ length: n }, (_, i) => [`hive-30000${i}`, `Joined ${i}`, "guest", ""]);
+    const joinedLinks = () => screen.queryAllByRole("link", { name: /^Joined \d$/ });
+
+    it("lists 5 distinct subscribed communities and links to the reader's full list", async () => {
+      subscriptions = subscribed(7);
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByText("top-communities.my-title")).toBeInTheDocument();
+      await waitFor(() => expect(joinedLinks()).toHaveLength(5));
+      const names = joinedLinks().map((l) => l.textContent);
+      expect(new Set(names).size).toBe(5);
+      for (const link of joinedLinks()) {
+        const row = subscriptions.find((r) => r[1] === link.textContent)!;
+        expect(link).toHaveAttribute("href", `/created/${row[0]}`);
+      }
+      expect(screen.getByRole("link", { name: "top-communities.view-all" })).toHaveAttribute(
+        "href",
+        "/@alice/communities"
+      );
+      expect(screen.getByRole("link", { name: "top-communities.explore" })).toHaveAttribute(
+        "href",
+        "/communities"
+      );
+    });
+
+    it("lists every subscription when there are fewer than 5", async () => {
+      subscriptions = subscribed(3);
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      await waitFor(() => expect(joinedLinks()).toHaveLength(3));
+    });
+
+    it("skips malformed rows and falls back to the name for an empty title", async () => {
+      subscriptions = [
+        ["hive-300001", "Joined 1", "guest", ""],
+        ["hive-300001", "Joined 1", "guest", ""],
+        "hive-300002" as unknown as string[],
+        ["", "Joined 3", "guest", ""],
+        ["hive-300004", "", "guest", ""]
+      ];
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Joined 1" })).toHaveAttribute(
+        "href",
+        "/created/hive-300001"
+      );
+      expect(screen.getByRole("link", { name: "hive-300004" })).toHaveAttribute(
+        "href",
+        "/created/hive-300004"
+      );
+      expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    });
+
+    it("picks a different set between page loads", async () => {
+      subscriptions = subscribed(9);
+      const sets = new Set<string>();
+      for (const seed of [0.05, 0.35, 0.65, 0.95]) {
+        vi.spyOn(Math, "random").mockReturnValueOnce(seed);
+        const { unmount } = renderWithQueryClient(<TopCommunitiesWidget />);
+        await waitFor(() => expect(joinedLinks()).toHaveLength(5));
+        sets.add(
+          joinedLinks()
+            .map((l) => l.textContent)
+            .sort()
+            .join("|")
+        );
+        unmount();
+      }
+      expect(sets.size).toBeGreaterThan(1);
+    });
+
+    it("does not request or show the discover list when the reader has subscriptions", async () => {
+      subscriptions = subscribed(2);
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      await waitFor(() => expect(joinedLinks()).toHaveLength(2));
+      expect(screen.queryByText("top-communities.discover-title")).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Town Square" })).not.toBeInTheDocument();
+      expect(rankedFetch).not.toHaveBeenCalled();
+    });
+
+    it("falls back to discover when the reader has no subscriptions", async () => {
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
+      expect(screen.queryByText("top-communities.my-title")).not.toBeInTheDocument();
+    });
+
+    it("falls back to discover when the subscriptions request fails", async () => {
+      failSubscriptions = true;
+      subscriptions = subscribed(3);
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      // The join buttons refetch the failed query; the card must not fall back
+      // to the skeleton or flip to "My communities" when that refetch lands.
+      failSubscriptions = false;
+      await new Promise((r) => setTimeout(r, 100));
+      expect(screen.getByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      expect(screen.queryByText("top-communities.my-title")).not.toBeInTheDocument();
+    });
+
+    it("keeps discover on screen after the reader joins a suggested community", async () => {
+      ranked = [];
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      fireEvent.click(await screen.findByRole("button", { name: "community.subscribe" }));
+      await waitFor(() => expect(subscribe).toHaveBeenCalled());
+      expect(await screen.findByRole("button", { name: "community.subscribed" })).toBeInTheDocument();
+      expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
+      expect(screen.queryByText("top-communities.my-title")).not.toBeInTheDocument();
+    });
+
+    it("shows discover to a logged-out reader", async () => {
+      activeUsername = null;
+      subscriptions = subscribed(3);
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      expect(joinedLinks()).toHaveLength(0);
+      expect(screen.queryByRole("link", { name: "top-communities.view-all" })).not.toBeInTheDocument();
+    });
   });
 });
