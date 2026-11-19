@@ -439,15 +439,31 @@ describe('catchPostImage fast mode', () => {
   })
 
   it('stays linear on a body with thousands of mismatched anchors', () => {
-    const many = Array.from(
-      { length: 20_000 },
-      (_, i) => `<a href="https://example.com/p${i}">https://files.peakd.com/x/t${i}.png</a>`
-    ).join(' ')
-    const started = performance.now()
-    expect(getEntryImageRawUrl(entry(many))).toBeNull()
-    expect(catchPostImage(entry(many), 0, 0, 'match', FAST)).toBeNull()
-    // Generous for slow CI: the quadratic form took over a second at 4,000.
-    expect(performance.now() - started).toBeLessThan(3_000)
+    // Growth, not wall time: a busy runner slows both sizes alike, while a
+    // quadratic scan grows ~64x from N to 8N against ~8x for a linear one.
+    // Each call gets a fresh permlink, so no run is answered from the memo.
+    const body = (count: number) =>
+      Array.from(
+        { length: count },
+        (_, i) => `<a href="https://example.com/p${i}">https://files.peakd.com/x/t${i}.png</a>`
+      ).join(' ')
+    const time = (text: string) => {
+      let best = Infinity
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now()
+        expect(getEntryImageRawUrl(entry(text))).toBeNull()
+        expect(catchPostImage(entry(text), 0, 0, 'match', FAST)).toBeNull()
+        best = Math.min(best, performance.now() - started)
+      }
+      return best
+    }
+    const small = body(2_500)
+    const large = body(20_000)
+    time(small) // warm the JIT before measuring
+    const ratio = time(large) / Math.max(time(small), 1)
+    // Measured 2026-11-19: 6-11 for this code, idle and with every core busy;
+    // 32 with a light per-anchor rescan from the start of the body.
+    expect(ratio).toBeLessThan(18)
   })
 
   it('treats a tag with a glued attribute as text, as the renderer does, so its URL is prose', () => {
