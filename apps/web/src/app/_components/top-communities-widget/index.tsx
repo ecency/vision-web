@@ -64,10 +64,10 @@ export const TopCommunitiesWidget = () => {
   const showDiscover =
     !showMine && (discoverLatched || (!restorePending && !subscriptionsLoading));
 
+  // Any account change (logout, sign-in, switch) starts the choice fresh.
+  useEffect(() => setDiscoverFor(null), [username]);
   useEffect(() => {
-    // A logout ends the page load's choice: signing back in starts fresh.
-    if (!username) setDiscoverFor(null);
-    else if (showDiscover) setDiscoverFor(username);
+    if (showDiscover && username) setDiscoverFor(username);
   }, [showDiscover, username]);
 
   if (showMine) return <MyCommunities username={username} joined={joined} />;

@@ -375,6 +375,23 @@ describe("feed community suggestions", () => {
       );
     });
 
+    it("shows my communities after switching to another account and back", async () => {
+      ranked = [];
+      const view = renderWithQueryClient(<TopCommunitiesWidget />);
+      fireEvent.click(await screen.findByRole("button", { name: "community.subscribe" }));
+      await screen.findByRole("button", { name: "community.subscribed" });
+      // bob has communities of his own, so Discover never shows for him.
+      const aliceRows = subscriptions;
+      subscriptions = subscribed(2);
+      activeUsername = "bob";
+      view.rerender(<TopCommunitiesWidget />);
+      await waitFor(() => expect(joinedLinks()).toHaveLength(2));
+      subscriptions = aliceRows;
+      activeUsername = "alice";
+      view.rerender(<TopCommunitiesWidget />);
+      expect(await screen.findByText("top-communities.my-title")).toBeInTheDocument();
+    });
+
     it("falls back to discover when no subscription row is usable", async () => {
       subscriptions = ["hive-300001", ["", "x", "guest", ""]] as unknown as string[][];
       renderWithQueryClient(<TopCommunitiesWidget />);
