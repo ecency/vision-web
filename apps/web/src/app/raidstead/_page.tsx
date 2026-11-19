@@ -1,18 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Fredoka } from "next/font/google";
+import { fredokaFamily } from "@/fonts/raidstead";
+import type { CSSProperties } from "react";
 import i18next from "i18next";
 import { ensureRaidsteadLoaded } from "@/features/i18n/raidstead";
 import "./raidstead.scss";
 
 // Headings in the game's printed look; loaded on this route only.
-const display = Fredoka({
-  subsets: ["latin"],
-  weight: ["500", "600"],
-  variable: "--rs-display-font",
-  display: "swap"
-});
+const displayFont = { "--rs-display-font": fredokaFamily } as CSSProperties;
 
 function Loading() {
   return (
@@ -35,7 +31,7 @@ const RaidsteadGame = dynamic(
 
 export function RaidsteadPage() {
   return (
-    <div className={display.variable}>
+    <div style={displayFont}>
       <RaidsteadGame />
     </div>
   );
