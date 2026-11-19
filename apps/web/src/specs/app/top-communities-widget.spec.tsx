@@ -208,6 +208,10 @@ describe("feed community suggestions", () => {
         "href",
         "/communities"
       );
+      expect(screen.getByRole("link", { name: "top-communities.create-button" })).toHaveAttribute(
+        "href",
+        "/communities/create"
+      );
     });
 
     it("lists every subscription when there are fewer than 5", async () => {
@@ -351,6 +355,31 @@ describe("feed community suggestions", () => {
       subscriptionsRetry = { retry: 3, retryDelay: 60_000 };
       renderWithQueryClient(<TopCommunitiesWidget />);
       expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+    });
+
+    it("shows my communities after the reader logs out and back in on the same page", async () => {
+      ranked = [];
+      const view = renderWithQueryClient(<TopCommunitiesWidget />);
+      fireEvent.click(await screen.findByRole("button", { name: "community.subscribe" }));
+      await screen.findByRole("button", { name: "community.subscribed" });
+      expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
+      activeUsername = null;
+      view.rerender(<TopCommunitiesWidget />);
+      await screen.findByText("top-communities.discover-title");
+      activeUsername = "alice";
+      view.rerender(<TopCommunitiesWidget />);
+      expect(await screen.findByText("top-communities.my-title")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Town Square" })).toHaveAttribute(
+        "href",
+        "/created/hive-125125"
+      );
+    });
+
+    it("falls back to discover when no subscription row is usable", async () => {
+      subscriptions = ["hive-300001", ["", "x", "guest", ""]] as unknown as string[][];
+      renderWithQueryClient(<TopCommunitiesWidget />);
+      expect(await screen.findByRole("link", { name: "Town Square" })).toBeInTheDocument();
+      expect(screen.queryByText("top-communities.my-title")).not.toBeInTheDocument();
     });
 
     it("shows discover to a logged-out reader", async () => {

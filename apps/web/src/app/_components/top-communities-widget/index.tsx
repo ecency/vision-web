@@ -58,17 +58,19 @@ export const TopCommunitiesWidget = () => {
   // it, which must not put the skeleton back.
   const [discoverFor, setDiscoverFor] = useState<string | null>(null);
   const discoverLatched = !!username && discoverFor === username;
+  const joined = useMemo(() => joinedCommunities(subscriptions), [subscriptions]);
 
-  const showMine =
-    !!username && !discoverLatched && !!subscriptions && subscriptions.length > 0;
+  const showMine = !!username && !discoverLatched && joined.length > 0;
   const showDiscover =
     !showMine && (discoverLatched || (!restorePending && !subscriptionsLoading));
 
   useEffect(() => {
-    if (showDiscover && username) setDiscoverFor(username);
+    // A logout ends the page load's choice: signing back in starts fresh.
+    if (!username) setDiscoverFor(null);
+    else if (showDiscover) setDiscoverFor(username);
   }, [showDiscover, username]);
 
-  if (showMine) return <MyCommunities username={username} subscriptions={subscriptions} />;
+  if (showMine) return <MyCommunities username={username} joined={joined} />;
   if (!showDiscover) return <SidebarSkeleton />;
   return <DiscoverCommunities />;
 };
@@ -98,30 +100,27 @@ function SidebarSkeleton() {
   );
 }
 
-function MyCommunities({
-  username,
-  subscriptions
-}: {
-  username: string;
-  /**
-   * Bridge subscription rows, [name, title, role, label]. The SDK types the
-   * query as string[], so each row is checked before it is read.
-   */
-  subscriptions: readonly unknown[];
-}) {
+/**
+ * The reader's communities as [name, title] pairs, from the bridge subscription
+ * rows ([name, title, role, label]). The SDK types the query as string[], so
+ * each row is checked before it is read; unusable rows are dropped.
+ */
+function joinedCommunities(subscriptions: readonly unknown[] | undefined): [string, string][] {
+  const unique = new Map<string, string>();
+  for (const row of subscriptions ?? []) {
+    if (!Array.isArray(row)) continue;
+    const [name, title] = row;
+    if (typeof name !== "string" || !name || unique.has(name)) continue;
+    unique.set(name, typeof title === "string" && title ? title : name);
+  }
+  return [...unique];
+}
+
+function MyCommunities({ username, joined }: { username: string; joined: [string, string][] }) {
   // Same per-mount seed as the discovery card: a different handful on every
   // page load, stable while the reader scrolls or the query refetches.
   const [seed] = useState(() => Math.random());
-  const list = useMemo(() => {
-    const unique = new Map<string, string>();
-    for (const row of subscriptions) {
-      if (!Array.isArray(row)) continue;
-      const [name, title] = row;
-      if (typeof name !== "string" || !name || unique.has(name)) continue;
-      unique.set(name, typeof title === "string" && title ? title : name);
-    }
-    return seededShuffle([...unique], seed).slice(0, MY_SLOTS);
-  }, [subscriptions, seed]);
+  const list = useMemo(() => seededShuffle(joined, seed).slice(0, MY_SLOTS), [joined, seed]);
 
   return (
     <div className="feed-communities">
@@ -136,12 +135,17 @@ function MyCommunities({
           </li>
         ))}
       </ul>
-      <Link href={`/@${username}/communities`} className="feed-sidebar-link">
-        {i18next.t("top-communities.view-all")}
-      </Link>
-      <div className="feed-community-create">
-        <Link href="/communities" className="feed-sidebar-link">
+      <div className="flex flex-col items-start">
+        <Link href={`/@${username}/communities`} className="feed-sidebar-link">
+          {i18next.t("top-communities.view-all")}
+        </Link>
+        <Link href="/communities" className="feed-sidebar-link !mt-0">
           {i18next.t("top-communities.explore")}
+        </Link>
+      </div>
+      <div className="feed-community-create">
+        <Link href="/communities/create" className="feed-sidebar-link">
+          {i18next.t("top-communities.create-button")}
         </Link>
       </div>
     </div>
