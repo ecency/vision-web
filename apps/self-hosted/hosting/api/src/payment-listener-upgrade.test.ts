@@ -93,15 +93,18 @@ describe('PaymentListener.processUpgrade (transactional)', () => {
     expect(auditLog).not.toHaveBeenCalled();
   });
 
-  it('fails the payment without touching the tenant when already Pro', async () => {
+  const timeExtension = () => queries.find((q) => /SET subscription_expires_at = GREATEST\(COALESCE\(subscription_expires_at, NOW\(\)\), NOW\(\)\) \+/.test(q));
+
+  it('keeps an upgrade payment to a blog already on the plan as time at the custom-domain rate', async () => {
     plan = [
       { match: /SELECT \* FROM tenants/, rows: [{ id: 't1', subscription_status: 'active', subscription_plan: 'pro', subscription_expires_at: IN_A_MONTH }] },
       { match: /INSERT INTO payments/, rows: [{ id: 'p1' }] },
+      { match: /SET subscription_expires_at = GREATEST/, rows: [{ id: 't1' }] },
     ];
     await run(10);
     expect(lastTenantUpdate()).toBeUndefined();
-    expect(paymentStatuses()).toEqual(['failed']);
-    expect(auditLog).not.toHaveBeenCalled();
+    expect(timeExtension()).toBeTruthy();
+    expect(paymentStatuses()).toEqual(['processed']);
   });
 
   it('fails the payment without touching the tenant when not active', async () => {
@@ -114,14 +117,17 @@ describe('PaymentListener.processUpgrade (transactional)', () => {
     expect(paymentStatuses()).toEqual(['failed']);
   });
 
-  it('fails an underpaid transfer without upgrading', async () => {
+  it('keeps a transfer that no longer covers the premium as standard time, without upgrading', async () => {
+    // The term grew (another payment) after the upgrade quote was made.
     plan = [
       { match: /SELECT \* FROM tenants/, rows: [{ id: 't1', subscription_status: 'active', subscription_plan: 'standard', subscription_expires_at: IN_A_MONTH }] },
       { match: /INSERT INTO payments/, rows: [{ id: 'p1' }] },
+      { match: /SET subscription_expires_at = GREATEST/, rows: [{ id: 't1' }] },
     ];
-    await run(0.001); // far below the prorated premium
+    await run(0.5); // below the prorated premium
     expect(lastTenantUpdate()).toBeUndefined();
-    expect(paymentStatuses()).toEqual(['failed']);
+    expect(timeExtension()).toBeTruthy();
+    expect(paymentStatuses()).toEqual(['processed']);
   });
 
   it('flips only under the full eligibility predicate (standard + active + unexpired)', async () => {

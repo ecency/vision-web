@@ -59,6 +59,38 @@ describe("self-hosted fonts (#2136)", () => {
     }
   });
 
+  it("sizes the fallback fonts exactly as next/font/google did", async () => {
+    // The fallback shows until the webfont swaps in; different metrics than
+    // before would change how much the text shifts at that swap.
+    const nextDir = path.dirname(require.resolve("next/package.json"));
+    const google = await import(
+      path.join(nextDir, "dist/compiled/@next/font/dist/google/get-fallback-font-override-metrics.js")
+    );
+    const metricsOf = (google.getFallbackFontOverrideMetrics ?? google.default.getFallbackFontOverrideMetrics) as (
+      family: string
+    ) => { fallbackFont: string; ascentOverride: string; descentOverride: string; lineGapOverride: string; sizeAdjust: string };
+    const css = fs.readFileSync(path.join(FONTS, "fallbacks.css"), "utf8");
+    for (const family of ["Inter", "Lora", "Fredoka"]) {
+      const m = metricsOf(family);
+      const face = new RegExp(`@font-face\\s*\\{[^}]*font-family:\\s*"${family} Fallback"[^}]*\\}`).exec(css)?.[0];
+      expect(face, family).toBeDefined();
+      expect(face).toContain(`local("${m.fallbackFont}")`);
+      expect(face).toContain(`ascent-override: ${m.ascentOverride}`);
+      expect(face).toContain(`descent-override: ${m.descentOverride}`);
+      expect(face).toContain(`line-gap-override: ${m.lineGapOverride}`);
+      expect(face).toContain(`size-adjust: ${m.sizeAdjust}`);
+    }
+    // No face computes its own fallback: the stacks end with these instead.
+    for (const mod of fontModules()) {
+      const source = fs.readFileSync(mod, "utf8");
+      expect(source).not.toMatch(/adjustFontFallback:\s*"/);
+      for (const m of source.matchAll(/fontStack\(\[[^\]]+\],\s*"([^"]+)"\)/g)) {
+        expect(m[1]).toMatch(/^(Inter|Lora|Fredoka) Fallback$/);
+      }
+      expect(source).toMatch(/fontStack\(\[[^\]]+\],\s*"[A-Za-z]+ Fallback"\)/);
+    }
+  });
+
   it("each face keeps its unicode range, and only latin faces are preloaded", () => {
     for (const mod of fontModules()) {
       const calls = fs.readFileSync(mod, "utf8").split("localFont({").slice(1);

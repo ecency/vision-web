@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithQueryClient } from "@/specs/test-utils";
@@ -49,6 +50,9 @@ vi.mock("@/utils/user-token", () => ({
 
 vi.mock("@/core/global-store", () => ({
   useGlobalStore: (selector: (s: any) => unknown) => selector({ toggleUiProp: vi.fn() })
+}));
+vi.mock("@/features/hosting-signup/custom-domain-manager", () => ({
+  CustomDomainManager: () => <div>custom-domain-manager</div>
 }));
 
 import { HostingSignup } from "@/features/hosting-signup/hosting-signup";
@@ -157,6 +161,111 @@ describe("HostingSignup one-click HBD pay", () => {
     await waitFor(() =>
       expect(hostingApi.paymentInstructions).toHaveBeenCalledWith("alice", 1, true)
     );
+  });
+
+  it.each([
+    ["pro", true],
+    ["standard", false]
+  ])("after a custom-domain payment, offers domain setup only on the plan the blog is on (%s)", async (plan, offered) => {
+    // A custom-domain payment that could not cover the difference for a running term is kept
+    // as standard time; that blog cannot attach a domain, so the setup is not offered.
+    hostingApi.paymentInstructions.mockImplementation(async (_u: string, _m: number, domain: boolean) =>
+      domain ? { ...INSTRUCTIONS, amount: "3.000 HBD", memo: "blog:alice:domain" } : INSTRUCTIONS
+    );
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: plan,
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    await waitFor(() => expect(i18next.t).toHaveBeenCalledWith("hosting.pay-hbd-oneclick", { amount: "3.000" }));
+    const payBtn = (await screen.findByRole("button", { name: "hosting.pay-hbd-oneclick" })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    if (offered) {
+      expect(await screen.findByText("custom-domain-manager")).toBeTruthy();
+      expect(screen.queryByText("hosting.custom-domain-kept-standard")).toBeNull();
+    } else {
+      expect(await screen.findByText("hosting.custom-domain-kept-standard")).toBeTruthy();
+      expect(screen.queryByText("custom-domain-manager")).toBeNull();
+    }
+  });
+
+  it("offers only HBD for a custom domain on a running standard term", async () => {
+    // A card product has a fixed price and cannot carry the premium for the
+    // months left, so that case is paid in HBD, whose quote includes it.
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: true, monthlyUsdCents: 200 }
+    });
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "standard",
+      subscriptionExpiresAt: new Date(Date.now() + 300 * 86400000).toISOString()
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    await waitFor(() => expect(screen.queryByText("hosting.pay-card")).toBeNull());
+    expect(screen.getByText("hosting.custom-domain-upgrade-hbd-only")).toBeTruthy();
+    // Turning the add-on off offers card again.
+    fireEvent.click(screen.getByText("hosting.custom-domain-option"));
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+  });
+
+  it("keeps card for a custom domain on a new or expired blog", async () => {
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: true, monthlyUsdCents: 200 }
+    });
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "expired",
+      subscriptionPlan: "standard",
+      subscriptionExpiresAt: "2026-08-01T00:00:00.000Z"
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+    expect(screen.queryByText("hosting.custom-domain-upgrade-hbd-only")).toBeNull();
+  });
+
+  it("shows the quoted amount, premium for the current term included, on the pay button", async () => {
+    // An active standard blog with time left: the add-on quote carries the
+    // premium for the months left, so the label must show what is sent.
+    hostingApi.paymentInstructions.mockImplementation(async (_u: string, _m: number, domain: boolean) =>
+      domain
+        ? { ...INSTRUCTIONS, amount: "15.000 HBD", memo: "blog:alice:domain", upgradePremium: "12.000 HBD" }
+        : INSTRUCTIONS
+    );
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+
+    await waitFor(() =>
+      expect(i18next.t).toHaveBeenCalledWith("hosting.pay-hbd-oneclick", { amount: "15.000" })
+    );
+    expect(i18next.t).toHaveBeenCalledWith("hosting.custom-domain-term-premium", { amount: "12.000" });
+    expect(await screen.findByText("hosting.custom-domain-term-premium")).toBeTruthy();
   });
 
   it("broadcasts the exact transfer and advances to success", async () => {

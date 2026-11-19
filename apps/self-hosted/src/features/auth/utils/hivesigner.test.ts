@@ -27,6 +27,20 @@ describe('hivesigner availability', () => {
     expect(resolveHivesignerClientId('myblog.app')).toBe('myblog.app');
   });
 
+  it('offers the shared ecency.app client on a managed blog only on its hosted subdomain', () => {
+    // Only *.blogs.ecency.com callbacks are registered on the shared app for managed blogs.
+    const managed = (hostname: string) => ({ managed: true, hostname });
+    expect(resolveHivesignerClientId('ecency.app', managed('alice.blogs.ecency.com'))).toBe('ecency.app');
+    expect(resolveHivesignerClientId('ecency.app', managed('alice.example'))).toBe(null);
+    expect(resolveHivesignerClientId(' Ecency.App ', managed('blog.alice.example'))).toBe(null);
+    // The owner's own app is theirs to register on any domain.
+    expect(resolveHivesignerClientId('myblog.app', managed('alice.example'))).toBe('myblog.app');
+  });
+
+  it('keeps the shared app on a self-hosted instance whose address was registered by hand', () => {
+    expect(resolveHivesignerClientId('ecency.app', { hostname: 'blog.example.org' })).toBe('ecency.app');
+  });
+
   it('ignores a blank or non-string client id', () => {
     expect(resolveHivesignerClientId('   ')).toBe(null);
     expect(resolveHivesignerClientId(42)).toBe(null);

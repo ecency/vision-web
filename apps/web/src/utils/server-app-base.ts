@@ -19,20 +19,23 @@ const getForwardedProto = (headersList: HeaderReader): string => {
   return proto === "http" ? "http" : "https";
 };
 
-const getForwardedHost = (headersList: HeaderReader): string | null => {
-  const value = headersList.get("x-forwarded-host") || headersList.get("host");
+const getRequestHost = (headersList: HeaderReader): string | null => {
+  // Host only. X-Forwarded-Host is whatever the client sent: nginx passes it
+  // through untouched, and the result is written into publicly cached pages.
+  const value = headersList.get("host");
   return value ? value.split(",")[0].trim().toLowerCase() : null;
 };
 
 /**
- * Only the site's own host (the configured base's host, or a subdomain of it)
- * may name the base URL written into links and metadata. Request headers are
- * set by whoever sends the request, so any other value is ignored.
+ * Only the site's own web hosts (the configured base's host and its alpha
+ * deployment) may name the base URL written into links and metadata. Other
+ * subdomains are other apps, hosted blogs among them, and any other value is
+ * ignored.
  */
 const isOwnHost = (host: string): boolean => {
   const own = new URL(defaults.base).hostname.toLowerCase();
   const hostname = host.replace(/:\d+$/, "");
-  return /^[a-z0-9.-]+$/.test(hostname) && (hostname === own || hostname.endsWith(`.${own}`));
+  return hostname === own || hostname === `alpha.${own}`;
 };
 
 export const getServerAppBase = async (): Promise<string> => {
@@ -43,7 +46,7 @@ export const getServerAppBase = async (): Promise<string> => {
 
   try {
     const headersList = await headers();
-    const host = getForwardedHost(headersList);
+    const host = getRequestHost(headersList);
     if (host) {
       if (shouldUseDefaultBase(host) || !isOwnHost(host)) {
         return defaults.base;

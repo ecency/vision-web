@@ -61,7 +61,6 @@ export const DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS = 14;
 const CONFIG = {
   PAYMENT_ACCOUNT: Pricing.PAYMENT_ACCOUNT,
   MONTHLY_PRICE_HBD: Pricing.MONTHLY_PRICE_HBD,
-  PRO_UPGRADE_PRICE_HBD: Pricing.PRO_UPGRADE_PRICE_HBD,
   CUSTOM_DOMAIN_MONTHLY_PRICE_HBD: Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
   HIVE_API_NODES: (process.env.HIVE_API_URL || 'https://api.hive.blog').split(','),
   POLL_INTERVAL_MS: 3000, // 3 seconds (1 block)
@@ -305,11 +304,17 @@ export class PaymentListener {
 
       // Grant only the months that were paid for
       const months = monthsFromAmount;
-      await this.processSubscription(transfer, parsed.username, months, amount, parsed.customDomain);
+      await this.processSubscription(
+        transfer,
+        parsed.username,
+        months,
+        amount,
+        parsed.customDomain
+      );
     } else if (parsed.action === 'upgrade') {
       // The amount is validated inside processUpgrade against the PRORATED custom-domain cost
       // (which depends on the tenant's remaining term). No flat pre-gate here: a flat
-      // PRO_UPGRADE_PRICE_HBD floor could reject a correctly-quoted prorated transfer whenever the
+      // upgrade-price floor could reject a correctly-quoted prorated transfer whenever the
       // per-month premium is below that floor.
       await this.processUpgrade(transfer, parsed.username, amount);
     }
@@ -318,14 +323,19 @@ export class PaymentListener {
   private async processSubscription(
     transfer: any,
     username: string,
-    months: number,
+    requestedMonths: number,
     amount: number,
     // A ':domain' memo activates on the custom-domain ('pro') tier. Set the plan on activation so a
     // one-step blog:name:months:domain payment both creates/extends the blog AND unlocks custom
     // domains. A standard memo passes false and never downgrades an existing pro tenant.
     pro: boolean = false
   ) {
-    console.log('[PaymentListener] Processing subscription:', username, 'for', months, 'months');
+    console.log('[PaymentListener] Processing subscription:', username, 'for', requestedMonths, 'months');
+    // Fewer when a custom-domain payment first covers the premium for the current term.
+    let months = requestedMonths;
+    // A ':domain' payment that could not cover the premium is kept as standard time; recorded on
+    // the audit event so it can be told apart from a plain renewal.
+    const askedForDomain = pro;
 
     let updatedTenant: any = null;
 
@@ -409,6 +419,31 @@ export class PaymentListener {
           console.log('[PaymentListener] Created new tenant:', username);
         }
 
+        // A ':domain' payment on a standard blog with time left moves that whole term to the
+        // custom-domain plan, so it first pays the prorated premium for the months already paid at
+        // the standard rate (the amount the quote included). The term can change between the
+        // quote and this transfer (another payment extended it), so a payment that no longer
+        // covers the premium is kept as standard time rather than refused: see
+        // creditCustomDomainPayment, shared with the card rail. Priced on the FINAL row: one created
+        // or activated by another request since the first lookup carries the premium too.
+        let keptAsStandardTimeMs: number | undefined;
+        let extraMs = 0;
+        if (pro && row) {
+          const credit = Pricing.creditCustomDomainPayment(
+            amount,
+            months,
+            {
+              plan: row.subscription_plan,
+              expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+            },
+            new Date()
+          );
+          pro = credit.pro;
+          months = credit.months;
+          keptAsStandardTimeMs = credit.timeMs;
+          extraMs = credit.extraMs ?? 0;
+        }
+
         // 4. Extend from the later of now / current expiry (same rule as activateSubscription).
         const now = new Date();
         const currentExpiry = row.subscription_expires_at
@@ -416,7 +451,12 @@ export class PaymentListener {
           : now;
         const base = currentExpiry > now ? currentExpiry : now;
         const newExpiry = new Date(base);
-        newExpiry.setMonth(newExpiry.getMonth() + months);
+        if (keptAsStandardTimeMs !== undefined) {
+          newExpiry.setTime(base.getTime() + keptAsStandardTimeMs);
+        } else {
+          newExpiry.setMonth(newExpiry.getMonth() + months);
+          newExpiry.setTime(newExpiry.getTime() + extraMs);
+        }
         const startedAt = row.subscription_started_at || now;
 
         const activated = await client.query(
@@ -436,9 +476,9 @@ export class PaymentListener {
         // 5. Mark the payment processed in the SAME transaction.
         await client.query(
           `UPDATE payments
-           SET tenant_id = $2, status = 'processed', subscription_extended_to = $3
+           SET tenant_id = $2, status = 'processed', subscription_extended_to = $3, months_credited = $4
            WHERE id = $1`,
-          [paymentId, row.id, newExpiry]
+          [paymentId, row.id, newExpiry, months]
         );
 
         console.log('[PaymentListener] Subscription activated for', username, 'until', newExpiry);
@@ -468,7 +508,13 @@ export class PaymentListener {
         void AuditService.log({
           tenantId: updatedTenant.id,
           eventType: 'payment.processed',
-          eventData: { username, months, amount, trxId: transfer.trxId },
+          eventData: {
+            username,
+            months,
+            amount,
+            trxId: transfer.trxId,
+            ...(askedForDomain && !pro ? { customDomainKeptAsStandard: true } : {}),
+          },
         });
       }
     } catch (error) {
@@ -498,7 +544,7 @@ export class PaymentListener {
 
     // Result of the transaction, decided inside it and acted on after commit.
     type UpgradeOutcome =
-      | { status: 'processed'; tenantId: string }
+      | { status: 'processed'; tenantId: string; keptAsTime?: 'standard' | 'pro' }
       | { status: 'failed'; note: string }
       | { status: 'duplicate' };
     let outcome: UpgradeOutcome | null = null;
@@ -550,8 +596,25 @@ export class PaymentListener {
         // expired tenant: upgrading one would take the payment for a blog that isn't running, and a
         // plan bought while a name was abandoned must not carry over to a later fresh reservation.
         if (row.subscription_status !== 'active') return fail('Tenant not active for upgrade');
-        // Already Pro: a repeated or manual upgrade memo would otherwise be taken for a no-op.
-        if (row.subscription_plan === 'pro') return fail('Tenant already on Pro plan');
+        // The payment is never refused for what happened after it was quoted: an upgrade that no
+        // longer applies keeps its value as time on the blog, at the rate of the plan it stays on.
+        const keepAsTime = async (plan: 'standard' | 'pro'): Promise<UpgradeOutcome> => {
+          const monthly =
+            plan === 'pro' ? Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : Pricing.MONTHLY_PRICE_HBD;
+          await client.query(
+            `UPDATE tenants
+                SET subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW()) + ($2 * INTERVAL '1 millisecond'),
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [row.id, Pricing.hbdAsTimeMs(amount, monthly)]
+          );
+          await client.query(`UPDATE payments SET status = 'processed' WHERE id = $1`, [paymentId]);
+          console.log('[PaymentListener] Upgrade for', username, 'kept as', plan, 'time');
+          return { status: 'processed', tenantId: row.id, keptAsTime: plan };
+        };
+
+        // Already on the plan (another payment upgraded it first): kept as time on that plan.
+        if (row.subscription_plan === 'pro') return keepAsTime('pro');
 
         // Prorated: the owner pays the +1/mo custom-domain premium for the months remaining on their
         // current term (upgrade in place, no term extension). Integer-millis compare so an exact
@@ -570,9 +633,9 @@ export class PaymentListener {
         }
         const required = Pricing.customDomainUpgradeHbd(expiresAt, now);
         if (Math.round(amount * 1000) < Math.round(required * 1000)) {
-          return fail(
-            `Insufficient for custom-domain upgrade (need ${Pricing.hbd(required)} HBD for ${months} month(s) remaining)`
-          );
+          // Too little for the premium, for instance because another payment extended the term
+          // after the quote: kept as standard time instead of refused.
+          return keepAsTime('standard');
         }
 
         // 4. Flip to Pro in place. The predicate re-asserts full eligibility (standard + active +
@@ -615,7 +678,12 @@ export class PaymentListener {
       void AuditService.log({
         tenantId: outcome.tenantId,
         eventType: 'payment.upgrade',
-        eventData: { username, amount, trxId: transfer.trxId },
+        eventData: {
+          username,
+          amount,
+          trxId: transfer.trxId,
+          ...(outcome.keptAsTime ? { keptAsTime: outcome.keptAsTime } : {}),
+        },
       });
     }
   }

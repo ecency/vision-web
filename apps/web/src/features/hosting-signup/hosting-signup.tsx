@@ -100,6 +100,8 @@ interface Instructions {
   to: string;
   amount: string;
   memo: string;
+  /** With the add-on on a blog with time left: the premium for that time, already in `amount`. */
+  upgradePremium?: string;
 }
 
 export function HostingSignup() {
@@ -130,6 +132,14 @@ export function HostingSignup() {
   // Custom domain add-on: switches to the $3/mo "prohosting" plan so the tenant activates on the
   // internal pro plan and can attach a custom domain after checkout.
   const [customDomain, setCustomDomain] = useState(false);
+  // An active standard blog with time left: adding the custom domain moves that whole term to the
+  // custom-domain plan and costs the difference for the months left. Only the HBD quote carries
+  // that amount; a card product has a fixed price, so card is not offered for that case.
+  const [runningStandardTerm, setRunningStandardTerm] = useState(false);
+  // The plan the blog ended up on, read once the success step shows. A custom-domain payment that
+  // could not cover the difference for a running term is kept as standard time, and that blog
+  // cannot attach a domain, so domain setup is offered only when this is "pro".
+  const [resultPlan, setResultPlan] = useState<"standard" | "pro" | null>(null);
   const [method, setMethod] = useState<Method>("card");
   const [methods, setMethods] = useState<HostingPaymentMethods | null>(null);
   const [instructions, setInstructions] = useState<Instructions | null>(null);
@@ -177,6 +187,7 @@ export function HostingSignup() {
     !!methods?.card.enabled &&
     !!activeUser &&
     (isCommunity || tenantUsername === activeUser.username);
+  const cardOffered = cardEnabled && !(customDomain && runningStandardTerm);
 
   // The custom-domain add-on is only offered to a logged-in OWNER of the tenant (their own personal
   // blog, or a community they own) — on either rail. This matches the condition that gates the
@@ -201,8 +212,8 @@ export function HostingSignup() {
   // Default to HBD whenever card is not actually available to this visitor (logged out, or
   // the name is not their own), so the payment step never renders with no method shown.
   useEffect(() => {
-    if (!cardEnabled) setMethod("hbd");
-  }, [cardEnabled]);
+    if (!cardOffered) setMethod("hbd");
+  }, [cardOffered]);
 
   // Custom domain now works on BOTH rails: card ($3/mo) and HBD via a one-step
   // blog:name[:months]:domain memo (+1 HBD/mo). It no longer forces a rail, but it IS dropped when
@@ -419,6 +430,7 @@ export function HostingSignup() {
         renewBaselineExpiryRef.current = null; // freshly created, inactive
       }
       setIsFreshReservation(true);
+      setRunningStandardTerm(false);
       setStep("payment");
     } catch (e) {
       const msg = (e as Error).message;
@@ -460,6 +472,11 @@ export function HostingSignup() {
       // checkActivation confirms on active status alone.
       renewBaselineExpiryRef.current =
         existing.subscriptionStatus === "active" ? (existing.subscriptionExpiresAt ?? null) : null;
+      setRunningStandardTerm(
+        existing.subscriptionPlan !== "pro" &&
+          !!existing.subscriptionExpiresAt &&
+          new Date(existing.subscriptionExpiresAt).getTime() > Date.now()
+      );
       setIsFreshReservation(false);
       setStep("payment");
     } finally {
@@ -581,6 +598,7 @@ export function HostingSignup() {
     if (resumeName && step === "username" && tenantUsername === resumeName && activeUser) {
       setResumeName(null);
       setIsFreshReservation(true);
+      setRunningStandardTerm(false);
       setStep("payment");
     }
   }, [resumeName, step, tenantUsername, activeUser]);
@@ -621,7 +639,8 @@ export function HostingSignup() {
     hostingApi
       .paymentInstructions(tenantUsername, months, customDomain)
       .then((r) => {
-        if (!stale) setInstructions({ to: r.to, amount: r.amount, memo: r.memo });
+        if (!stale)
+          setInstructions({ to: r.to, amount: r.amount, memo: r.memo, upgradePremium: r.upgradePremium });
       })
       .catch(() => {
         if (!stale) setInstructions(null);
@@ -642,6 +661,24 @@ export function HostingSignup() {
         new Date(t.subscriptionExpiresAt).getTime() > new Date(baseline).getTime());
     return t.subscriptionStatus === "active" && advanced;
   }, []);
+
+  useEffect(() => {
+    if (step !== "success" || !customDomain) return;
+    let cancelled = false;
+    setResultPlan(null);
+    hostingApi
+      .tenant(tenantUsername)
+      .then((t) => {
+        if (!cancelled) setResultPlan(t.subscriptionPlan === "pro" ? "pro" : "standard");
+      })
+      .catch(() => {
+        // Unknown: offer the setup as before; attaching a domain checks the plan server side.
+        if (!cancelled) setResultPlan("pro");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, customDomain, tenantUsername]);
 
   const checkActivation = useCallback(async () => {
     setError("");
@@ -788,6 +825,11 @@ export function HostingSignup() {
   const usdPer = customDomain ? HOSTING_CUSTOM_DOMAIN_MONTHLY_USD : usdPerBase;
   const hbdPer = customDomain ? hbdPerBase + 1 : hbdPerBase;
   const cardSku = customDomain ? hostingProSkuForMonths(months) : hostingSkuForMonths(months);
+  // What the HBD transfer sends: the quote once it has loaded (it can include the premium for the
+  // time left on a current term), the list price until then.
+  const quotedHbd = instructions ? parseFloat(instructions.amount) : NaN;
+  const hbdTotal = (Number.isFinite(quotedHbd) ? quotedHbd : hbdPer * months).toFixed(3);
+  const termPremium = instructions?.upgradePremium ? parseFloat(instructions.upgradePremium) : 0;
   // The payment-step selection controls are locked while a card submit is in flight
   // (cardSubmitting) and stay locked once the payment is confirmed (paying).
   const payLocked = paying || cardSubmitting;
@@ -1067,7 +1109,7 @@ export function HostingSignup() {
 
           {/* Method toggle */}
           <div className="flex gap-2">
-            {cardEnabled && (
+            {cardOffered && (
               <button
                 onClick={() => setMethod("card")}
                 disabled={payLocked}
@@ -1089,7 +1131,7 @@ export function HostingSignup() {
                   : "border-[--border-color]"
               } ${payLocked ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              {i18next.t("hosting.pay-hbd", { amount: (hbdPer * months).toFixed(3) })}
+              {i18next.t("hosting.pay-hbd", { amount: hbdTotal })}
             </button>
           </div>
 
@@ -1097,7 +1139,11 @@ export function HostingSignup() {
             <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-included-note")}</p>
           )}
 
-          {method === "card" && cardEnabled && (
+          {customDomain && runningStandardTerm && cardEnabled && (
+            <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-upgrade-hbd-only")}</p>
+          )}
+
+          {method === "card" && cardOffered && (
             <HostingCardCheckout
               key={`${cardSku}:${tenantUsername}:${activeUser?.username ?? ""}`}
               username={activeUser?.username ?? tenantUsername}
@@ -1122,9 +1168,16 @@ export function HostingSignup() {
                     full={true}
                   >
                     {i18next.t("hosting.pay-hbd-oneclick", {
-                      amount: (hbdPer * months).toFixed(3)
+                      amount: hbdTotal
                     })}
                   </Button>
+                  {termPremium > 0 && (
+                    <p className="text-sm opacity-75">
+                      {i18next.t("hosting.custom-domain-term-premium", {
+                        amount: termPremium.toFixed(3)
+                      })}
+                    </p>
+                  )}
                   {/* While sending, reassure; once a transfer is out but not yet confirmed, `paying`
                       stays true (button disabled to prevent a duplicate send) and we funnel to the
                       manual re-check via the auto-opened section below. */}
@@ -1259,6 +1312,7 @@ export function HostingSignup() {
               Compare the normalized tenantUsername (not the raw field) so "Alice"/"alice "
               still shows the manager for tenant "alice". */}
           {customDomain &&
+            resultPlan === "pro" &&
             activeUser &&
             (isCommunity || tenantUsername === activeUser.username) && (
               <CustomDomainManager
@@ -1266,6 +1320,9 @@ export function HostingSignup() {
                 tenant={isCommunity ? tenantUsername : undefined}
               />
             )}
+          {customDomain && resultPlan === "standard" && (
+            <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-kept-standard")}</p>
+          )}
         </div>
       )}
     </div>

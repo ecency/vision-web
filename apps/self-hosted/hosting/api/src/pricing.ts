@@ -14,8 +14,6 @@ export const PAYMENT_ACCOUNT = process.env.PAYMENT_ACCOUNT || 'ecency.hosting';
 
 export const MONTHLY_PRICE_HBD = parseFloat(process.env.MONTHLY_PRICE_HBD || '2.000');
 
-export const PRO_UPGRADE_PRICE_HBD = parseFloat(process.env.PRO_UPGRADE_PRICE_HBD || '0.500');
-
 // Custom-domain ('pro') tier: standard + 1 HBD/mo unless explicitly overridden.
 export const CUSTOM_DOMAIN_MONTHLY_PRICE_HBD = parseFloat(
   process.env.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD || (MONTHLY_PRICE_HBD + 1).toString()
@@ -32,36 +30,80 @@ export const CUSTOM_DOMAIN_UPGRADE_DELTA_HBD = Math.max(
 // Whole months remaining on a subscription, rounding a partial month UP (so an active tenant with
 // any remaining term pays for at least one month of the add-on). Returns 0 for a null/past expiry.
 //
-// Counts by repeatedly adding one calendar month — the SAME setMonth() arithmetic the activation
-// paths use to build the expiry — rather than a raw month-index difference. That matters for JS
-// end-of-month rollover: a 1-month term bought on Jan 31 becomes March 3 (Feb has no 31st), and a
-// month-index diff would miscount that as 2 months and double-charge the upgrade. Stepping with
-// setMonth reproduces the rollover, so Jan 31 -> March 3 is one month.
+// Counted from the time left, in average-length months, so the count can only go DOWN as time
+// passes: the quote and the listener each use their own "now", and a payment made exactly as
+// quoted must never meet a higher amount later. Stepping calendar months from "now" was not
+// monotonic (an expiry of Mar 3 counted 1 month at Jan 31 23:59 and 2 at Feb 1 00:00).
 //
-// Both the quote and the listener use this at their own "now"; since time only moves forward,
-// remaining only shrinks, so a payment made against an earlier (equal-or-higher) quote is never
-// later rejected as insufficient.
+// The 3-day slack absorbs calendar months shorter or longer than the average, including the
+// setMonth() rollover the activation paths use to build an expiry (a month bought on Jan 31 ends
+// on Mar 3), so a freshly bought N-month term always counts as N. The cost is that a partial
+// month of 3 days or less is not charged.
+const AVERAGE_MONTH_MS = (365.2425 / 12) * 24 * 60 * 60 * 1000;
+const MONTH_SLACK_MS = 3 * 24 * 60 * 60 * 1000;
+
 export function remainingMonths(expiresAt: Date | null, now: Date): number {
-  if (!expiresAt || expiresAt.getTime() <= now.getTime()) return 0;
-  // Count how many whole calendar months fit before expiry: step `now` forward a month at a time
-  // while the step stays at/before expiry.
-  let months = 0;
-  const step = new Date(now.getTime());
-  step.setMonth(step.getMonth() + 1);
-  while (step.getTime() <= expiresAt.getTime() && months < 600) {
-    months += 1;
-    step.setMonth(step.getMonth() + 1);
-  }
-  // If those whole months don't reach expiry exactly, a partial month remains and rounds up.
-  const atMonths = new Date(now.getTime());
-  atMonths.setMonth(atMonths.getMonth() + months);
-  if (atMonths.getTime() < expiresAt.getTime()) months += 1;
-  return Math.max(1, months);
+  if (!expiresAt) return 0;
+  const left = expiresAt.getTime() - now.getTime();
+  if (left <= 0) return 0;
+  return Math.max(1, Math.ceil((left - MONTH_SLACK_MS) / AVERAGE_MONTH_MS));
 }
 
 // Prorated HBD cost to add a custom domain to an active tenant for the rest of its current term.
 export function customDomainUpgradeHbd(expiresAt: Date | null, now: Date): number {
   return remainingMonths(expiresAt, now) * CUSTOM_DOMAIN_UPGRADE_DELTA_HBD;
+}
+
+/**
+ * What a custom-domain payment buys, on every rail (HBD transfer, card). `months` is what the
+ * memo or card product asked for; the caller has already checked the amount covers that many
+ * months at the custom-domain rate on its own.
+ *
+ * A standard blog with time left first pays the premium for those months (moving the running
+ * term to the custom-domain plan); what is left buys months at the custom-domain rate, at most
+ * `months`. A payment that cannot cover the premium plus one month, for instance because another
+ * payment extended the term after the quote, keeps the blog standard and buys standard months
+ * with the whole amount. A paid transfer is never refused and never credited nothing.
+ */
+export function creditCustomDomainPayment(
+  paid: number,
+  months: number,
+  tenant: { plan: string; expiresAt: Date | null } | null,
+  now: Date
+): { pro: boolean; months: number; timeMs?: number; extraMs?: number } {
+  // Any standard blog with time left pays the premium, whatever its status: a suspended blog keeps
+  // its expiry, and would otherwise move its whole term for one month's price once reinstated.
+  // An expired, inactive or abandoned blog has no time left, so its premium is 0.
+  // A new blog, or one already on the plan, has no premium to pay.
+  const owesPremium = !!tenant && tenant.plan !== 'pro';
+  const paidMillis = Math.round(paid * 1000);
+  const premiumMillis = owesPremium ? Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000) : 0;
+  const affordable = Math.floor((paidMillis - premiumMillis) / Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
+  if (affordable >= 1 || !owesPremium) {
+    // Whatever is left after the premium and the whole months is added as exact time at the
+    // custom-domain rate, so a payment made as quoted is never partly kept: the premium can have
+    // grown since the quote (the term was extended) or vanished (the term ended before the
+    // transfer confirmed).
+    // Never more whole months than the amount covers, whatever the caller asked for.
+    const credited = Math.min(months, Math.max(0, affordable));
+    const leftMillis = paidMillis - premiumMillis - credited * Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000);
+    const extraMs = leftMillis > 0 ? hbdAsTimeMs(leftMillis / 1000, CUSTOM_DOMAIN_MONTHLY_PRICE_HBD) : 0;
+    return extraMs > 0 ? { pro: true, months: credited, extraMs } : { pro: true, months: credited };
+  }
+  // Kept as standard: the whole amount buys standard time, exactly (timeMs), the same as an upgrade
+  // memo that no longer applies; `months` is the whole months, for the payment record.
+  return {
+    pro: false,
+    months: Math.floor(paidMillis / Math.round(MONTHLY_PRICE_HBD * 1000)),
+    timeMs: hbdAsTimeMs(paid, MONTHLY_PRICE_HBD),
+  };
+}
+
+/** The time an amount buys at a monthly price, in milliseconds (average-length months). */
+export function hbdAsTimeMs(paid: number, monthlyPrice: number): number {
+  const priceMillis = Math.round(monthlyPrice * 1000);
+  if (priceMillis <= 0) return 0;
+  return Math.floor((Math.round(paid * 1000) / priceMillis) * AVERAGE_MONTH_MS);
 }
 
 // HBD amounts are conventionally quoted to 3 decimals (e.g. "2.000 HBD").

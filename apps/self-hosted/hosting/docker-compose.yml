@@ -47,7 +47,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       # Pricing — the API's payment instructions MUST match what the listener credits.
       - MONTHLY_PRICE_HBD=${MONTHLY_PRICE_HBD:-2.000}
-      - PRO_UPGRADE_PRICE_HBD=${PRO_UPGRADE_PRICE_HBD:-5.000}
       # x402 rail (Ecency's facilitator). Empty disables the x402 option in the UI.
       - X402_FACILITATOR_URL=${X402_FACILITATOR_URL:-https://x402.ecency.com}
       # Card payments are handled by the central ePoints Stripe rail (no Stripe keys here).
@@ -90,7 +89,6 @@ services:
       - HIVE_API_URL=${HIVE_API_URL:-https://api.hive.blog}
       - PAYMENT_ACCOUNT=${PAYMENT_ACCOUNT:-ecency.hosting}
       - MONTHLY_PRICE_HBD=${MONTHLY_PRICE_HBD:-2.000}
-      - PRO_UPGRADE_PRICE_HBD=${PRO_UPGRADE_PRICE_HBD:-5.000}
       # Maintenance sweeps run here (expiry, abandoned reservations, unverified domain claims).
       - PRO_GRACE_DAYS=${PRO_GRACE_DAYS:-14}
       - UNVERIFIED_DOMAIN_CLAIM_DAYS=${UNVERIFIED_DOMAIN_CLAIM_DAYS:-14}

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { callRPC, config as hiveTxConfig } from '@ecency/sdk/hive';
 import { TenantService } from '../services/tenant-service';
+import { HIVESIGNER_APP_ACCOUNT, tenantHivesignerApp } from '../services/hivesigner-registry';
 import { nanoid } from 'nanoid';
 import {
   createToken,
@@ -162,13 +163,16 @@ async function resolveHivesignerUsername(
   | { ok: true; username: string }
   | { ok: false; status: 401 | 503; error: string }
 > {
-  // HiveSigner's /api/me accepts any valid token, whatever kind. A hosting
-  // login takes only an access token, for the one account HiveSigner names.
-  // Any app: a blog may sign in through its own HiveSigner app.
-  const author = ecencyAccessTokenAuthor(accessToken);
-  if (!author) {
+  // HiveSigner's /api/me accepts any valid token, whatever kind and whatever
+  // app it was issued to. A hosting login takes only an access token, for the
+  // one account HiveSigner names, issued to Ecency's app or to the HiveSigner
+  // app of a blog that account owns: a token another app obtained says nothing
+  // about whether the account meant to sign in here.
+  const token = accessTokenClaims(accessToken);
+  if (!token || !(await isHostingApp(token.app, token.author))) {
     return { ok: false, status: 401, error: 'Invalid or expired HiveSigner token' };
   }
+  const author = token.author;
 
   let res: Response;
   try {
@@ -207,10 +211,10 @@ async function resolveHivesignerUsername(
 }
 
 /**
- * The account an access token names, or null for anything else: a code, a
- * refresh token, a login message, or not a token.
+ * The account and app an access token names, or null for anything else: a
+ * code, a refresh token, a login message, or not a token.
  */
-function ecencyAccessTokenAuthor(token: string): string | null {
+function accessTokenClaims(token: string): { author: string; app: string } | null {
   try {
     const json = Buffer.from(
       token.replace(/-/g, '+').replace(/_/g, '/').replace(/\./g, '='),
@@ -218,18 +222,28 @@ function ecencyAccessTokenAuthor(token: string): string | null {
     ).toString('utf8');
     const message = JSON.parse(json);
     const authors = message?.authors;
+    const app = message?.signed_message?.app;
     if (
       message?.signed_message?.type !== 'posting' ||
+      typeof app !== 'string' ||
+      app.trim() === '' ||
       !Array.isArray(authors) ||
       authors.length !== 1 ||
       typeof authors[0] !== 'string'
     ) {
       return null;
     }
-    return authors[0];
+    return { author: authors[0], app: app.trim().toLowerCase() };
   } catch {
     return null;
   }
+}
+
+/** Ecency's own app, or the HiveSigner app configured on a blog `author` owns. */
+async function isHostingApp(app: string, author: string): Promise<boolean> {
+  if (app === HIVESIGNER_APP_ACCOUNT.toLowerCase()) return true;
+  const owned = await TenantService.getByOwner(author);
+  return owned.some((tenant) => tenantHivesignerApp(tenant) === app);
 }
 
 authRoutes.post(

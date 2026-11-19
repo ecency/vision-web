@@ -7,23 +7,47 @@ import {
   HIVESIGNER_STATE_KEY,
 } from '../constants';
 
+/** Hosts under which the shared ecency.app client has its callback registered. */
+const SHARED_APP_HOST_SUFFIX = '.blogs.ecency.com';
+
 /**
  * Resolve the Hivesigner app this instance should use, or null when it has none.
  *
  * Kept pure and given the configured value rather than reading config itself, so
  * the rule lives in one place and can be tested without the config module.
  *
- * OAuth rejects a redirect_uri the app has not registered, and a hosted blog's
- * origin cannot be registered in advance, so the built-in ecency.app client can
- * never complete a login on a tenant domain. Treated as absent rather than
- * pretending: offering the button sends the visitor to an error with no
- * explanation.
+ * OAuth rejects a redirect_uri the app has not registered. On a managed blog the
+ * shared ecency.app client has only the hosted subdomain (*.blogs.ecency.com)
+ * registered, never a custom domain, so there it counts only on the subdomain:
+ * on the custom domain it is treated as absent rather than offering a button
+ * that ends on an error page. A self-hosted instance that names the shared app
+ * has had its own address registered by hand, and an owner's own app is theirs
+ * to register anywhere; both are used as named.
  */
-export function resolveHivesignerClientId(configured: unknown): string | null {
+export function resolveHivesignerClientId(
+  configured: unknown,
+  options: { managed?: boolean; hostname?: string } = {},
+): string | null {
   if (typeof configured === 'string' && configured.trim() !== '') {
-    return configured.trim();
+    const clientId = configured.trim();
+    const hostname =
+      options.hostname ?? (typeof window === 'undefined' ? '' : window.location.hostname);
+    if (options.managed === true && clientId.toLowerCase() === 'ecency.app' && !sharedAppHost(hostname)) {
+      return null;
+    }
+    return clientId;
   }
   return HIVESIGNER_CLIENT_ID === 'ecency.app' ? null : HIVESIGNER_CLIENT_ID;
+}
+
+/** True on a host whose callback the shared app registers for managed blogs. */
+export function isSharedAppHost(hostname: string = typeof window === 'undefined' ? '' : window.location.hostname): boolean {
+  return sharedAppHost(hostname);
+}
+
+function sharedAppHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host.endsWith(SHARED_APP_HOST_SUFFIX);
 }
 
 /** A single-use nonce tying a callback back to the login this tab started. */

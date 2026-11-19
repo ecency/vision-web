@@ -1,0 +1,33 @@
+/*
+  Metric-adjusted fallbacks shown until each webfont swaps in. The values are
+  the ones next/font/google generated for these families (its
+  getFallbackFontOverrideMetrics), so text shifts at the swap exactly as much
+  as before (#2136). local() fonts are never downloaded. Checked by
+  specs/build/self-hosted-fonts.spec.ts.
+*/
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0.00%;
+  size-adjust: 107.12%;
+}
+
+@font-face {
+  font-family: "Lora Fallback";
+  src: local("Times New Roman");
+  ascent-override: 87.33%;
+  descent-override: 23.78%;
+  line-gap-override: 0.00%;
+  size-adjust: 115.20%;
+}
+
+@font-face {
+  font-family: "Fredoka Fallback";
+  src: local("Arial");
+  ascent-override: 95.64%;
+  descent-override: 23.17%;
+  line-gap-override: 0.00%;
+  size-adjust: 101.84%;
+}

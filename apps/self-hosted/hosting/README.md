@@ -201,6 +201,16 @@ account's on-chain `posting_json_metadata`. Exact string match, no wildcards, so
 method when the instance has no usable client, which is why hosted blogs currently offer Keychain
 and HiveAuth only.
 
+Only tenant subdomains (`https://<name>.blogs.ecency.com/auth`) are registered on the shared
+app. A custom domain is never put there, verified or not: it is a host the tenant controls, so
+the blog app hides the shared app's Hivesigner button on a custom domain, and an owner who wants
+Hivesigner there names their own app (`general.hivesigner.clientId`), registered for that domain.
+Callbacks registered before this rule for custom domains that were verified at any time (the
+tenant row, or a `domain.verified` entry in the audit log for domains removed since) are listed on
+every pass and removed with `--prune-custom-domains` (a broadcast, so it is run by hand). Any other
+callback outside Ecency is listed for review and never removed by the script: some are sites that
+use the shared app themselves.
+
 Registration and enablement are one operation, run on a schedule by
 `scripts/hivesigner-redirect-uris.py`. Each pass:
 
@@ -234,13 +244,13 @@ instance, and neither is a bug in the script.
   empty registration; treating it as empty would withdraw the login method from every tenant at
   once on one bad RPC response.
 - **Overlapping runs are prevented** by a lock file, and would be harmless anyway: every pass
-  merges onto whatever is on chain at the time and never removes an entry.
+  merges onto whatever is on chain at the time and never removes an entry unless asked to with
+  `--prune-custom-domains`.
 - **A config save racing the reconcile cannot lose.** The listing the pass iterates is a
   snapshot, so each tenant's row is re-read `FOR UPDATE` and the decision is taken again from
   it, inside the transaction that then writes. Without that, an owner saving their own
   Hivesigner app in that window would have it overwritten with the shared one and never
-  restored, and a custom domain verified in that window would be enabled on one origin while
-  the other was still unregistered.
+  restored.
 - **The served file cannot go stale either.** The same hazard applies one step later: a row
   committed a moment ago is the wrong thing to write to disk if something else committed after
   it. Both writers of a tenant's file publish by name through `publishConfigFile`, which
@@ -267,16 +277,16 @@ work invisible and enabling without registering is the broken button.
 
 Notes:
 
-- Existing entries are never dropped, so a URI added by hand for something outside this script's
+- Existing entries are never dropped, except custom-domain callbacks when asked with
+  `--prune-custom-domains` (see above), so a URI added by hand for something outside this script's
   view survives. Entries that are registered but no longer live are reported for review rather than
   removed.
 - Only `active` tenants are registered, matching the only status the API will write a client id
-  for. An unverified custom domain is skipped, since registering a domain someone merely claimed
-  would let whoever controls that name receive callbacks for the app.
-- A tenant with a verified custom domain needs **both** its URIs registered before the method is
-  enabled. One config file serves both origins and the SPA builds its `redirect_uri` from
-  `window.location.origin`, so enabling on one would give every visitor on the other a button that
-  fails.
+  for.
+- Enabling the shared app needs only the tenant's subdomain callback. A custom domain is never
+  registered, verified or not: on a custom domain the blog hides the shared app's button (the SPA
+  builds its `redirect_uri` from `window.location.origin`, so the button there could not complete
+  a login), and an owner who wants Hivesigner on it sets their own app.
 - An owner who configured their own Hivesigner app is never touched. Only the shared client id is
   managed, in both directions.
 - The payload carries the account's whole existing profile, which on an app account includes its

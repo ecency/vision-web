@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getHivesignerSetupNotice,
+  HIVESIGNER_CUSTOM_DOMAIN_NOTICE,
   HIVESIGNER_MANAGED_SETUP_NOTICE,
   HIVESIGNER_SETUP_NOTICE,
 } from './hivesigner-setup';
@@ -66,8 +67,12 @@ describe('hivesigner setup notice', () => {
     );
   });
 
-  it('names the custom-domain case, the one time a working button goes away', () => {
-    expect(HIVESIGNER_MANAGED_SETUP_NOTICE).toContain('custom domain');
+  it('tells a managed owner on a custom domain to name their own app there', () => {
+    // The shared app is registered for the hosted subdomain only.
+    const config = configWith({ methods: ['hivesigner'], managed: true, clientId: 'ecency.app' });
+    expect(getHivesignerSetupNotice(config, 'blog.alice.example')).toBe(HIVESIGNER_CUSTOM_DOMAIN_NOTICE);
+    expect(getHivesignerSetupNotice(config, 'alice.blogs.ecency.com')).toBe(null);
+    expect(HIVESIGNER_CUSTOM_DOMAIN_NOTICE).toContain('General Settings > Hivesigner');
   });
 
   it.each([
@@ -90,6 +95,7 @@ describe('hivesigner setup notice', () => {
           managed: true,
           clientId: 'ecency.app',
         }),
+        'alice.blogs.ecency.com',
       ),
     ).toBe(null);
   });

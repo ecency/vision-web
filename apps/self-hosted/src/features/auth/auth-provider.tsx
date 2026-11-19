@@ -24,10 +24,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   const isAuthEnabled = authConfig?.enabled ?? false;
+  const isManaged = InstanceConfigManager.useConfig(
+    ({ configuration }) => configuration.instanceConfiguration.managed === true,
+  );
   const hivesignerClientId = resolveHivesignerClientId(
     InstanceConfigManager.useConfig(
       ({ configuration }) => configuration.general?.hivesigner?.clientId,
     ),
+    { managed: isManaged },
   );
 
   // Configured methods, minus any this instance cannot actually complete.

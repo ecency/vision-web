@@ -126,6 +126,11 @@ export function loginWithHivesigner(): void {
     InstanceConfigManager.getConfigValue(
       ({ configuration }) => configuration.general?.hivesigner?.clientId,
     ),
+    {
+      managed: InstanceConfigManager.getConfigValue(
+        ({ configuration }) => configuration.instanceConfiguration.managed === true,
+      ),
+    },
   );
   // The provider hides the method when this is null, so getting here without a
   // client means the picker was bypassed.

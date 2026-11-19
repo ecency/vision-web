@@ -24,17 +24,39 @@ import { WalletOperationCardUsernameForm } from "@/features/wallet/operations/wa
 function setup() {
   const onUsernameSubmit = vi.fn();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const view = render(
     <QueryClientProvider client={qc}>
       <WalletOperationCardUsernameForm onUsernameSubmit={onUsernameSubmit} />
     </QueryClientProvider>
   );
-  return { onUsernameSubmit, input: screen.getByRole("textbox") };
+  return { onUsernameSubmit, input: screen.getByRole("textbox"), unmount: view.unmount };
 }
 
 beforeEach(() => h.exists.mockReset());
 
 describe("WalletOperationCardUsernameForm", () => {
+  it("leaves no blur timer running once it is gone", () => {
+    // A timer that outlives the form calls setState after its window is gone
+    // (it failed a test run with "window is not defined" at teardown).
+    vi.useFakeTimers();
+    const set = vi.spyOn(globalThis, "setTimeout");
+    const clear = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      const { input, unmount } = setup();
+      fireEvent.focus(input);
+      fireEvent.blur(input);
+      const blurCall = set.mock.calls.findIndex((call) => call[1] === 150);
+      expect(blurCall).toBeGreaterThanOrEqual(0);
+      const timer = set.mock.results[blurCall].value;
+      unmount();
+      expect(clear).toHaveBeenCalledWith(timer);
+    } finally {
+      set.mockRestore();
+      clear.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("does not submit an account that does not exist", async () => {
     h.exists.mockResolvedValue(false);
     const { onUsernameSubmit, input } = setup();

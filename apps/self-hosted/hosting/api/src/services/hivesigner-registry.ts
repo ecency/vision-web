@@ -48,19 +48,15 @@ const REDIRECT_PATH = '/auth';
 export const CLIENT_ID_PATH = ['configuration', 'general', 'hivesigner', 'clientId'] as const;
 
 /**
- * Every origin a tenant's served config is reachable on, and therefore every URI
- * that has to be registered before the method may be offered.
+ * The URIs that have to be registered on the shared app before the method may
+ * be offered: the tenant subdomain's callback.
  *
- * One config file serves both the tenant subdomain and a verified custom domain,
- * and the SPA builds its redirect_uri from `window.location.origin`. So a client
- * id set while only one of the two is registered gives visitors on the other a
- * button that fails, which is the exact state this exists to prevent. Both or
- * neither.
- *
- * An UNVERIFIED custom domain is deliberately not included. The claim is only a
- * string in a column until DNS proves it; registering it would let whoever
- * actually controls that name receive callbacks carrying access tokens for the
- * app. It joins the list when verification succeeds, not when it is asked for.
+ * A custom domain is never included, verified or not. It is a host the tenant
+ * controls: it can be repointed, let lapse or passed on, and a callback on the
+ * shared app keeps receiving that app's access tokens after any of those. The
+ * blog hides the shared app's button on a custom domain instead (see
+ * resolveHivesignerClientId in the SPA); an owner who wants Hivesigner there
+ * registers the domain on their own app.
  *
  * This rule is mirrored by hosting/scripts/hivesigner-redirect-uris.py, which
  * decides what to put ON chain. The two are allowed to drift only in the safe
@@ -70,14 +66,10 @@ export const CLIENT_ID_PATH = ['configuration', 'general', 'hivesigner', 'client
  * broken button.
  */
 export function tenantRedirectUris(
-  tenant: Pick<Tenant, 'username' | 'customDomain' | 'customDomainVerified'>,
+  tenant: Pick<Tenant, 'username'> & Partial<Pick<Tenant, 'customDomain' | 'customDomainVerified'>>,
   base: string = baseDomain
 ): string[] {
-  const uris = [`https://${tenant.username.toLowerCase()}.${base}${REDIRECT_PATH}`];
-  if (tenant.customDomain && tenant.customDomainVerified) {
-    uris.push(`https://${tenant.customDomain.toLowerCase()}${REDIRECT_PATH}`);
-  }
-  return uris;
+  return [`https://${tenant.username.toLowerCase()}.${base}${REDIRECT_PATH}`];
 }
 
 /**
@@ -176,6 +168,12 @@ function readPath(node: unknown, segments: readonly string[]): unknown {
     current = (current as Record<string, unknown>)[segment];
   }
   return current;
+}
+
+/** The HiveSigner app a tenant's config names, lower-cased, or null for none. */
+export function tenantHivesignerApp(tenant: { config?: unknown }): string | null {
+  const value = readPath(tenant.config, CLIENT_ID_PATH);
+  return typeof value === 'string' && value.trim() !== '' ? value.trim().toLowerCase() : null;
 }
 
 /**
