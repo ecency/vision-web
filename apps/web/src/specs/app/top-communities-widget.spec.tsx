@@ -41,8 +41,10 @@ vi.mock("@/core/caches", () => ({
     }
   })
 }));
-vi.mock("@ecency/sdk", async () => ({
-  ...(await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk")),
+vi.mock("@ecency/sdk", async () => {
+  const actual = await vi.importActual<typeof import("@ecency/sdk")>("@ecency/sdk");
+  return {
+  ...actual,
   getCommunitiesQueryOptions: () => ({
     queryKey: ["ranked"],
     queryFn: async () => {
@@ -57,10 +59,12 @@ vi.mock("@ecency/sdk", async () => ({
     ...(subscriptionsRetry || { retry: false }),
     queryFn: async () => {
       if (failSubscriptions) throw new Error("Subscriptions unavailable");
-      return subscriptions;
+      // The real query normalises the bridge rows; so does this stand-in.
+      return actual.normalizeAccountSubscriptions(subscriptions);
     }
   })
-}));
+  };
+});
 vi.mock("@/api/sdk-mutations", () => ({
   useSubscribeCommunityMutation: () => ({ mutateAsync: subscribe, isPending: false }),
   useUnsubscribeCommunityMutation: () => ({ mutateAsync: unsubscribe, isPending: false })

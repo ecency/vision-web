@@ -9,7 +9,11 @@ import { formattedNumber, makePath } from "@/utils";
 import { AllFilter } from "@/enums";
 import { seededShuffle } from "@/utils/seeded-shuffle";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
-import { getAccountSubscriptionsQueryOptions, getCommunitiesQueryOptions } from "@ecency/sdk";
+import {
+  AccountSubscription,
+  getAccountSubscriptionsQueryOptions,
+  getCommunitiesQueryOptions
+} from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import i18next from "i18next";
 import Link from "next/link";
@@ -101,17 +105,13 @@ function SidebarSkeleton() {
 }
 
 /**
- * The reader's communities as [name, title] pairs, from the bridge subscription
- * rows ([name, title, role, label]). The SDK types the query as string[], so
- * each row is checked before it is read; unusable rows are dropped.
+ * The reader's communities as [name, title] pairs, one per community, from the
+ * SDK's normalised subscription rows. A row with no title shows its name.
  */
-function joinedCommunities(subscriptions: readonly unknown[] | undefined): [string, string][] {
+function joinedCommunities(subscriptions: readonly AccountSubscription[] | undefined): [string, string][] {
   const unique = new Map<string, string>();
-  for (const row of subscriptions ?? []) {
-    if (!Array.isArray(row)) continue;
-    const [name, title] = row;
-    if (typeof name !== "string" || !name || unique.has(name)) continue;
-    unique.set(name, typeof title === "string" && title ? title : name);
+  for (const [name, title] of subscriptions ?? []) {
+    if (!unique.has(name)) unique.set(name, title || name);
   }
   return [...unique];
 }

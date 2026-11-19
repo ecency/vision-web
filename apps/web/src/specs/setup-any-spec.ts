@@ -80,6 +80,10 @@ vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>(
     "../../../../packages/sdk/src/modules/posts/utils/normalize-entry"
   )),
+  // Subscription row normaliser: pure, and SubscriptionBtn reads it during render.
+  ...(await vi.importActual<Record<string, unknown>>(
+    "../../../../packages/sdk/src/modules/communities/types/subscription"
+  )),
   // Registers a vote the client just cast (SDK holds it over lagging lookups).
   recordOptimisticVote: vi.fn(),
   // One account's vote lookup. Answers "not voted" by default; specs override

@@ -128,7 +128,7 @@ async function handleBootstrap(req: Request, signal: AbortSignal): Promise<NextR
     let subscriptionsTornDown = false;
     const subscriptionsPromise: Promise<Subscription[]> = qc
         .fetchQuery(subscriptionsQuery)
-        .then((s) => (s ?? []) as unknown as Subscription[])
+        .then((s): Subscription[] => s)
         .catch((error) => {
             // Always settle as []. Signal aborts surface elsewhere via
             // signal.throwIfAborted(); making this promise always-resolve

@@ -8,7 +8,11 @@ import {
   useSubscribeCommunityMutation,
   useUnsubscribeCommunityMutation
 } from "@/api/sdk-mutations";
-import { getAccountSubscriptionsQueryOptions } from "@ecency/sdk";
+import {
+  AccountSubscription,
+  getAccountSubscriptionsQueryOptions,
+  normalizeAccountSubscriptions
+} from "@ecency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ButtonProps } from "@ui/button";
 import { Spinner } from "@ui/spinner";
@@ -18,18 +22,6 @@ import { useMemo, useState } from "react";
 interface Props {
   community: Community;
   buttonProps?: ButtonProps;
-}
-
-function isSubscriptionRows(value: unknown): value is string[][] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (row) =>
-        Array.isArray(row) &&
-        row.length >= 4 &&
-        row.every((cell) => typeof cell === "string")
-    )
-  );
 }
 
 export function SubscriptionBtn({ buttonProps, community }: Props) {
@@ -44,19 +36,23 @@ export function SubscriptionBtn({ buttonProps, community }: Props) {
   const unsubscribeMutation = useUnsubscribeCommunityMutation();
   const isPending = subscribeMutation.isPending || unsubscribeMutation.isPending || isSettling;
 
+  // The query normalises its rows, but the cache is shared and can hold what
+  // another writer put there, so read it through the same normaliser.
   const subscribed = useMemo(
-    () => subscriptions?.find((x) => x[0] === community.name) !== undefined,
+    () => normalizeAccountSubscriptions(subscriptions).some((x) => x[0] === community.name),
     [subscriptions, community]
   );
 
   const performAction = async (
     mutation: typeof subscribeMutation | typeof unsubscribeMutation
   ) => {
-    const previousDataRaw = queryClient.getQueryData<unknown>(subscriptionsQueryOptions.queryKey);
-    const previousData = isSubscriptionRows(previousDataRaw) ? previousDataRaw : [];
+    const previousData = normalizeAccountSubscriptions(
+      queryClient.getQueryData<unknown>(subscriptionsQueryOptions.queryKey)
+    );
+    const joinedRow: AccountSubscription = [community.name, community.title, "guest", ""];
     const optimisticData =
       mutation === subscribeMutation
-        ? [...previousData, [community.name, community.title, "guest", ""]]
+        ? [...previousData, joinedRow]
         : previousData.filter((x) => x[0] !== community.name);
 
     // Optimistic update

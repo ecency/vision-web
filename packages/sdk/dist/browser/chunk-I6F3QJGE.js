@@ -1,0 +1,2 @@
+import {j}from'./chunk-PMIUQOHW.js';import {queryOptions}from'@tanstack/react-query';function o(e){return queryOptions({queryKey:["assets","hive-engine","unclaimed",e],staleTime:6e4,refetchInterval:9e4,enabled:!!e,queryFn:async()=>{try{let t=await j(e);return Object.values(t).filter(({pending_token:i})=>i>0)}catch{return []}}})}export{o as a};//# sourceMappingURL=chunk-I6F3QJGE.js.map
+//# sourceMappingURL=chunk-I6F3QJGE.js.map
