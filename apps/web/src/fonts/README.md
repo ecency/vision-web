@@ -14,7 +14,8 @@ subsets are preloaded.
 `site.ts` (Inter, Lora) and `raidstead.ts` (Fredoka) declare one `localFont`
 per subset with that subset's `unicode-range`; `stack.ts` joins them into one
 font stack, latin first and the size-adjusted fallback last (see its comment
-for why the order is the reverse of Google's CSS).
+for why the order is the reverse of Google's CSS). `fallbacks.css` declares
+those fallbacks with the metrics next/font/google generated for each family.
 
 Each family folder holds its upstream `OFL.txt` (copyright notice and the full
 license text, from `github.com/google/fonts/ofl/<family>`); keep it next to the
