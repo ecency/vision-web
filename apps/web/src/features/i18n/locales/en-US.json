@@ -88,6 +88,7 @@
     "custom-domain-term-premium": "Includes {{amount}} HBD to move the months left on your current term to the custom-domain plan.",
     "custom-domain-upgrade-hbd-only": "Adding a custom domain to your current term is paid in HBD, which includes the difference for the months already paid.",
     "custom-domain-kept-standard": "Your payment was added as standard hosting time, because it no longer covered the custom-domain difference for your current term. You can add the custom domain again from the hosting page.",
+    "custom-domain-plan-renewal": "Your blog is on the custom-domain plan, so it renews on that plan. To go back to standard hosting, remove the custom domain and let the current term end.",
     "custom-domain-added": "Added",
     "custom-domain-explainer": "Use your own domain like blog.yoursite.com. Adds +$1/mo by card or +1 HBD/mo, billed with your hosting.",
     "custom-domain-included-note": "Your custom domain is included. Add and verify it right after checkout.",

@@ -15,6 +15,18 @@ vi.mock('./services/tenant-service', async (importOriginal) => {
       ...actual.TenantService,
       accountExistsStrict: vi.fn(async () => true),
       buildConfig: vi.fn(async () => ({})),
+      // The pre-check before a transaction reads the blog the transfer names.
+      getByUsername: vi.fn(async () =>
+        tenantRow
+          ? {
+              username: tenantRow.username,
+              subscriptionPlan: tenantRow.subscription_plan,
+              subscriptionStatus: tenantRow.subscription_status,
+              subscriptionExpiresAt: tenantRow.subscription_expires_at,
+              customDomain: tenantRow.custom_domain ?? null,
+            }
+          : null
+      ),
     },
   };
 });
@@ -65,11 +77,11 @@ const Pricing = await import('./pricing');
 const months = (n: number) => new Date(Date.now() + n * 30.5 * 24 * 3600 * 1000).toISOString();
 const transfer = { trxId: 'tx1', blockNum: 1, from: 'alice', memo: 'blog:alice:domain' };
 
-function pay(amount: number, credited: number, requested = 1) {
+function pay(amount: number, credited: number, requested = 1, domainMemo = true) {
   const listener = new PaymentListener() as unknown as {
     processSubscription: (t: unknown, u: string, m: number, a: number, pro: boolean, min: number) => Promise<void>;
   };
-  return listener.processSubscription(transfer, 'alice', credited, amount, true, requested);
+  return listener.processSubscription(transfer, 'alice', credited, amount, domainMemo, requested);
 }
 const planUpdate = () => calls.find((c) => /UPDATE tenants/.test(c.sql));
 // What the upgrade quote asks for the months left on this term.
@@ -182,5 +194,133 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     tenantRow!.subscription_expires_at = new Date(Date.now() - 86400000).toISOString();
     await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1);
     expect(planUpdate()?.params[3]).toBe('pro');
+  });
+});
+
+describe('a plain renewal of a blog on the custom-domain plan (#2137)', () => {
+  const STD = Pricing.MONTHLY_PRICE_HBD;
+  const PRO = Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+  beforeEach(() => {
+    calls.length = 0;
+    logged.length = 0;
+    createdConcurrently = undefined;
+    tenantRow = {
+      id: 't1',
+      username: 'alice',
+      owner: 'alice',
+      subscription_status: 'active',
+      subscription_plan: 'pro',
+      custom_domain: 'blog.alice.example',
+      subscription_started_at: new Date().toISOString(),
+      subscription_expires_at: months(2),
+    };
+  });
+  const update = () => calls.find((c) => /UPDATE tenants/.test(c.sql));
+  const creditedMonths = () => calls.find((c) => /status = 'processed'/.test(c.sql))?.params[3];
+
+  it('with its domain, is priced at the custom-domain rate: the standard amount buys the time it pays for', async () => {
+    const from = new Date(String(tenantRow!.subscription_expires_at));
+    await pay(STD, Math.floor(STD / STD), 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(0);
+    expect((update()?.params[2] as Date).getTime() - from.getTime()).toBe(Pricing.hbdAsTimeMs(STD, PRO));
+  });
+
+  it('with its domain, a full custom-domain month is one month', async () => {
+    await pay(PRO, Math.floor(PRO / STD), 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('without a domain but with time left, stays on the plan: a gift cannot take away paid time', async () => {
+    tenantRow!.custom_domain = null;
+    await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1, 1, false);
+    expect(update()?.params[3]).toBe('pro');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('without a domain and with no time left, renews as standard and goes back to standard', async () => {
+    tenantRow!.custom_domain = null;
+    tenantRow!.subscription_status = 'expired';
+    tenantRow!.subscription_expires_at = new Date(Date.now() - 86400000).toISOString();
+    await pay(STD, 1, 1, false);
+    expect(update()?.params[3]).toBe('standard');
+    expect(creditedMonths()).toBe(1);
+  });
+
+  it('a standard blog renewing plainly keeps its plan untouched', async () => {
+    tenantRow!.subscription_plan = 'standard';
+    tenantRow!.custom_domain = null;
+    await pay(STD, 1, 1, false);
+    expect(update()?.params[3]).toBeNull();
+  });
+});
+
+describe('a short or uneven payment keeps its value (#2137)', () => {
+  const STD = Pricing.MONTHLY_PRICE_HBD;
+  const PRO = Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+  const send = (amount: number, memo: string) => {
+    const listener = new PaymentListener() as unknown as { processTransfer: (t: unknown) => Promise<void> };
+    return listener.processTransfer({
+      trxId: 'tx9', blockNum: 1, from: 'bob', to: 'ecency.hosting',
+      amount: `${amount.toFixed(3)} HBD`, memo, timestamp: new Date().toISOString(),
+    });
+  };
+  const update = () => calls.find((c) => /UPDATE tenants/.test(c.sql));
+  beforeEach(() => {
+    calls.length = 0;
+    logged.length = 0;
+    createdConcurrently = undefined;
+    tenantRow = {
+      id: 't1', username: 'alice', owner: 'alice',
+      subscription_status: 'active', subscription_plan: 'pro', custom_domain: 'blog.alice.example',
+      subscription_started_at: new Date().toISOString(), subscription_expires_at: months(2),
+    };
+  });
+
+  it('a blog on the custom-domain plan takes less than a month at its rate as time, not a refusal', async () => {
+    const from = new Date(String(tenantRow!.subscription_expires_at));
+    await send(1, 'blog:alice');
+    expect(failedPayments()).toHaveLength(0);
+    expect(update()?.params[3]).toBe('pro');
+    expect((update()?.params[2] as Date).getTime() - from.getTime()).toBe(Pricing.hbdAsTimeMs(1, PRO));
+  });
+
+  it('a 2 HBD custom-domain memo on such a blog is time too', async () => {
+    await send(2, 'blog:alice:domain');
+    expect(failedPayments()).toHaveLength(0);
+    expect(update()?.params[3]).toBe('pro');
+  });
+
+  it('a plain renewal that ends up standard keeps the remainder as standard time', async () => {
+    // Quoted 3 HBD while the term ran with no domain; the term ended before the transfer landed.
+    tenantRow!.custom_domain = null;
+    tenantRow!.subscription_status = 'expired';
+    tenantRow!.subscription_expires_at = new Date(Date.now() - 60_000).toISOString();
+    await send(3, 'blog:alice');
+    expect(failedPayments()).toHaveLength(0);
+    expect(update()?.params[3]).toBe('standard');
+    const extended = update()?.params[2] as Date;
+    const oneMonth = new Date();
+    oneMonth.setMonth(oneMonth.getMonth() + 1);
+    // One month plus the 1 HBD remainder at the standard rate (within the test's own timing).
+    expect(Math.abs(extended.getTime() - (oneMonth.getTime() + Pricing.hbdAsTimeMs(1, STD)))).toBeLessThan(5_000);
+  });
+
+  it.each(['inactive', 'abandoned'])('a dust payment cannot activate an %s reservation', async (status) => {
+    // A reservation or an abandoned name has never run: a few thousandths of a HBD must not pin it.
+    tenantRow!.subscription_status = status;
+    tenantRow!.subscription_plan = 'standard';
+    tenantRow!.custom_domain = null;
+    tenantRow!.subscription_expires_at = null as unknown as string;
+    await send(0.001, 'blog:alice');
+    expect(update()).toBeUndefined();
+    expect(failedPayments()).toHaveLength(1);
+  });
+
+  it('a brand-new blog still needs at least one month', async () => {
+    tenantRow = undefined;
+    await send(1, 'blog:newcomer');
+    expect(failedPayments()).toHaveLength(1);
   });
 });

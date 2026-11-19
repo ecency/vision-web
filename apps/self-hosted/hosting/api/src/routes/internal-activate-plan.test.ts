@@ -50,11 +50,11 @@ const Pricing = await import('../pricing');
 
 const inMonths = (n: number) => new Date(Date.now() + n * 30.5 * 24 * 3600 * 1000);
 
-async function activate(months: number, amountUsd: number) {
+async function activate(months: number, amountUsd: number, plan: 'pro' | 'standard' = 'pro') {
   const res = await internalRoutes.request('/activate', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
-    body: JSON.stringify({ username: 'alice', payer: 'alice', months, order_id: 'order-1', amount_usd: amountUsd, plan: 'pro' }),
+    body: JSON.stringify({ username: 'alice', payer: 'alice', months, order_id: 'order-1', amount_usd: amountUsd, plan }),
   });
   return { status: res.status, body: (await res.json()) as { plan?: string; keptAsStandard?: boolean } };
 }
@@ -153,5 +153,52 @@ describe('POST /activate with the custom-domain plan', () => {
     const { body } = await activate(1, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD);
     expect(planFlips()).toHaveLength(1);
     expect(body.plan).toBe('pro');
+  });
+});
+
+describe('POST /activate renewing a blog on the custom-domain plan (#2137)', () => {
+  beforeEach(() => {
+    process.env.HOSTING_INTERNAL_SECRET = INTERNAL_SECRET;
+    calls.length = 0;
+    existingPayment = null;
+    tenantRow = {
+      id: 't1',
+      owner: 'alice',
+      subscription_started_at: new Date(),
+      subscription_expires_at: inMonths(2),
+      subscription_plan: 'pro',
+      subscription_status: 'active',
+      custom_domain: 'blog.alice.example',
+    };
+  });
+  const downgrades = () => calls.filter((c) => /SET subscription_plan = 'standard'/.test(c.sql));
+
+  it('a standard card order on a blog with its domain is priced at the custom-domain rate', async () => {
+    const from = tenantRow.subscription_expires_at as Date;
+    const { body } = await activate(1, Pricing.MONTHLY_PRICE_HBD, 'standard');
+    expect(body.plan).toBe('pro');
+    expect(downgrades()).toHaveLength(0);
+    // $2 at $3 a month: no whole month, the time it pays for.
+    expect(claim()?.params.at(-1)).toBe(0);
+    expect(extendedTo()!.getTime() - from.getTime()).toBe(
+      Pricing.hbdAsTimeMs(Pricing.MONTHLY_PRICE_HBD, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD)
+    );
+  });
+
+  it('a standard card order on a blog with no domain and time left keeps it on the plan', async () => {
+    tenantRow.custom_domain = null;
+    const { body } = await activate(1, Pricing.MONTHLY_PRICE_HBD, 'standard');
+    expect(downgrades()).toHaveLength(0);
+    expect(body.plan).toBe('pro');
+  });
+
+  it('a standard card order on a blog with no domain and no time left renews it as standard', async () => {
+    tenantRow.custom_domain = null;
+    tenantRow.subscription_status = 'expired';
+    tenantRow.subscription_expires_at = new Date(Date.now() - 86400000);
+    const { body } = await activate(1, Pricing.MONTHLY_PRICE_HBD, 'standard');
+    expect(downgrades()).toHaveLength(1);
+    expect(body.plan).toBe('standard');
+    expect(claim()?.params.at(-1)).toBe(1);
   });
 });

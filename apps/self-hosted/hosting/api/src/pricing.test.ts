@@ -7,6 +7,7 @@ import {
   CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
   creditCustomDomainPayment,
   hbdAsTimeMs,
+  renewalPlan,
 } from './pricing';
 
 const now = new Date('2026-01-15T00:00:00.000Z');
@@ -183,5 +184,26 @@ describe('a quote whose premium vanished by confirmation keeps every unit', () =
     expect(
       creditCustomDomainPayment(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1, { plan: 'pro', expiresAt: new Date('2026-06-15T00:00:00Z') }, now)
     ).toEqual({ pro: true, months: 1 });
+  });
+});
+
+describe('renewalPlan (#2137)', () => {
+  const later = new Date(now.getTime() + 60 * 86400000);
+  const earlier = new Date(now.getTime() - 86400000);
+  it('prices a renewal of a custom-domain blog that still has its domain at the custom-domain rate', () => {
+    expect(renewalPlan({ plan: 'pro', customDomain: 'blog.example.com', expiresAt: earlier }, false, now)).toBe('pro');
+  });
+  it('keeps a custom-domain blog with time left on that plan even with no domain attached', () => {
+    // No payment, from anyone, can take away custom-domain time already paid for.
+    expect(renewalPlan({ plan: 'pro', customDomain: null, expiresAt: later }, false, now)).toBe('pro');
+  });
+  it('renews a custom-domain blog with no domain and no time left as standard', () => {
+    expect(renewalPlan({ plan: 'pro', customDomain: null, expiresAt: earlier }, false, now)).toBe('standard');
+    expect(renewalPlan({ plan: 'pro', customDomain: null, expiresAt: null }, false, now)).toBe('standard');
+  });
+  it('follows the add-on when asked for, and standard otherwise', () => {
+    expect(renewalPlan({ plan: 'standard', customDomain: null, expiresAt: later }, true, now)).toBe('pro');
+    expect(renewalPlan({ plan: 'standard', customDomain: null, expiresAt: later }, false, now)).toBe('standard');
+    expect(renewalPlan(null, false, now)).toBe('standard');
   });
 });
