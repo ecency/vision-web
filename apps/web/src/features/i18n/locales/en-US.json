@@ -3443,6 +3443,8 @@
   "top-communities": {
     "title": "Top communities",
     "discover-title": "Discover communities",
+    "my-title": "My communities",
+    "view-all": "View all",
     "explore": "Explore communities",
     "create-button": "Create your community"
   },
