@@ -15,6 +15,8 @@ declare module 'hono' {
     blockNum: number;
     /** Tenant config prebuilt BEFORE a paywall settles (see /subscribe). */
     tenantConfig: any;
+    /** HBD premium for the months left, priced before the upgrade paywall (see /:username/upgrade). */
+    upgradePremium: number;
   }
 }
 

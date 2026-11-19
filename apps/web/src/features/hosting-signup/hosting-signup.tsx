@@ -132,6 +132,10 @@ export function HostingSignup() {
   // Custom domain add-on: switches to the $3/mo "prohosting" plan so the tenant activates on the
   // internal pro plan and can attach a custom domain after checkout.
   const [customDomain, setCustomDomain] = useState(false);
+  // An active standard blog with time left: adding the custom domain moves that whole term to the
+  // custom-domain plan and costs the difference for the months left. Only the HBD quote carries
+  // that amount; a card product has a fixed price, so card is not offered for that case.
+  const [runningStandardTerm, setRunningStandardTerm] = useState(false);
   const [method, setMethod] = useState<Method>("card");
   const [methods, setMethods] = useState<HostingPaymentMethods | null>(null);
   const [instructions, setInstructions] = useState<Instructions | null>(null);
@@ -179,6 +183,7 @@ export function HostingSignup() {
     !!methods?.card.enabled &&
     !!activeUser &&
     (isCommunity || tenantUsername === activeUser.username);
+  const cardOffered = cardEnabled && !(customDomain && runningStandardTerm);
 
   // The custom-domain add-on is only offered to a logged-in OWNER of the tenant (their own personal
   // blog, or a community they own) — on either rail. This matches the condition that gates the
@@ -203,8 +208,8 @@ export function HostingSignup() {
   // Default to HBD whenever card is not actually available to this visitor (logged out, or
   // the name is not their own), so the payment step never renders with no method shown.
   useEffect(() => {
-    if (!cardEnabled) setMethod("hbd");
-  }, [cardEnabled]);
+    if (!cardOffered) setMethod("hbd");
+  }, [cardOffered]);
 
   // Custom domain now works on BOTH rails: card ($3/mo) and HBD via a one-step
   // blog:name[:months]:domain memo (+1 HBD/mo). It no longer forces a rail, but it IS dropped when
@@ -421,6 +426,7 @@ export function HostingSignup() {
         renewBaselineExpiryRef.current = null; // freshly created, inactive
       }
       setIsFreshReservation(true);
+      setRunningStandardTerm(false);
       setStep("payment");
     } catch (e) {
       const msg = (e as Error).message;
@@ -462,6 +468,12 @@ export function HostingSignup() {
       // checkActivation confirms on active status alone.
       renewBaselineExpiryRef.current =
         existing.subscriptionStatus === "active" ? (existing.subscriptionExpiresAt ?? null) : null;
+      setRunningStandardTerm(
+        existing.subscriptionStatus === "active" &&
+          existing.subscriptionPlan !== "pro" &&
+          !!existing.subscriptionExpiresAt &&
+          new Date(existing.subscriptionExpiresAt).getTime() > Date.now()
+      );
       setIsFreshReservation(false);
       setStep("payment");
     } finally {
@@ -583,6 +595,7 @@ export function HostingSignup() {
     if (resumeName && step === "username" && tenantUsername === resumeName && activeUser) {
       setResumeName(null);
       setIsFreshReservation(true);
+      setRunningStandardTerm(false);
       setStep("payment");
     }
   }, [resumeName, step, tenantUsername, activeUser]);
@@ -1075,7 +1088,7 @@ export function HostingSignup() {
 
           {/* Method toggle */}
           <div className="flex gap-2">
-            {cardEnabled && (
+            {cardOffered && (
               <button
                 onClick={() => setMethod("card")}
                 disabled={payLocked}
@@ -1105,7 +1118,11 @@ export function HostingSignup() {
             <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-included-note")}</p>
           )}
 
-          {method === "card" && cardEnabled && (
+          {customDomain && runningStandardTerm && cardEnabled && (
+            <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-upgrade-hbd-only")}</p>
+          )}
+
+          {method === "card" && cardOffered && (
             <HostingCardCheckout
               key={`${cardSku}:${tenantUsername}:${activeUser?.username ?? ""}`}
               username={activeUser?.username ?? tenantUsername}

@@ -71,10 +71,24 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     };
   });
 
+  const credited = () => calls.find((c) => /INSERT INTO payments/.test(c.sql))?.params.at(-1);
+
   it('does not make the whole term custom-domain for one month at that rate', async () => {
     await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1);
-    expect(planUpdate()).toBeUndefined();
-    expect(failedPayments()).toHaveLength(1);
+    // Kept as standard time: the plan is untouched, nothing is refused.
+    expect(planUpdate()?.params[3]).toBeNull();
+    expect(credited()).toBe(1);
+    expect(failedPayments()).toHaveLength(0);
+  });
+
+  it('credits the quoted amount even when another payment grew the term after the quote', async () => {
+    const quotedPremium = premium(); // 12 months left when the quote was made
+    tenantRow!.subscription_expires_at = months(13); // a renewal landed before this transfer
+    const paid = quotedPremium + Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+    await pay(paid, 1);
+    expect(failedPayments()).toHaveLength(0);
+    expect(planUpdate()?.params[3]).toBeNull();
+    expect(credited()).toBe(Math.floor(Math.round(paid * 1000) / Math.round(Pricing.MONTHLY_PRICE_HBD * 1000)));
   });
 
   it('upgrades when the payment covers the premium for the months left plus the new month', async () => {
@@ -89,10 +103,11 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     expect(insert?.params.at(-1)).toBe(2);
   });
 
-  it('refuses rather than credits fewer months than the memo asked for', async () => {
+  it('credits the months the payment covers when that is fewer than the memo asked for', async () => {
     await pay(premium() + Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 3, 3);
-    expect(planUpdate()).toBeUndefined();
-    expect(failedPayments()).toHaveLength(1);
+    expect(planUpdate()?.params[3]).toBe('pro');
+    expect(credited()).toBe(1);
+    expect(failedPayments()).toHaveLength(0);
   });
 
   it('needs no premium on a blog that is already on the custom-domain plan', async () => {

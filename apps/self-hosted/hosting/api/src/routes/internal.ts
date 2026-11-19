@@ -25,6 +25,7 @@ import { ACCENT_HEX_PATTERN, FONT_PRESET_KEYS } from '../appearance';
 import { STYLE_TEMPLATES } from '../style-templates';
 import { ACTIVATED_STATUS_SQL } from '../utils/subscription-status-sql';
 import { isReservedTenantName } from '../utils/reserved-tenant-names';
+import * as Pricing from '../pricing';
 
 export const internalRoutes = new Hono();
 
@@ -126,7 +127,8 @@ internalRoutes.post('/activate', async (c) => {
       async (client) => {
         // Lock the tenant row (serializes retries) and confirm it still exists.
         const t = await client.query(
-          `SELECT id, owner, subscription_started_at, subscription_expires_at, subscription_plan
+          `SELECT id, owner, subscription_started_at, subscription_expires_at, subscription_plan,
+                  subscription_status
              FROM tenants WHERE username = $1 FOR UPDATE`,
           [username]
         );
@@ -142,11 +144,34 @@ internalRoutes.post('/activate', async (c) => {
           return { status: 403, tenantId: tenant.id };
         }
 
+        // A custom-domain order on a standard blog with time left first pays the premium for the
+        // months already paid at the standard rate, the same rule as an HBD payment
+        // (creditCustomDomainPayment; card prices equal the HBD prices). A fixed-price order that
+        // cannot cover it is kept as standard months and the plan is left alone, so the response
+        // reports 'standard' and the caller flags the order for review.
+        const credit =
+          plan === 'pro'
+            ? Pricing.creditCustomDomainPayment(
+                // A caller that sends no amount paid the product's list price.
+                amountUsd > 0 ? amountUsd : months * Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
+                months,
+                {
+                  plan: tenant.subscription_plan,
+                  status: tenant.subscription_status,
+                  expiresAt: tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : null,
+                },
+                new Date()
+              )
+            : { pro: false, months };
+        const creditedMonths = credit.months;
+
         // Idempotent Pro upgrade for THIS tenant (a standard activation never touches the plan, so
         // it can never downgrade a Pro tenant). Only ever invoked for an order this tenant owns --
         // gated by the claim / ownership checks below, so a colliding order id can't grant Pro.
-        const applyPlan = async (): Promise<string> => {
-          if (plan === 'pro' && tenant.subscription_plan !== 'pro') {
+        // `upgrade` is the decision recorded with the order (its memo), so a replay repeats it
+        // rather than re-deciding against a term the first pass already extended.
+        const applyPlan = async (upgrade: boolean): Promise<string> => {
+          if (upgrade && tenant.subscription_plan !== 'pro') {
             await client.query(
               `UPDATE tenants SET subscription_plan = 'pro', updated_at = NOW() WHERE id = $1`,
               [tenant.id]
@@ -163,13 +188,13 @@ internalRoutes.post('/activate', async (c) => {
            VALUES ($1, $2, 0, 'stripe', $3, 'USD', $4, 'processed', $5)
            ON CONFLICT (trx_id) DO NOTHING
            RETURNING id`,
-          [tenant.id, orderId, amountUsd, `blog:${username}:${months}`, months]
+          [tenant.id, orderId, amountUsd, `blog:${username}:${creditedMonths}${credit.pro ? ':domain' : ''}`, creditedMonths]
         );
         if (claim.rowCount === 0) {
           // Replay: the order id already exists. It must belong to THIS tenant; otherwise it is a
           // collision/misroute and we must not mutate this tenant for an order that isn't theirs.
           const owner = await client.query(
-            `SELECT tenant_id FROM payments WHERE trx_id = $1`,
+            `SELECT tenant_id, memo FROM payments WHERE trx_id = $1`,
             [orderId]
           );
           if (owner.rows[0]?.tenant_id !== tenant.id) {
@@ -177,10 +202,11 @@ internalRoutes.post('/activate', async (c) => {
           }
           // Genuine replay of this tenant's order: re-apply the upgrade idempotently (self-heal
           // after a staggered deploy) without re-extending the term.
-          return { status: 200, tenantId: tenant.id, duplicate: true, plan: await applyPlan() };
+          const recordedUpgrade = plan === 'pro' && String(owner.rows[0]?.memo ?? '').endsWith(':domain');
+          return { status: 200, tenantId: tenant.id, duplicate: true, plan: await applyPlan(recordedUpgrade) };
         }
 
-        const effectivePlan = await applyPlan();
+        const effectivePlan = await applyPlan(credit.pro);
 
         // Extend from the later of now / current expiry (same rule as activateSubscription).
         const now = new Date();
@@ -189,7 +215,7 @@ internalRoutes.post('/activate', async (c) => {
           : now;
         const base = currentExpiry > now ? currentExpiry : now;
         const newExpiry = new Date(base);
-        newExpiry.setMonth(newExpiry.getMonth() + months);
+        newExpiry.setMonth(newExpiry.getMonth() + creditedMonths);
         const startedAt = tenant.subscription_started_at || now;
 
         await client.query(

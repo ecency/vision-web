@@ -61,7 +61,6 @@ export const DEFAULT_UNVERIFIED_DOMAIN_CLAIM_DAYS = 14;
 const CONFIG = {
   PAYMENT_ACCOUNT: Pricing.PAYMENT_ACCOUNT,
   MONTHLY_PRICE_HBD: Pricing.MONTHLY_PRICE_HBD,
-  PRO_UPGRADE_PRICE_HBD: Pricing.PRO_UPGRADE_PRICE_HBD,
   CUSTOM_DOMAIN_MONTHLY_PRICE_HBD: Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
   HIVE_API_NODES: (process.env.HIVE_API_URL || 'https://api.hive.blog').split(','),
   POLL_INTERVAL_MS: 3000, // 3 seconds (1 block)
@@ -310,13 +309,12 @@ export class PaymentListener {
         parsed.username,
         months,
         amount,
-        parsed.customDomain,
-        parsed.months
+        parsed.customDomain
       );
     } else if (parsed.action === 'upgrade') {
       // The amount is validated inside processUpgrade against the PRORATED custom-domain cost
       // (which depends on the tenant's remaining term). No flat pre-gate here: a flat
-      // PRO_UPGRADE_PRICE_HBD floor could reject a correctly-quoted prorated transfer whenever the
+      // upgrade-price floor could reject a correctly-quoted prorated transfer whenever the
       // per-month premium is below that floor.
       await this.processUpgrade(transfer, parsed.username, amount);
     }
@@ -330,10 +328,7 @@ export class PaymentListener {
     // A ':domain' memo activates on the custom-domain ('pro') tier. Set the plan on activation so a
     // one-step blog:name:months:domain payment both creates/extends the blog AND unlocks custom
     // domains. A standard memo passes false and never downgrades an existing pro tenant.
-    pro: boolean = false,
-    // The months the memo named: a payment that covers fewer after the premium is refused,
-    // never credited short of what was asked for.
-    minMonths: number = 1
+    pro: boolean = false
   ) {
     console.log('[PaymentListener] Processing subscription:', username, 'for', requestedMonths, 'months');
     // Fewer when a custom-domain payment first covers the premium for the current term.
@@ -364,26 +359,24 @@ export class PaymentListener {
         ).rows[0];
 
         // A ':domain' payment on a standard blog with time left moves that whole term to the
-        // custom-domain plan, so it carries the prorated premium for the months already paid at
-        // the standard rate: the same amount the upgrade quote asks for. Only what is left after
-        // the premium buys new months; too little for one is refused, never credited as standard.
-        if (pro && row && row.subscription_plan !== 'pro' && row.subscription_status === 'active') {
-          const remainingPremium = Pricing.customDomainUpgradeHbd(
-            row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+        // custom-domain plan, so it first pays the prorated premium for the months already paid at
+        // the standard rate (the amount the quote included). The term can change between the
+        // quote and this transfer (another payment extended it), so a payment that no longer
+        // covers the premium is kept as standard time rather than refused: see
+        // creditCustomDomainPayment, shared with the card rail.
+        if (pro && row) {
+          const credit = Pricing.creditCustomDomainPayment(
+            amount,
+            months,
+            {
+              plan: row.subscription_plan,
+              status: row.subscription_status,
+              expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+            },
             new Date()
           );
-          const left = Math.round(amount * 1000) - Math.round(remainingPremium * 1000);
-          const affordable = Math.floor(left / Math.round(CONFIG.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
-          if (affordable < Math.max(1, minMonths)) {
-            throw Object.assign(
-              new Error(
-                `Insufficient for the custom-domain plan: the ${Pricing.hbd(remainingPremium)} HBD ` +
-                  'premium for the months left on the current term comes first (see the upgrade quote)'
-              ),
-              { permanent: true }
-            );
-          }
-          months = Math.min(months, affordable);
+          pro = credit.pro;
+          months = credit.months;
         }
 
         // 2. Claim the transfer (dedup via unique trx_id).

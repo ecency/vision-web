@@ -5,6 +5,7 @@ import {
   CUSTOM_DOMAIN_UPGRADE_DELTA_HBD,
   MONTHLY_PRICE_HBD,
   CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
+  creditCustomDomainPayment,
 } from './pricing';
 
 const now = new Date('2026-01-15T00:00:00.000Z');
@@ -79,5 +80,42 @@ describe('customDomainUpgradeHbd', () => {
 
   it('is 0 for an expired/null term (no upgrade to charge)', () => {
     expect(customDomainUpgradeHbd(null, now)).toBe(0);
+  });
+});
+
+describe('creditCustomDomainPayment', () => {
+  const standard = (expiresAt: string) => ({ plan: 'standard' as const, status: 'active', expiresAt: new Date(expiresAt) });
+  const PRO = CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+  const STD = MONTHLY_PRICE_HBD;
+
+  it('charges nothing extra for a new, expired or custom-domain blog', () => {
+    expect(creditCustomDomainPayment(2 * PRO, 2, null, now)).toEqual({ pro: true, months: 2 });
+    expect(
+      creditCustomDomainPayment(PRO, 1, { plan: 'pro', status: 'active', expiresAt: new Date('2026-06-15T00:00:00Z') }, now)
+    ).toEqual({ pro: true, months: 1 });
+    expect(
+      creditCustomDomainPayment(PRO, 1, { plan: 'standard', status: 'expired', expiresAt: new Date('2026-01-01T00:00:00Z') }, now)
+    ).toEqual({ pro: true, months: 1 });
+  });
+
+  it('takes the premium for the months left first, then buys months at the custom-domain rate', () => {
+    const t = standard('2026-06-15T00:00:00Z'); // 5 months left
+    const premium = customDomainUpgradeHbd(t.expiresAt, now);
+    expect(creditCustomDomainPayment(premium + 2 * PRO, 2, t, now)).toEqual({ pro: true, months: 2 });
+    // The term grew after the quote: fewer months, still upgraded, never refused.
+    expect(creditCustomDomainPayment(premium + 2 * PRO, 3, t, now)).toEqual({ pro: true, months: 2 });
+  });
+
+  it('keeps a payment that no longer covers the premium as standard time, never as nothing', () => {
+    const quoted = standard('2027-01-15T00:00:00Z'); // 12 months left when quoted
+    const paid = customDomainUpgradeHbd(quoted.expiresAt, now) + PRO;
+    // Another payment extended the term to 13 months before this one arrived.
+    const grown = standard('2027-02-15T00:00:00Z');
+    expect(creditCustomDomainPayment(paid, 1, grown, now)).toEqual({
+      pro: false,
+      months: Math.floor(Math.round(paid * 1000) / Math.round(STD * 1000)),
+    });
+    // One month at the custom-domain rate on a long standard term: standard months.
+    expect(creditCustomDomainPayment(PRO, 1, grown, now)).toEqual({ pro: false, months: 1 });
   });
 });

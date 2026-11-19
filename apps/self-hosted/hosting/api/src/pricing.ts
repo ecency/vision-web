@@ -14,8 +14,6 @@ export const PAYMENT_ACCOUNT = process.env.PAYMENT_ACCOUNT || 'ecency.hosting';
 
 export const MONTHLY_PRICE_HBD = parseFloat(process.env.MONTHLY_PRICE_HBD || '2.000');
 
-export const PRO_UPGRADE_PRICE_HBD = parseFloat(process.env.PRO_UPGRADE_PRICE_HBD || '0.500');
-
 // Custom-domain ('pro') tier: standard + 1 HBD/mo unless explicitly overridden.
 export const CUSTOM_DOMAIN_MONTHLY_PRICE_HBD = parseFloat(
   process.env.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD || (MONTHLY_PRICE_HBD + 1).toString()
@@ -54,6 +52,31 @@ export function remainingMonths(expiresAt: Date | null, now: Date): number {
 // Prorated HBD cost to add a custom domain to an active tenant for the rest of its current term.
 export function customDomainUpgradeHbd(expiresAt: Date | null, now: Date): number {
   return remainingMonths(expiresAt, now) * CUSTOM_DOMAIN_UPGRADE_DELTA_HBD;
+}
+
+/**
+ * What a custom-domain payment buys, on every rail (HBD transfer, card). `months` is what the
+ * memo or card product asked for; the caller has already checked the amount covers that many
+ * months at the custom-domain rate on its own.
+ *
+ * A standard blog with time left first pays the premium for those months (moving the running
+ * term to the custom-domain plan); what is left buys months at the custom-domain rate, at most
+ * `months`. A payment that cannot cover the premium plus one month, for instance because another
+ * payment extended the term after the quote, keeps the blog standard and buys standard months
+ * with the whole amount. A paid transfer is never refused and never credited nothing.
+ */
+export function creditCustomDomainPayment(
+  paid: number,
+  months: number,
+  tenant: { plan: string; status: string; expiresAt: Date | null } | null,
+  now: Date
+): { pro: boolean; months: number } {
+  if (!tenant || tenant.plan === 'pro' || tenant.status !== 'active') return { pro: true, months };
+  const paidMillis = Math.round(paid * 1000);
+  const premiumMillis = Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000);
+  const affordable = Math.floor((paidMillis - premiumMillis) / Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
+  if (affordable >= 1) return { pro: true, months: Math.min(months, affordable) };
+  return { pro: false, months: Math.floor(paidMillis / Math.round(MONTHLY_PRICE_HBD * 1000)) };
 }
 
 // HBD amounts are conventionally quoted to 3 decimals (e.g. "2.000 HBD").

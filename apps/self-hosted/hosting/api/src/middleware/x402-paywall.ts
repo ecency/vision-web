@@ -4,8 +4,9 @@
  * Pre-configured paywall instances for subscription and upgrade flows.
  */
 
+import type { Context, Next } from 'hono';
 import { honoPaywall } from '@hiveio/x402/middleware/hono';
-import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
+import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, hbd } from '../pricing';
 
 const FACILITATOR_URL = process.env.X402_FACILITATOR_URL || 'http://localhost:4020';
 
@@ -20,11 +21,21 @@ export const subscriptionPaywall = honoPaywall({
 });
 
 /**
- * Paywall for Pro plan upgrade (3 HBD default)
+ * Paywall for the custom-domain (Pro) upgrade of a running term. The price is the premium for the
+ * months left on that term (customDomainUpgradeHbd), which the route computes for the tenant and
+ * sets as `upgradePremium` before this runs: the same amount an HBD upgrade pays. Built per
+ * request because the amount depends on the tenant. With no premium set (no term left, or a route
+ * that did not price it) no payment is taken.
  */
-export const proUpgradePaywall = honoPaywall({
-  amount: `${hbd(PRO_UPGRADE_PRICE_HBD)} HBD`,
-  receivingAccount: PAYMENT_ACCOUNT,
-  facilitatorUrl: FACILITATOR_URL,
-  description: 'Ecency Blog hosting - Pro plan upgrade',
-});
+export const proUpgradePaywall = async (c: Context, next: Next) => {
+  const premium: number | undefined = c.get('upgradePremium');
+  if (typeof premium !== 'number' || !(premium > 0)) {
+    return c.json({ error: 'No remaining term to upgrade' }, 400);
+  }
+  return honoPaywall({
+    amount: `${hbd(premium)} HBD`,
+    receivingAccount: PAYMENT_ACCOUNT,
+    facilitatorUrl: FACILITATOR_URL,
+    description: 'Ecency Blog hosting - custom domain for the rest of the current term',
+  })(c, next);
+};

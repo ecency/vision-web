@@ -18,7 +18,7 @@ import {
   MAX_RESET_PATHS,
 } from '../services/tenant-service';
 import { mapTenantFromDb } from '../types';
-import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, PRO_UPGRADE_PRICE_HBD, hbd } from '../pricing';
+import { PAYMENT_ACCOUNT, MONTHLY_PRICE_HBD, customDomainUpgradeHbd, hbd } from '../pricing';
 import { ConfigService, isPublishableTenant } from '../services/config-service';
 import { customDomainCapability } from '../services/subscription';
 import { authMiddleware } from '../middleware/auth';
@@ -496,6 +496,13 @@ tenantRoutes.post('/:username/upgrade',
     if (tenant.subscriptionPlan === 'pro') {
       return c.json({ error: 'Already on Pro plan' }, 409);
     }
+    // The price is the premium for the months left on the running term, the same amount an HBD
+    // upgrade pays; the paywall below asks for exactly this.
+    const premium = customDomainUpgradeHbd(tenant.subscriptionExpiresAt ?? null, new Date());
+    if (!(premium > 0)) {
+      return c.json({ error: 'No remaining term to upgrade' }, 400);
+    }
+    c.set('upgradePremium', premium);
     await next();
   },
   proUpgradePaywall,
@@ -540,7 +547,7 @@ tenantRoutes.post('/:username/upgrade',
           txId,
           blockNum,
           payer,
-          PRO_UPGRADE_PRICE_HBD,
+          c.get('upgradePremium'),
           `x402:upgrade:${username}`,
         ]
       );

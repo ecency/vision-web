@@ -160,6 +160,57 @@ describe("HostingSignup one-click HBD pay", () => {
     );
   });
 
+  it("offers only HBD for a custom domain on a running standard term", async () => {
+    // A card product has a fixed price and cannot carry the premium for the
+    // months left, so that case is paid in HBD, whose quote includes it.
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: true, monthlyUsdCents: 200 }
+    });
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: "standard",
+      subscriptionExpiresAt: new Date(Date.now() + 300 * 86400000).toISOString()
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    await waitFor(() => expect(screen.queryByText("hosting.pay-card")).toBeNull());
+    expect(screen.getByText("hosting.custom-domain-upgrade-hbd-only")).toBeTruthy();
+    // Turning the add-on off offers card again.
+    fireEvent.click(screen.getByText("hosting.custom-domain-option"));
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+  });
+
+  it("keeps card for a custom domain on a new or expired blog", async () => {
+    hostingApi.paymentMethods.mockResolvedValue({
+      hbd: { enabled: true, monthly: "2.000", account: "ecency.hosting" },
+      x402: { enabled: false, monthly: "2.000" },
+      card: { enabled: true, monthlyUsdCents: 200 }
+    });
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "expired",
+      subscriptionPlan: "standard",
+      subscriptionExpiresAt: "2026-08-01T00:00:00.000Z"
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    expect(await screen.findByText("hosting.pay-card")).toBeTruthy();
+    expect(screen.queryByText("hosting.custom-domain-upgrade-hbd-only")).toBeNull();
+  });
+
   it("shows the quoted amount, premium for the current term included, on the pay button", async () => {
     // An active standard blog with time left: the add-on quote carries the
     // premium for the months left, so the label must show what is sent.
