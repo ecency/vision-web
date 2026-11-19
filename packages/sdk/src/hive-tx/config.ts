@@ -10,21 +10,20 @@ export const config = {
    * Array of Hive API node endpoints for load balancing and failover.
    */
   /*
-   * techcoderx.com is deliberately absent: its condenser_api.get_accounts serves
-   * account rows with posting_json_metadata stripped to "" while balances and
-   * reputation are correct. That is a well-formed result, so it passes shape
-   * validation and the health tracker keeps it ranked by latency alone.
-   *
+   * techcoderx.com and hiveapi.actifit.io are listed last. Until 2026-11 they
+   * were left out: their condenser_api.get_accounts served account rows with
+   * posting_json_metadata stripped to "" (balances and reputation correct).
    * Wallet token visibility is read entirely from profile.tokens[].meta.show in
-   * that metadata, so a stripped row reads as "this user enabled nothing" and the
-   * wallet silently falls back to HIVE/HP/HBD/Points. getAccountFullQueryOptions
-   * cross-checks against the hivemind profile and re-reads, but that guard only
-   * fires when hivemind reports profile *values* — an account whose metadata is
-   * just `tokens` (no name/about/image) has none, so it would slip through.
-   * Keeping the node out of the pool removes the dependency on that guard.
+   * that metadata, so a stripped row reads as "this user enabled nothing" and
+   * the wallet silently falls back to HIVE/HP/HBD/Points. A well-formed result
+   * passes shape validation, so the health tracker ranks such a node by latency
+   * alone.
    *
-   * Note this is RPC-only: the same host serves full metadata over its REST
-   * (hafbe) endpoint, so it remains valid in `restNodes`.
+   * Re-checked 2026-11-19: both return metadata identical to api.hive.blog for
+   * 113 accounts, 32 of them carrying wallet `tokens`. If wallet tokens go
+   * missing again, compare condenser_api.get_accounts on these two against
+   * api.hive.blog first. getAccountFullQueryOptions cross-checks against the
+   * hivemind profile, but only fires when that profile has values.
    */
   nodes: [
     'https://api.hive.blog',
@@ -32,6 +31,8 @@ export const config = {
     'https://api.openhive.network',
     'https://api.syncad.com',
     'https://rpc.mahdiyari.info',
+    'https://techcoderx.com',
+    'https://hiveapi.actifit.io',
   ],
 
   /**
