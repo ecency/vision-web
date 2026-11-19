@@ -2,7 +2,7 @@ import React from "react";
 import "@testing-library/jest-dom";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithQueryClient, mockCommunity } from "@/specs/test-utils";
+import { renderWithQueryClient, mockCommunity, createTestQueryClient } from "@/specs/test-utils";
 import type { Community } from "@/entities";
 
 const subscribe = vi.fn(async () => undefined);
@@ -390,6 +390,33 @@ describe("feed community suggestions", () => {
       activeUsername = "alice";
       view.rerender(<TopCommunitiesWidget />);
       expect(await screen.findByText("top-communities.my-title")).toBeInTheDocument();
+    });
+
+    // The reset-on-account-change effect must run before the effect that holds
+    // Discover, or a Discover shown in the same commit loses its hold and the
+    // card swaps under the next join.
+    it("keeps discover after a join when it shows on the first commit", async () => {
+      ranked = [];
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(["subscriptions", "alice"], []);
+      renderWithQueryClient(<TopCommunitiesWidget />, { queryClient });
+      fireEvent.click(await screen.findByRole("button", { name: "community.subscribe" }));
+      await screen.findByRole("button", { name: "community.subscribed" });
+      expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
+    });
+
+    it("keeps discover after a join when it shows right after an account switch", async () => {
+      ranked = [];
+      subscriptions = subscribed(2);
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(["subscriptions", "bob"], []);
+      const view = renderWithQueryClient(<TopCommunitiesWidget />, { queryClient });
+      await waitFor(() => expect(joinedLinks()).toHaveLength(2));
+      activeUsername = "bob";
+      view.rerender(<TopCommunitiesWidget />);
+      fireEvent.click(await screen.findByRole("button", { name: "community.subscribe" }));
+      await screen.findByRole("button", { name: "community.subscribed" });
+      expect(screen.getByText("top-communities.discover-title")).toBeInTheDocument();
     });
 
     it("falls back to discover when no subscription row is usable", async () => {
