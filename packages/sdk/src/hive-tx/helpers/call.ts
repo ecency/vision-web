@@ -71,13 +71,15 @@ export const rpcProxyStats = {
  * the same throttling nodes, per process and without the proxy's coalescing.
  * This read still falls back, since the node pool is not the proxy's pool.
  *
- * `upstream` is a 502 tagged `X-Ssr-Cache: UNAVAILABLE`: the proxy answered,
- * but the nodes behind it failed (part of its pool down, the rest throttled).
+ * `upstream` is a 502 tagged `X-Ssr-Cache: UPSTREAM`: the proxy answered, but
+ * every node behind it failed (part of its pool down, the rest throttled).
  * Outside the breaker for the same reason: it says nothing about the proxy. The
  * read falls back, since the node pool may reach a node the proxy has parked.
- * The proxy's 504 `TIMEOUT` is NOT included: its budget firing is also what a
- * wedged proxy looks like, and that is what the breaker is for. A tag on any
- * other status is not the contract and counts as `status`.
+ * Still counted: 502 `UNAVAILABLE`, the proxy's own failure (its fill queue
+ * full, an unexpected exception), and its 504 `TIMEOUT`, since its budget
+ * firing is also what a wedged proxy looks like. Opening on those is what the
+ * breaker is for. A tag on any other status is not the contract and counts as
+ * `status`.
  */
 type ProxyMissReason = 'status' | 'rpcerror' | 'ratelimited' | 'upstream' | 'timeout' | 'transport' | 'validate' | 'parse'
 
@@ -150,7 +152,7 @@ async function proxyRpcCall<T>(
       const tag = (res.headers.get('x-ssr-cache') ?? '').toUpperCase()
       const relayed = res.status === 502 && tag === 'RPCERROR'
       const throttled = res.status === 503 && tag === 'RATELIMITED'
-      const upstream = res.status === 502 && tag === 'UNAVAILABLE'
+      const upstream = res.status === 502 && tag === 'UPSTREAM'
       let unknownMethod = false
       if (relayed) {
         // The relayed body is the node's error message (`{"error": "..."}`),
@@ -177,7 +179,7 @@ async function proxyRpcCall<T>(
           : throttled
             ? 'proxy upstream rate-limited'
             : upstream
-              ? 'proxy upstream unavailable'
+              ? 'proxy upstream failed'
               : `proxy answered ${res.status}`,
         unknownMethod,
         !relayed && res.status === 404

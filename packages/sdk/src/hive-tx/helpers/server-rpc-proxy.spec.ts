@@ -331,7 +331,7 @@ describe("server-side RPC proxy", () => {
   });
 
   it("an upstream failure the proxy reports falls back but neither opens nor advances the breaker", async () => {
-    // 502 UNAVAILABLE is the proxy answering correctly that the nodes behind it
+    // 502 UPSTREAM is the proxy answering correctly that the nodes behind it
     // failed. Counting it opened the breaker on a healthy proxy whenever part of
     // its pool was down.
     setServerRpcProxy({ url: PROXY, headers: {}, timeoutMs: 500, failureThreshold: 2, cooldownMs: 300 });
@@ -340,8 +340,8 @@ describe("server-side RPC proxy", () => {
         status,
         headers: { "Content-Type": "application/json", "X-Ssr-Cache": tag }
       });
-    const unavailable = tagged(502, "UNAVAILABLE");
-    let answer: () => Response = unavailable;
+    const failedUpstream = tagged(502, "UPSTREAM");
+    let answer: () => Response = failedUpstream;
     const urls: string[] = [];
     mockFetch(async (input, init) => {
       urls.push(String(input));
@@ -364,25 +364,35 @@ describe("server-side RPC proxy", () => {
     const down = () => jsonOk({ error: "down" }, 502);
     answer = down;
     await callRPC("bridge.get_post", { author: "a", permlink: "m1" });
-    answer = unavailable;
+    answer = failedUpstream;
     await callRPC("bridge.get_post", { author: "a", permlink: "m2" });
     answer = down;
     await callRPC("bridge.get_post", { author: "a", permlink: "m3" });
-    answer = unavailable;
+    answer = failedUpstream;
     await callRPC("bridge.get_post", { author: "a", permlink: "m4" }); // asked, and resets again
     expect(rpcProxyStats.skipped).toBe(0);
     expect(urls.filter((u) => u === PROXY)).toHaveLength(8);
 
-    // The proxy's own 504 TIMEOUT still counts: a wedged proxy answers exactly
-    // that, and the breaker exists for it. So does the UNAVAILABLE tag on a
-    // status it does not belong to. Two of them open the breaker.
-    answer = tagged(504, "TIMEOUT");
+    // The proxy's own failures still count: 502 UNAVAILABLE (its fill queue
+    // full, an unexpected exception) and its 504 TIMEOUT (a wedged proxy answers
+    // exactly that). The breaker exists for them. Two open it.
+    answer = tagged(502, "UNAVAILABLE");
     await callRPC("bridge.get_post", { author: "a", permlink: "5" });
-    answer = tagged(503, "UNAVAILABLE");
+    answer = tagged(504, "TIMEOUT");
     await callRPC("bridge.get_post", { author: "a", permlink: "6" });
     await callRPC("bridge.get_post", { author: "a", permlink: "7" }); // open: skipped
     expect(rpcProxyStats.skipped).toBe(1);
     expect(rpcProxyStats.fallbackByReason.status).toBe(4); // m1, m3, then these two
+
+    // And the UPSTREAM tag on a status it does not belong to is not the
+    // contract: it counts too.
+    resetRpcProxyBreaker();
+    answer = tagged(503, "UPSTREAM");
+    await callRPC("bridge.get_post", { author: "a", permlink: "8" });
+    await callRPC("bridge.get_post", { author: "a", permlink: "9" });
+    await callRPC("bridge.get_post", { author: "a", permlink: "10" }); // open: skipped
+    expect(rpcProxyStats.skipped).toBe(2);
+    expect(rpcProxyStats.fallbackByReason.status).toBe(6);
     expect(rpcProxyStats.fallbackByReason.upstream).toBe(6);
   });
 
