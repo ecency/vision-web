@@ -93,13 +93,13 @@ describe('PaymentListener.processUpgrade (transactional)', () => {
     expect(auditLog).not.toHaveBeenCalled();
   });
 
-  const timeExtension = () => queries.find((q) => /SET subscription_expires_at = subscription_expires_at \+/.test(q));
+  const timeExtension = () => queries.find((q) => /SET subscription_expires_at = GREATEST\(COALESCE\(subscription_expires_at, NOW\(\)\), NOW\(\)\) \+/.test(q));
 
   it('keeps an upgrade payment to a blog already on the plan as time at the custom-domain rate', async () => {
     plan = [
       { match: /SELECT \* FROM tenants/, rows: [{ id: 't1', subscription_status: 'active', subscription_plan: 'pro', subscription_expires_at: IN_A_MONTH }] },
       { match: /INSERT INTO payments/, rows: [{ id: 'p1' }] },
-      { match: /SET subscription_expires_at = subscription_expires_at/, rows: [{ id: 't1' }] },
+      { match: /SET subscription_expires_at = GREATEST/, rows: [{ id: 't1' }] },
     ];
     await run(10);
     expect(lastTenantUpdate()).toBeUndefined();
@@ -122,7 +122,7 @@ describe('PaymentListener.processUpgrade (transactional)', () => {
     plan = [
       { match: /SELECT \* FROM tenants/, rows: [{ id: 't1', subscription_status: 'active', subscription_plan: 'standard', subscription_expires_at: IN_A_MONTH }] },
       { match: /INSERT INTO payments/, rows: [{ id: 'p1' }] },
-      { match: /SET subscription_expires_at = subscription_expires_at/, rows: [{ id: 't1' }] },
+      { match: /SET subscription_expires_at = GREATEST/, rows: [{ id: 't1' }] },
     ];
     await run(0.5); // below the prorated premium
     expect(lastTenantUpdate()).toBeUndefined();

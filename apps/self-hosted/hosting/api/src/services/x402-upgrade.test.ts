@@ -24,7 +24,7 @@ const client = {
 const inMonths = (n: number) => new Date(Date.now() + n * 30.5 * 24 * 3600 * 1000);
 const input = (paid: number) => ({ username: 'alice', txId: 'tx1', blockNum: 0, payer: 'alice', paid });
 const flip = () => calls.find((c) => /SET subscription_plan = 'pro'/.test(c.sql));
-const extension = () => calls.find((c) => /subscription_expires_at = subscription_expires_at \+/.test(c.sql));
+const extension = () => calls.find((c) => /SET subscription_expires_at = GREATEST/.test(c.sql));
 
 describe('applyX402Upgrade', () => {
   beforeEach(() => {
@@ -47,6 +47,21 @@ describe('applyX402Upgrade', () => {
     expect(flip()).toBeUndefined();
     expect(extension()?.params[1]).toBe(Pricing.hbdAsTimeMs(paid, Pricing.MONTHLY_PRICE_HBD));
     expect(out.keptAsTime).toBe(true);
+  });
+
+  it('keeps the payment as time on the plan when another payment upgraded the blog first', async () => {
+    row.subscription_plan = 'pro';
+    const out = await applyX402Upgrade(client, input(2), new Date());
+    expect(flip()).toBeUndefined();
+    expect(extension()?.params[1]).toBe(Pricing.hbdAsTimeMs(2, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD));
+    expect(out.keptAsTime).toBe(true);
+  });
+
+  it('extends from the later of now and the stored expiry', async () => {
+    // A missing or past expiry must still receive the whole time paid for.
+    row.subscription_expires_at = inMonths(14);
+    await applyX402Upgrade(client, input(0.5), new Date());
+    expect(extension()?.sql).toMatch(/GREATEST\(COALESCE\(subscription_expires_at, NOW\(\)\), NOW\(\)\)/);
   });
 
   it('records the amount that was charged', async () => {

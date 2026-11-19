@@ -39,6 +39,18 @@ describe('GET /instructions with the custom-domain add-on', () => {
     expect(q.memo).toBe('blog:alice:domain');
   });
 
+  it('adds the premium for a suspended standard blog with time left too', async () => {
+    mocks.getByUsername.mockResolvedValue({
+      username: 'alice',
+      subscriptionPlan: 'standard',
+      subscriptionStatus: 'suspended',
+      subscriptionExpiresAt: IN_A_YEAR,
+    });
+    const q = await quote('months=1&domain=1');
+    const premium = Pricing.customDomainUpgradeHbd(IN_A_YEAR, new Date());
+    expect(hbdOf(q.amount)).toBeCloseTo(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD + premium, 3);
+  });
+
   it.each([
     ['a new blog', null],
     ['a blog already on the plan', { subscriptionPlan: 'pro', subscriptionStatus: 'active', subscriptionExpiresAt: IN_A_YEAR }],

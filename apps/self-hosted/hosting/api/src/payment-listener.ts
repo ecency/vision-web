@@ -593,7 +593,7 @@ export class PaymentListener {
             plan === 'pro' ? Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : Pricing.MONTHLY_PRICE_HBD;
           await client.query(
             `UPDATE tenants
-                SET subscription_expires_at = subscription_expires_at + ($2 * INTERVAL '1 millisecond'),
+                SET subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW()) + ($2 * INTERVAL '1 millisecond'),
                     updated_at = NOW()
               WHERE id = $1`,
             [row.id, Pricing.hbdAsTimeMs(amount, monthly)]

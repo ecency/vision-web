@@ -522,7 +522,8 @@ tenantRoutes.post('/:username/upgrade',
     const blockNum = Number.isInteger(blockNumRaw) && blockNumRaw > 0 ? blockNumRaw : 0;
 
     // Payment claim + upgrade inside a DB transaction with row lock; the premium is priced again
-    // against the locked row (see applyX402Upgrade).
+    // against the locked row (see applyX402Upgrade). A payment that can no longer upgrade is kept
+    // as time and still answers 200: the response's subscriptionPlan says which happened.
     const result = await db.transaction((client) =>
       applyX402Upgrade(
         client,

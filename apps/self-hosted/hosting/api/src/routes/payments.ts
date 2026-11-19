@@ -102,7 +102,8 @@ paymentRoutes.get('/instructions/:username', async (c) => {
   let upgradePremium = 0;
   if (domain) {
     const tenant = await TenantService.getByUsername(username);
-    if (tenant && tenant.subscriptionPlan !== 'pro' && tenant.subscriptionStatus === 'active') {
+    // Any standard blog with time left, a suspended one included (the listener charges it too).
+    if (tenant && tenant.subscriptionPlan !== 'pro') {
       upgradePremium = customDomainUpgradeHbd(
         tenant.subscriptionExpiresAt ? new Date(tenant.subscriptionExpiresAt) : null,
         new Date()
