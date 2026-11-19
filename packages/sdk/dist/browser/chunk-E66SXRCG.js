@@ -1,2 +1,0 @@
-import {m}from'./chunk-KS4P7JGA.js';import {queryOptions}from'@tanstack/react-query';function u(c){return queryOptions({queryKey:["resource-credits","account",c],queryFn:async()=>(await m("rc_api.find_rc_accounts",{accounts:[c]})).rc_accounts,enabled:!!c})}export{u as a};//# sourceMappingURL=chunk-E66SXRCG.js.map
-//# sourceMappingURL=chunk-E66SXRCG.js.map

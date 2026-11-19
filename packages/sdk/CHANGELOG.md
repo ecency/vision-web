@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.6
+
+### Patch Changes
+
+- fix(sdk): proxy upstream failures do not open its breaker; widen the node pools; normalise subscription rows (#2150)
+
 ## 2.9.5
 
 ### Patch Changes
