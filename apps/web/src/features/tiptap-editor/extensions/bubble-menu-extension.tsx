@@ -1,7 +1,6 @@
 import { Button, StyledTooltip } from "@/features/ui";
 import { flip, shift, useFloating } from "@floating-ui/react-dom";
 import { safeAutoUpdate } from "@ui/util";
-import { posToDOMRect } from "@tiptap/core";
 import {
   UilArrow,
   UilBold,
@@ -17,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PublishEditorToolbarLinkForm } from "./link-form";
 import { openInNewTab } from "@/utils/open-in-new-tab";
+import { createSelectionReference } from "./bubble-menu-rect";
 
 interface Props {
   editor: any | null;
@@ -52,10 +52,7 @@ export function BubbleMenu({ editor }: Props) {
     if (!editor) {
       return;
     }
-    const { from, to } = editor.state.selection;
-    refs.setReference({
-      getBoundingClientRect: () => posToDOMRect(editor.view, from, to)
-    });
+    refs.setReference(createSelectionReference(editor));
   }, [editor, refs]);
 
   useEffect(() => {
