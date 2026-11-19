@@ -469,8 +469,7 @@ export function HostingSignup() {
       renewBaselineExpiryRef.current =
         existing.subscriptionStatus === "active" ? (existing.subscriptionExpiresAt ?? null) : null;
       setRunningStandardTerm(
-        existing.subscriptionStatus === "active" &&
-          existing.subscriptionPlan !== "pro" &&
+        existing.subscriptionPlan !== "pro" &&
           !!existing.subscriptionExpiresAt &&
           new Date(existing.subscriptionExpiresAt).getTime() > Date.now()
       );

@@ -6,6 +6,7 @@ import {
   MONTHLY_PRICE_HBD,
   CUSTOM_DOMAIN_MONTHLY_PRICE_HBD,
   creditCustomDomainPayment,
+  hbdAsTimeMs,
 } from './pricing';
 
 const now = new Date('2026-01-15T00:00:00.000Z');
@@ -84,17 +85,17 @@ describe('customDomainUpgradeHbd', () => {
 });
 
 describe('creditCustomDomainPayment', () => {
-  const standard = (expiresAt: string) => ({ plan: 'standard' as const, status: 'active', expiresAt: new Date(expiresAt) });
+  const standard = (expiresAt: string) => ({ plan: 'standard' as const, expiresAt: new Date(expiresAt) });
   const PRO = CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
   const STD = MONTHLY_PRICE_HBD;
 
   it('charges nothing extra for a new, expired or custom-domain blog', () => {
     expect(creditCustomDomainPayment(2 * PRO, 2, null, now)).toEqual({ pro: true, months: 2 });
     expect(
-      creditCustomDomainPayment(PRO, 1, { plan: 'pro', status: 'active', expiresAt: new Date('2026-06-15T00:00:00Z') }, now)
+      creditCustomDomainPayment(PRO, 1, { plan: 'pro', expiresAt: new Date('2026-06-15T00:00:00Z') }, now)
     ).toEqual({ pro: true, months: 1 });
     expect(
-      creditCustomDomainPayment(PRO, 1, { plan: 'standard', status: 'expired', expiresAt: new Date('2026-01-01T00:00:00Z') }, now)
+      creditCustomDomainPayment(PRO, 1, { plan: 'standard', expiresAt: new Date('2026-01-01T00:00:00Z') }, now)
     ).toEqual({ pro: true, months: 1 });
   });
 
@@ -102,7 +103,7 @@ describe('creditCustomDomainPayment', () => {
     const t = standard('2026-06-15T00:00:00Z'); // 5 months left
     const premium = customDomainUpgradeHbd(t.expiresAt, now);
     expect(creditCustomDomainPayment(premium + 2 * PRO, 2, t, now)).toEqual({ pro: true, months: 2 });
-    // The term grew after the quote: fewer months, still upgraded, never refused.
+    // The memo asked for more months than the amount covers after the premium.
     expect(creditCustomDomainPayment(premium + 2 * PRO, 3, t, now)).toEqual({ pro: true, months: 2 });
   });
 
@@ -117,5 +118,21 @@ describe('creditCustomDomainPayment', () => {
     });
     // One month at the custom-domain rate on a long standard term: standard months.
     expect(creditCustomDomainPayment(PRO, 1, grown, now)).toEqual({ pro: false, months: 1 });
+  });
+});
+
+describe('premium on any standard blog with time left', () => {
+  it('a suspended blog with time left pays the premium too', () => {
+    const t = { plan: 'standard', expiresAt: new Date('2027-01-15T00:00:00Z') };
+    expect(creditCustomDomainPayment(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1, t, now)).toEqual({ pro: false, months: 1 });
+  });
+});
+
+describe('hbdAsTimeMs', () => {
+  it('turns an amount into the time it buys at a monthly price', () => {
+    const month = (365.2425 / 12) * 24 * 3600 * 1000;
+    expect(hbdAsTimeMs(MONTHLY_PRICE_HBD, MONTHLY_PRICE_HBD)).toBe(Math.floor(month));
+    expect(hbdAsTimeMs(MONTHLY_PRICE_HBD / 2, MONTHLY_PRICE_HBD)).toBe(Math.floor(month / 2));
+    expect(hbdAsTimeMs(0, MONTHLY_PRICE_HBD)).toBe(0);
   });
 });

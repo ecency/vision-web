@@ -39,6 +39,7 @@ vi.mock('./db/client', () => ({
 }));
 
 const { PaymentListener } = await import('./payment-listener');
+const { AuditService } = await import('./services/audit-service');
 const Pricing = await import('./pricing');
 
 const months = (n: number) => new Date(Date.now() + n * 30.5 * 24 * 3600 * 1000).toISOString();
@@ -89,6 +90,12 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     expect(failedPayments()).toHaveLength(0);
     expect(planUpdate()?.params[3]).toBeNull();
     expect(credited()).toBe(Math.floor(Math.round(paid * 1000) / Math.round(Pricing.MONTHLY_PRICE_HBD * 1000)));
+    expect(AuditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'payment.processed',
+        eventData: expect.objectContaining({ customDomainKeptAsStandard: true }),
+      })
+    );
   });
 
   it('upgrades when the payment covers the premium for the months left plus the new month', async () => {

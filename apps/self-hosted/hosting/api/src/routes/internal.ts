@@ -127,8 +127,7 @@ internalRoutes.post('/activate', async (c) => {
       async (client) => {
         // Lock the tenant row (serializes retries) and confirm it still exists.
         const t = await client.query(
-          `SELECT id, owner, subscription_started_at, subscription_expires_at, subscription_plan,
-                  subscription_status
+          `SELECT id, owner, subscription_started_at, subscription_expires_at, subscription_plan
              FROM tenants WHERE username = $1 FOR UPDATE`,
           [username]
         );
@@ -157,7 +156,6 @@ internalRoutes.post('/activate', async (c) => {
                 months,
                 {
                   plan: tenant.subscription_plan,
-                  status: tenant.subscription_status,
                   expiresAt: tenant.subscription_expires_at ? new Date(tenant.subscription_expires_at) : null,
                 },
                 new Date()

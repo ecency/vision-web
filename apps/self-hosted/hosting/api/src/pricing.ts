@@ -68,15 +68,25 @@ export function customDomainUpgradeHbd(expiresAt: Date | null, now: Date): numbe
 export function creditCustomDomainPayment(
   paid: number,
   months: number,
-  tenant: { plan: string; status: string; expiresAt: Date | null } | null,
+  tenant: { plan: string; expiresAt: Date | null } | null,
   now: Date
 ): { pro: boolean; months: number } {
-  if (!tenant || tenant.plan === 'pro' || tenant.status !== 'active') return { pro: true, months };
+  // Any standard blog with time left pays the premium, whatever its status: a suspended blog keeps
+  // its expiry, and would otherwise move its whole term for one month's price once reinstated.
+  // An expired, inactive or abandoned blog has no time left, so its premium is 0.
+  if (!tenant || tenant.plan === 'pro') return { pro: true, months };
   const paidMillis = Math.round(paid * 1000);
   const premiumMillis = Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000);
   const affordable = Math.floor((paidMillis - premiumMillis) / Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
   if (affordable >= 1) return { pro: true, months: Math.min(months, affordable) };
   return { pro: false, months: Math.floor(paidMillis / Math.round(MONTHLY_PRICE_HBD * 1000)) };
+}
+
+/** The time an amount buys at a monthly price, in milliseconds (average-length months). */
+export function hbdAsTimeMs(paid: number, monthlyPrice: number): number {
+  const priceMillis = Math.round(monthlyPrice * 1000);
+  if (priceMillis <= 0) return 0;
+  return Math.floor((Math.round(paid * 1000) / priceMillis) * AVERAGE_MONTH_MS);
 }
 
 // HBD amounts are conventionally quoted to 3 decimals (e.g. "2.000 HBD").

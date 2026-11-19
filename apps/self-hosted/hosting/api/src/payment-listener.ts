@@ -333,6 +333,9 @@ export class PaymentListener {
     console.log('[PaymentListener] Processing subscription:', username, 'for', requestedMonths, 'months');
     // Fewer when a custom-domain payment first covers the premium for the current term.
     let months = requestedMonths;
+    // A ':domain' payment that could not cover the premium is kept as standard time; recorded on
+    // the audit event so it can be told apart from a plain renewal.
+    const askedForDomain = pro;
 
     let updatedTenant: any = null;
 
@@ -370,7 +373,6 @@ export class PaymentListener {
             months,
             {
               plan: row.subscription_plan,
-              status: row.subscription_status,
               expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
             },
             new Date()
@@ -496,7 +498,13 @@ export class PaymentListener {
         void AuditService.log({
           tenantId: updatedTenant.id,
           eventType: 'payment.processed',
-          eventData: { username, months, amount, trxId: transfer.trxId },
+          eventData: {
+            username,
+            months,
+            amount,
+            trxId: transfer.trxId,
+            ...(askedForDomain && !pro ? { customDomainKeptAsStandard: true } : {}),
+          },
         });
       }
     } catch (error) {
@@ -526,7 +534,7 @@ export class PaymentListener {
 
     // Result of the transaction, decided inside it and acted on after commit.
     type UpgradeOutcome =
-      | { status: 'processed'; tenantId: string }
+      | { status: 'processed'; tenantId: string; keptAsTime?: 'standard' | 'pro' }
       | { status: 'failed'; note: string }
       | { status: 'duplicate' };
     let outcome: UpgradeOutcome | null = null;
@@ -578,8 +586,25 @@ export class PaymentListener {
         // expired tenant: upgrading one would take the payment for a blog that isn't running, and a
         // plan bought while a name was abandoned must not carry over to a later fresh reservation.
         if (row.subscription_status !== 'active') return fail('Tenant not active for upgrade');
-        // Already Pro: a repeated or manual upgrade memo would otherwise be taken for a no-op.
-        if (row.subscription_plan === 'pro') return fail('Tenant already on Pro plan');
+        // The payment is never refused for what happened after it was quoted: an upgrade that no
+        // longer applies keeps its value as time on the blog, at the rate of the plan it stays on.
+        const keepAsTime = async (plan: 'standard' | 'pro'): Promise<UpgradeOutcome> => {
+          const monthly =
+            plan === 'pro' ? Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD : Pricing.MONTHLY_PRICE_HBD;
+          await client.query(
+            `UPDATE tenants
+                SET subscription_expires_at = subscription_expires_at + ($2 * INTERVAL '1 millisecond'),
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [row.id, Pricing.hbdAsTimeMs(amount, monthly)]
+          );
+          await client.query(`UPDATE payments SET status = 'processed' WHERE id = $1`, [paymentId]);
+          console.log('[PaymentListener] Upgrade for', username, 'kept as', plan, 'time');
+          return { status: 'processed', tenantId: row.id, keptAsTime: plan };
+        };
+
+        // Already on the plan (another payment upgraded it first): kept as time on that plan.
+        if (row.subscription_plan === 'pro') return keepAsTime('pro');
 
         // Prorated: the owner pays the +1/mo custom-domain premium for the months remaining on their
         // current term (upgrade in place, no term extension). Integer-millis compare so an exact
@@ -598,9 +623,9 @@ export class PaymentListener {
         }
         const required = Pricing.customDomainUpgradeHbd(expiresAt, now);
         if (Math.round(amount * 1000) < Math.round(required * 1000)) {
-          return fail(
-            `Insufficient for custom-domain upgrade (need ${Pricing.hbd(required)} HBD for ${months} month(s) remaining)`
-          );
+          // Too little for the premium, for instance because another payment extended the term
+          // after the quote: kept as standard time instead of refused.
+          return keepAsTime('standard');
         }
 
         // 4. Flip to Pro in place. The predicate re-asserts full eligibility (standard + active +
@@ -643,7 +668,12 @@ export class PaymentListener {
       void AuditService.log({
         tenantId: outcome.tenantId,
         eventType: 'payment.upgrade',
-        eventData: { username, amount, trxId: transfer.trxId },
+        eventData: {
+          username,
+          amount,
+          trxId: transfer.trxId,
+          ...(outcome.keptAsTime ? { keptAsTime: outcome.keptAsTime } : {}),
+        },
       });
     }
   }

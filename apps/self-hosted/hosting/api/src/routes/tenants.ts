@@ -23,6 +23,7 @@ import { ConfigService, isPublishableTenant } from '../services/config-service';
 import { customDomainCapability } from '../services/subscription';
 import { authMiddleware } from '../middleware/auth';
 import { subscriptionPaywall, proUpgradePaywall } from '../middleware/x402-paywall';
+import { applyX402Upgrade } from '../services/x402-upgrade';
 import { withPaymentTargetLock } from '../middleware/payment-target-lock';
 import { AuditService, parseClientIp } from '../services/audit-service';
 import { ACTIVATED_STATUS_SQL } from '../utils/subscription-status-sql';
@@ -520,52 +521,15 @@ tenantRoutes.post('/:username/upgrade',
     const blockNumRaw = c.get('blockNum');
     const blockNum = Number.isInteger(blockNumRaw) && blockNumRaw > 0 ? blockNumRaw : 0;
 
-    // Payment claim + upgrade inside a DB transaction with row lock
-    const result = await db.transaction(async (client) => {
-      // Re-check eligibility with row lock to prevent concurrent upgrades
-      const tenantRow = await client.query(
-        `SELECT id, subscription_status, subscription_plan FROM tenants WHERE username = $1 FOR UPDATE`,
-        [username.toLowerCase()]
-      );
-      if (tenantRow.rowCount === 0) {
-        throw Object.assign(new Error('Tenant not found'), { isNotFound: true });
-      }
-      const tenant = tenantRow.rows[0];
-      if (tenant.subscription_status !== 'active') {
-        throw Object.assign(new Error('Subscription must be active to upgrade'), { isInactive: true });
-      }
-      if (tenant.subscription_plan === 'pro') {
-        throw Object.assign(new Error('Already on Pro plan'), { isAlreadyPro: true });
-      }
-
-      const paymentResult = await client.query(
-        `INSERT INTO payments (id, tenant_id, trx_id, block_num, from_account, amount, currency, memo, status, months_credited, processed_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'HBD', $6, 'processed', 0, NOW())
-         ON CONFLICT (trx_id) DO NOTHING`,
-        [
-          tenant.id,
-          txId,
-          blockNum,
-          payer,
-          c.get('upgradePremium'),
-          `x402:upgrade:${username}`,
-        ]
-      );
-
-      if (paymentResult.rowCount === 0) {
-        throw Object.assign(new Error('Payment already processed'), { isDuplicate: true });
-      }
-
-      const upgradedRow = await client.query(
-        `UPDATE tenants
-         SET subscription_plan = 'pro', updated_at = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [tenant.id]
-      );
-
-      return upgradedRow.rows[0];
-    }).catch((err) => {
+    // Payment claim + upgrade inside a DB transaction with row lock; the premium is priced again
+    // against the locked row (see applyX402Upgrade).
+    const result = await db.transaction((client) =>
+      applyX402Upgrade(
+        client,
+        { username, txId, blockNum, payer, paid: c.get('upgradePremium') },
+        new Date()
+      )
+    ).catch((err) => {
       if (err.isDuplicate) return 'duplicate';
       if (err.isNotFound) return 'not_found';
       if (err.isInactive) return 'inactive';
@@ -586,16 +550,22 @@ tenantRoutes.post('/:username/upgrade',
       return c.json({ error: 'Payment already processed' }, 409);
     }
 
-    if (!result) {
+    if (!result || !result.row) {
       return c.json({ error: 'Payment already processed' }, 409);
     }
 
-    const upgradedTenant = mapTenantFromDb(result);
+    const upgradedTenant = mapTenantFromDb(result.row);
 
     void AuditService.log({
       tenantId: upgradedTenant.id,
       eventType: 'tenant.upgraded',
-      eventData: { username, plan: 'pro', payer, txId },
+      eventData: {
+        username,
+        plan: upgradedTenant.subscriptionPlan,
+        payer,
+        txId,
+        ...(result.keptAsTime ? { keptAsStandardTime: true } : {}),
+      },
       ipAddress: parseClientIp(c.req.header('x-forwarded-for')),
       userAgent: c.req.header('user-agent'),
     });
