@@ -161,3 +161,27 @@ describe('a quote-exact payment whose term grew keeps every unit', () => {
     expect(creditCustomDomainPayment(premium + 2 * CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 2, t, now).extraMs ?? 0).toBe(0);
   });
 });
+
+describe('a quote whose premium vanished by confirmation keeps every unit', () => {
+  it('credits the remainder when the term expired between quote and confirmation', () => {
+    // A 4 HBD quote: 1 HBD premium for a term about to end plus one custom-domain month. It is
+    // confirmed after expiry, so the premium is 0: one month (3), and 1 HBD left as time.
+    const expired = { plan: 'standard', expiresAt: new Date(now.getTime() - 60_000) };
+    const credit = creditCustomDomainPayment(4, 1, expired, now);
+    expect(credit).toEqual({ pro: true, months: 1, extraMs: hbdAsTimeMs(4 - CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, CUSTOM_DOMAIN_MONTHLY_PRICE_HBD) });
+  });
+
+  it('never credits whole months an amount does not cover, premium or not', () => {
+    // Should a caller ever send less than months x price (e.g. a raised HBD price above a fixed
+    // card price), only what was paid is credited, as exact time.
+    const credit = creditCustomDomainPayment(2, 1, null, now);
+    expect(credit).toEqual({ pro: true, months: 0, extraMs: hbdAsTimeMs(2, CUSTOM_DOMAIN_MONTHLY_PRICE_HBD) });
+  });
+
+  it('adds nothing for an exact payment on a new or custom-domain blog', () => {
+    expect(creditCustomDomainPayment(2 * CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 2, null, now)).toEqual({ pro: true, months: 2 });
+    expect(
+      creditCustomDomainPayment(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1, { plan: 'pro', expiresAt: new Date('2026-06-15T00:00:00Z') }, now)
+    ).toEqual({ pro: true, months: 1 });
+  });
+});

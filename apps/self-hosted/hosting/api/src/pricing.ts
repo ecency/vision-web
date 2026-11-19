@@ -74,17 +74,20 @@ export function creditCustomDomainPayment(
   // Any standard blog with time left pays the premium, whatever its status: a suspended blog keeps
   // its expiry, and would otherwise move its whole term for one month's price once reinstated.
   // An expired, inactive or abandoned blog has no time left, so its premium is 0.
-  if (!tenant || tenant.plan === 'pro') return { pro: true, months };
+  // A new blog, or one already on the plan, has no premium to pay.
+  const owesPremium = !!tenant && tenant.plan !== 'pro';
   const paidMillis = Math.round(paid * 1000);
-  const premiumMillis = Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000);
+  const premiumMillis = owesPremium ? Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000) : 0;
   const affordable = Math.floor((paidMillis - premiumMillis) / Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
-  if (affordable >= 1) {
-    // Whatever is left after the premium and the whole months (the term can have grown since the
-    // quote, raising the premium) is added as exact time at the custom-domain rate, so a payment
-    // made as quoted is never partly kept.
-    const credited = Math.min(months, affordable);
+  if (affordable >= 1 || !owesPremium) {
+    // Whatever is left after the premium and the whole months is added as exact time at the
+    // custom-domain rate, so a payment made as quoted is never partly kept: the premium can have
+    // grown since the quote (the term was extended) or vanished (the term ended before the
+    // transfer confirmed).
+    // Never more whole months than the amount covers, whatever the caller asked for.
+    const credited = Math.min(months, Math.max(0, affordable));
     const leftMillis = paidMillis - premiumMillis - credited * Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000);
-    const extraMs = premiumMillis > 0 && leftMillis > 0 ? hbdAsTimeMs(leftMillis / 1000, CUSTOM_DOMAIN_MONTHLY_PRICE_HBD) : 0;
+    const extraMs = leftMillis > 0 ? hbdAsTimeMs(leftMillis / 1000, CUSTOM_DOMAIN_MONTHLY_PRICE_HBD) : 0;
     return extraMs > 0 ? { pro: true, months: credited, extraMs } : { pro: true, months: credited };
   }
   // Kept as standard: the whole amount buys standard time, exactly (timeMs), the same as an upgrade
