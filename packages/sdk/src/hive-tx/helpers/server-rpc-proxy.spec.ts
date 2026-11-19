@@ -302,6 +302,18 @@ describe("server-side RPC proxy", () => {
     expect(rpcProxyStats.fallbackByReason.ratelimited).toBe(4);
     expect(rpcProxyStats.fallbackByReason.status).toBe(0);
 
+    // It also clears a count a real miss had started: miss, throttled, miss
+    // does not reach the threshold of two.
+    answer = () => jsonOk({ error: "down" }, 502);
+    await callRPC("bridge.get_post", { author: "a", permlink: "m1" });
+    answer = throttled;
+    await callRPC("bridge.get_post", { author: "a", permlink: "m2" });
+    answer = () => jsonOk({ error: "down" }, 502);
+    await callRPC("bridge.get_post", { author: "a", permlink: "m3" });
+    expect(rpcProxyStats.skipped).toBe(0);
+    answer = throttled;
+    await callRPC("bridge.get_post", { author: "a", permlink: "m4" }); // resets again
+
     // A 503 without the tag is a proxy that is down, and the tag on any other
     // status is not the contract: both still count, and two open the breaker.
     answer = () => jsonOk({ error: "down" }, 503);
@@ -314,8 +326,8 @@ describe("server-side RPC proxy", () => {
     await callRPC("bridge.get_post", { author: "a", permlink: "6" });
     await callRPC("bridge.get_post", { author: "a", permlink: "7" }); // open: skipped
     expect(rpcProxyStats.skipped).toBe(1);
-    expect(rpcProxyStats.fallbackByReason.status).toBe(2);
-    expect(rpcProxyStats.fallbackByReason.ratelimited).toBe(4);
+    expect(rpcProxyStats.fallbackByReason.status).toBe(4); // m1, m3, then these two
+    expect(rpcProxyStats.fallbackByReason.ratelimited).toBe(6);
   });
 
   it("a served call closes the breaker count", async () => {
