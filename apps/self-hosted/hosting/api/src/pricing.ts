@@ -70,7 +70,7 @@ export function creditCustomDomainPayment(
   months: number,
   tenant: { plan: string; expiresAt: Date | null } | null,
   now: Date
-): { pro: boolean; months: number } {
+): { pro: boolean; months: number; timeMs?: number } {
   // Any standard blog with time left pays the premium, whatever its status: a suspended blog keeps
   // its expiry, and would otherwise move its whole term for one month's price once reinstated.
   // An expired, inactive or abandoned blog has no time left, so its premium is 0.
@@ -79,7 +79,13 @@ export function creditCustomDomainPayment(
   const premiumMillis = Math.round(customDomainUpgradeHbd(tenant.expiresAt, now) * 1000);
   const affordable = Math.floor((paidMillis - premiumMillis) / Math.round(CUSTOM_DOMAIN_MONTHLY_PRICE_HBD * 1000));
   if (affordable >= 1) return { pro: true, months: Math.min(months, affordable) };
-  return { pro: false, months: Math.floor(paidMillis / Math.round(MONTHLY_PRICE_HBD * 1000)) };
+  // Kept as standard: the whole amount buys standard time, exactly (timeMs), the same as an upgrade
+  // memo that no longer applies; `months` is the whole months, for the payment record.
+  return {
+    pro: false,
+    months: Math.floor(paidMillis / Math.round(MONTHLY_PRICE_HBD * 1000)),
+    timeMs: hbdAsTimeMs(paid, MONTHLY_PRICE_HBD),
+  };
 }
 
 /** The time an amount buys at a monthly price, in milliseconds (average-length months). */

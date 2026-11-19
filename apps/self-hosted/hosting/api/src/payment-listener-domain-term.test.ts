@@ -112,6 +112,10 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     expect(failedPayments()).toHaveLength(0);
     expect(planUpdate()?.params[3]).toBeNull();
     expect(credited()).toBe(Math.floor(Math.round(paid * 1000) / Math.round(Pricing.MONTHLY_PRICE_HBD * 1000)));
+    // The term is extended by the exact time the amount buys at the standard rate.
+    const extendedTo = planUpdate()?.params[2] as Date;
+    const from = new Date(String(createdConcurrently?.subscription_expires_at ?? tenantRow!.subscription_expires_at));
+    expect(extendedTo.getTime() - from.getTime()).toBe(Pricing.hbdAsTimeMs(paid, Pricing.MONTHLY_PRICE_HBD));
     expect(AuditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'payment.processed',

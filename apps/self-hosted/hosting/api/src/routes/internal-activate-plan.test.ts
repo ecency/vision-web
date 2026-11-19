@@ -56,7 +56,7 @@ async function activate(months: number, amountUsd: number) {
     headers: { 'content-type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
     body: JSON.stringify({ username: 'alice', payer: 'alice', months, order_id: 'order-1', amount_usd: amountUsd, plan: 'pro' }),
   });
-  return { status: res.status, body: (await res.json()) as { plan?: string } };
+  return { status: res.status, body: (await res.json()) as { plan?: string; keptAsStandard?: boolean } };
 }
 const planFlips = () => calls.filter((c) => /SET subscription_plan = 'pro'/.test(c.sql));
 const claim = () => calls.find((c) => /INSERT INTO payments/.test(c.sql));
@@ -83,8 +83,14 @@ describe('POST /activate with the custom-domain plan', () => {
     expect(status).toBe(200);
     expect(planFlips()).toHaveLength(0);
     expect(body.plan).toBe('standard');
-    // The whole amount is kept as standard time.
+    // Said explicitly, so the caller can tell it from a service that ignored the plan.
+    expect(body.keptAsStandard).toBe(true);
+    // The whole amount is kept as standard time, to the millisecond.
     expect(claim()?.params.at(-1)).toBe(1);
+    const from = tenantRow.subscription_expires_at as Date;
+    expect(extendedTo()!.getTime() - from.getTime()).toBe(
+      Pricing.hbdAsTimeMs(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, Pricing.MONTHLY_PRICE_HBD)
+    );
   });
 
   it('moves the term when the order covers the premium for the months left', async () => {
@@ -92,6 +98,7 @@ describe('POST /activate with the custom-domain plan', () => {
     const { body } = await activate(1, premium + Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD);
     expect(planFlips()).toHaveLength(1);
     expect(body.plan).toBe('pro');
+    expect(body.keptAsStandard).toBeUndefined();
     expect(claim()?.params.at(-1)).toBe(1);
   });
 
@@ -103,11 +110,26 @@ describe('POST /activate with the custom-domain plan', () => {
     expect(body.plan).toBe('pro');
   });
 
-  it('a replay keeps the first decision and never flips the plan later', async () => {
+  it('records an order kept as standard with an explicit marker', async () => {
+    await activate(1, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD);
+    expect(claim()?.params[3]).toBe('blog:alice:1:standard');
+  });
+
+  it('a replay of an order recorded before the markers reports no keptAsStandard', async () => {
+    // Older rows carry no suffix even when they did upgrade; only the explicit marker counts.
     existingPayment = { tenant_id: 't1', memo: 'blog:alice:1' };
+    tenantRow.subscription_plan = 'pro';
+    const { body } = await activate(1, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD);
+    expect(body.plan).toBe('pro');
+    expect(body.keptAsStandard).toBeUndefined();
+  });
+
+  it('a replay keeps the first decision and never flips the plan later', async () => {
+    existingPayment = { tenant_id: 't1', memo: 'blog:alice:1:standard' };
     const { body } = await activate(1, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD);
     expect(planFlips()).toHaveLength(0);
     expect(body.plan).toBe('standard');
+    expect(body.keptAsStandard).toBe(true);
     expect(extendedTo()).toBeUndefined();
   });
 

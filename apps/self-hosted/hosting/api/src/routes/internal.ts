@@ -123,7 +123,7 @@ internalRoutes.post('/activate', async (c) => {
   }
 
   try {
-    const result = await db.transaction<{ status: 200 | 403 | 404 | 409; tenantId?: string; duplicate?: boolean; expiresAt?: Date; plan?: string }>(
+    const result = await db.transaction<{ status: 200 | 403 | 404 | 409; tenantId?: string; duplicate?: boolean; expiresAt?: Date; plan?: string; keptAsStandard?: boolean }>(
       async (client) => {
         // Lock the tenant row (serializes retries) and confirm it still exists.
         const t = await client.query(
@@ -160,7 +160,7 @@ internalRoutes.post('/activate', async (c) => {
                 },
                 new Date()
               )
-            : { pro: false, months };
+            : { pro: false, months, timeMs: undefined as number | undefined };
         const creditedMonths = credit.months;
 
         // Idempotent Pro upgrade for THIS tenant (a standard activation never touches the plan, so
@@ -186,7 +186,7 @@ internalRoutes.post('/activate', async (c) => {
            VALUES ($1, $2, 0, 'stripe', $3, 'USD', $4, 'processed', $5)
            ON CONFLICT (trx_id) DO NOTHING
            RETURNING id`,
-          [tenant.id, orderId, amountUsd, `blog:${username}:${creditedMonths}${credit.pro ? ':domain' : ''}`, creditedMonths]
+          [tenant.id, orderId, amountUsd, `blog:${username}:${creditedMonths}${plan === 'pro' ? (credit.pro ? ':domain' : ':standard') : ''}`, creditedMonths]
         );
         if (claim.rowCount === 0) {
           // Replay: the order id already exists. It must belong to THIS tenant; otherwise it is a
@@ -201,7 +201,17 @@ internalRoutes.post('/activate', async (c) => {
           // Genuine replay of this tenant's order: re-apply the upgrade idempotently (self-heal
           // after a staggered deploy) without re-extending the term.
           const recordedUpgrade = plan === 'pro' && String(owner.rows[0]?.memo ?? '').endsWith(':domain');
-          return { status: 200, tenantId: tenant.id, duplicate: true, plan: await applyPlan(recordedUpgrade) };
+          // Only an order recorded with the explicit ':standard' marker was kept as standard on
+          // purpose; older rows carry no suffix even when they did upgrade.
+          const recordedKept = plan === 'pro' && String(owner.rows[0]?.memo ?? '').endsWith(':standard');
+          const appliedPlan = await applyPlan(recordedUpgrade);
+          return {
+            status: 200,
+            tenantId: tenant.id,
+            duplicate: true,
+            plan: appliedPlan,
+            ...(recordedKept && appliedPlan !== 'pro' ? { keptAsStandard: true } : {}),
+          };
         }
 
         const effectivePlan = await applyPlan(credit.pro);
@@ -213,7 +223,12 @@ internalRoutes.post('/activate', async (c) => {
           : now;
         const base = currentExpiry > now ? currentExpiry : now;
         const newExpiry = new Date(base);
-        newExpiry.setMonth(newExpiry.getMonth() + creditedMonths);
+        if (credit.timeMs !== undefined) {
+          // Kept as standard: the exact time the order's amount buys at the standard rate.
+          newExpiry.setTime(base.getTime() + credit.timeMs);
+        } else {
+          newExpiry.setMonth(newExpiry.getMonth() + creditedMonths);
+        }
         const startedAt = tenant.subscription_started_at || now;
 
         await client.query(
@@ -229,7 +244,13 @@ internalRoutes.post('/activate', async (c) => {
           `UPDATE payments SET processed_at = NOW(), subscription_extended_to = $2 WHERE trx_id = $1`,
           [orderId, newExpiry]
         );
-        return { status: 200, tenantId: tenant.id, expiresAt: newExpiry, plan: effectivePlan };
+        return {
+          status: 200,
+          tenantId: tenant.id,
+          expiresAt: newExpiry,
+          plan: effectivePlan,
+          ...(plan === 'pro' && !credit.pro ? { keptAsStandard: true } : {}),
+        };
       }
     );
 
@@ -329,7 +350,15 @@ internalRoutes.post('/activate', async (c) => {
     // Truthful on replays too (the upgrade is idempotent); an older service that ignores `plan`
     // omits this field, which the caller treats as a mismatch and retries.
     return c.json(
-      { activated: true, duplicate: !!result.duplicate, expiresAt: result.expiresAt, plan: result.plan },
+      {
+        activated: true,
+        duplicate: !!result.duplicate,
+        expiresAt: result.expiresAt,
+        plan: result.plan,
+        // A custom-domain order that could not cover the premium for the months already paid was
+        // credited as standard months on purpose: delivered, not a service that ignored the plan.
+        ...(result.keptAsStandard ? { keptAsStandard: true } : {}),
+      },
       200
     );
   } catch (e) {

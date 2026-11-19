@@ -136,6 +136,10 @@ export function HostingSignup() {
   // custom-domain plan and costs the difference for the months left. Only the HBD quote carries
   // that amount; a card product has a fixed price, so card is not offered for that case.
   const [runningStandardTerm, setRunningStandardTerm] = useState(false);
+  // The plan the blog ended up on, read once the success step shows. A custom-domain payment that
+  // could not cover the difference for a running term is kept as standard time, and that blog
+  // cannot attach a domain, so domain setup is offered only when this is "pro".
+  const [resultPlan, setResultPlan] = useState<"standard" | "pro" | null>(null);
   const [method, setMethod] = useState<Method>("card");
   const [methods, setMethods] = useState<HostingPaymentMethods | null>(null);
   const [instructions, setInstructions] = useState<Instructions | null>(null);
@@ -657,6 +661,24 @@ export function HostingSignup() {
         new Date(t.subscriptionExpiresAt).getTime() > new Date(baseline).getTime());
     return t.subscriptionStatus === "active" && advanced;
   }, []);
+
+  useEffect(() => {
+    if (step !== "success" || !customDomain) return;
+    let cancelled = false;
+    setResultPlan(null);
+    hostingApi
+      .tenant(tenantUsername)
+      .then((t) => {
+        if (!cancelled) setResultPlan(t.subscriptionPlan === "pro" ? "pro" : "standard");
+      })
+      .catch(() => {
+        // Unknown: offer the setup as before; attaching a domain checks the plan server side.
+        if (!cancelled) setResultPlan("pro");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, customDomain, tenantUsername]);
 
   const checkActivation = useCallback(async () => {
     setError("");
@@ -1290,6 +1312,7 @@ export function HostingSignup() {
               Compare the normalized tenantUsername (not the raw field) so "Alice"/"alice "
               still shows the manager for tenant "alice". */}
           {customDomain &&
+            resultPlan === "pro" &&
             activeUser &&
             (isCommunity || tenantUsername === activeUser.username) && (
               <CustomDomainManager
@@ -1297,6 +1320,9 @@ export function HostingSignup() {
                 tenant={isCommunity ? tenantUsername : undefined}
               />
             )}
+          {customDomain && resultPlan === "standard" && (
+            <p className="text-sm opacity-75">{i18next.t("hosting.custom-domain-kept-standard")}</p>
+          )}
         </div>
       )}
     </div>

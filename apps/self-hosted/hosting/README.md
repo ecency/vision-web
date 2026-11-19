@@ -277,16 +277,16 @@ work invisible and enabling without registering is the broken button.
 
 Notes:
 
-- Existing entries are never dropped, so a URI added by hand for something outside this script's
+- Existing entries are never dropped, except custom-domain callbacks when asked with
+  `--prune-custom-domains` (see above), so a URI added by hand for something outside this script's
   view survives. Entries that are registered but no longer live are reported for review rather than
   removed.
 - Only `active` tenants are registered, matching the only status the API will write a client id
-  for. An unverified custom domain is skipped, since registering a domain someone merely claimed
-  would let whoever controls that name receive callbacks for the app.
-- A tenant with a verified custom domain needs **both** its URIs registered before the method is
-  enabled. One config file serves both origins and the SPA builds its `redirect_uri` from
-  `window.location.origin`, so enabling on one would give every visitor on the other a button that
-  fails.
+  for.
+- Enabling the shared app needs only the tenant's subdomain callback. A custom domain is never
+  registered, verified or not: on a custom domain the blog hides the shared app's button (the SPA
+  builds its `redirect_uri` from `window.location.origin`, so the button there could not complete
+  a login), and an owner who wants Hivesigner on it sets their own app.
 - An owner who configured their own Hivesigner app is never touched. Only the shared client id is
   managed, in both directions.
 - The payload carries the account's whole existing profile, which on an app account includes its

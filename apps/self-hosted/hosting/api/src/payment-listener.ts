@@ -426,6 +426,7 @@ export class PaymentListener {
         // covers the premium is kept as standard time rather than refused: see
         // creditCustomDomainPayment, shared with the card rail. Priced on the FINAL row: one created
         // or activated by another request since the first lookup carries the premium too.
+        let keptAsStandardTimeMs: number | undefined;
         if (pro && row) {
           const credit = Pricing.creditCustomDomainPayment(
             amount,
@@ -438,6 +439,7 @@ export class PaymentListener {
           );
           pro = credit.pro;
           months = credit.months;
+          keptAsStandardTimeMs = credit.timeMs;
         }
 
         // 4. Extend from the later of now / current expiry (same rule as activateSubscription).
@@ -447,7 +449,11 @@ export class PaymentListener {
           : now;
         const base = currentExpiry > now ? currentExpiry : now;
         const newExpiry = new Date(base);
-        newExpiry.setMonth(newExpiry.getMonth() + months);
+        if (keptAsStandardTimeMs !== undefined) {
+          newExpiry.setTime(base.getTime() + keptAsStandardTimeMs);
+        } else {
+          newExpiry.setMonth(newExpiry.getMonth() + months);
+        }
         const startedAt = row.subscription_started_at || now;
 
         const activated = await client.query(

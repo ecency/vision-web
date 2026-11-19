@@ -51,6 +51,9 @@ vi.mock("@/utils/user-token", () => ({
 vi.mock("@/core/global-store", () => ({
   useGlobalStore: (selector: (s: any) => unknown) => selector({ toggleUiProp: vi.fn() })
 }));
+vi.mock("@/features/hosting-signup/custom-domain-manager", () => ({
+  CustomDomainManager: () => <div>custom-domain-manager</div>
+}));
 
 import { HostingSignup } from "@/features/hosting-signup/hosting-signup";
 import { getAccountFullQueryOptions } from "@ecency/sdk";
@@ -158,6 +161,40 @@ describe("HostingSignup one-click HBD pay", () => {
     await waitFor(() =>
       expect(hostingApi.paymentInstructions).toHaveBeenCalledWith("alice", 1, true)
     );
+  });
+
+  it.each([
+    ["pro", true],
+    ["standard", false]
+  ])("after a custom-domain payment, offers domain setup only on the plan the blog is on (%s)", async (plan, offered) => {
+    // A custom-domain payment that could not cover the difference for a running term is kept
+    // as standard time; that blog cannot attach a domain, so the setup is not offered.
+    hostingApi.paymentInstructions.mockImplementation(async (_u: string, _m: number, domain: boolean) =>
+      domain ? { ...INSTRUCTIONS, amount: "3.000 HBD", memo: "blog:alice:domain" } : INSTRUCTIONS
+    );
+    hostingApi.tenant.mockResolvedValue({
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active",
+      subscriptionPlan: plan,
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    fireEvent.click(await screen.findByText("hosting.custom-domain-option"));
+    await waitFor(() => expect(i18next.t).toHaveBeenCalledWith("hosting.pay-hbd-oneclick", { amount: "3.000" }));
+    const payBtn = (await screen.findByRole("button", { name: "hosting.pay-hbd-oneclick" })) as HTMLButtonElement;
+    await waitFor(() => expect(payBtn.disabled).toBe(false));
+    fireEvent.click(payBtn);
+    await screen.findByText("hosting.success-title");
+    if (offered) {
+      expect(await screen.findByText("custom-domain-manager")).toBeTruthy();
+      expect(screen.queryByText("hosting.custom-domain-kept-standard")).toBeNull();
+    } else {
+      expect(await screen.findByText("hosting.custom-domain-kept-standard")).toBeTruthy();
+      expect(screen.queryByText("custom-domain-manager")).toBeNull();
+    }
   });
 
   it("offers only HBD for a custom domain on a running standard term", async () => {
