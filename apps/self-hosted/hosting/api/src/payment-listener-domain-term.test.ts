@@ -7,6 +7,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@ecency/sdk/hive', () => ({ callRPC: vi.fn(), config: { nodes: [] }, setNodes: vi.fn() }));
 vi.mock('./services/audit-service', () => ({ AuditService: { log: vi.fn() } }));
+vi.mock('./services/tenant-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/tenant-service')>();
+  return {
+    ...actual,
+    TenantService: {
+      ...actual.TenantService,
+      accountExistsStrict: vi.fn(async () => true),
+      buildConfig: vi.fn(async () => ({})),
+    },
+  };
+});
 vi.mock('./services/config-service', () => ({
   ConfigService: { publishConfigFile: vi.fn() },
   isPublishableTenant: () => true,
@@ -15,11 +26,20 @@ vi.mock('./services/config-service', () => ({
 type Call = { sql: string; params: unknown[] };
 const calls: Call[] = [];
 let tenantRow: Record<string, unknown> | undefined;
+// When set, the first tenant lookup finds nothing and the insert conflicts: another request
+// created and activated the blog while this payment was being processed.
+let createdConcurrently: Record<string, unknown> | undefined;
 
 const client = {
   query: vi.fn(async (sql: string, params: unknown[] = []) => {
     calls.push({ sql, params });
-    if (/SELECT \* FROM tenants/.test(sql)) return { rows: tenantRow ? [tenantRow] : [] };
+    if (/SELECT \* FROM tenants/.test(sql)) {
+      if (createdConcurrently && !calls.some((c, i) => i < calls.length - 1 && /SELECT \* FROM tenants/.test(c.sql))) {
+        return { rows: [] };
+      }
+      return { rows: createdConcurrently ? [createdConcurrently] : tenantRow ? [tenantRow] : [] };
+    }
+    if (/INSERT INTO tenants/.test(sql)) return { rows: [] };
     if (/INSERT INTO payments/.test(sql)) return { rows: [{ id: 'p1' }] };
     if (/UPDATE tenants/.test(sql)) return { rows: [{ ...tenantRow, subscription_plan: params[3] ?? 'standard' }] };
     return { rows: [] };
@@ -61,6 +81,7 @@ describe('a custom-domain payment on a standard blog with time left', () => {
   beforeEach(() => {
     calls.length = 0;
     logged.length = 0;
+    createdConcurrently = undefined;
     tenantRow = {
       id: 't1',
       username: 'alice',
@@ -72,7 +93,8 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     };
   });
 
-  const credited = () => calls.find((c) => /INSERT INTO payments/.test(c.sql))?.params.at(-1);
+  // Months credited are recorded when the payment is marked processed, priced on the final row.
+  const credited = () => calls.find((c) => /status = 'processed'/.test(c.sql))?.params[3];
 
   it('does not make the whole term custom-domain for one month at that rate', async () => {
     await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1);
@@ -106,8 +128,7 @@ describe('a custom-domain payment on a standard blog with time left', () => {
 
   it('credits only the months left after the premium', async () => {
     await pay(premium() + 2 * Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 6);
-    const insert = calls.find((c) => /INSERT INTO payments/.test(c.sql));
-    expect(insert?.params.at(-1)).toBe(2);
+    expect(credited()).toBe(2);
   });
 
   it('credits the months the payment covers when that is fewer than the memo asked for', async () => {
@@ -115,6 +136,15 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     expect(planUpdate()?.params[3]).toBe('pro');
     expect(credited()).toBe(1);
     expect(failedPayments()).toHaveLength(0);
+  });
+
+  it('prices the premium on a blog another request created and activated meanwhile', async () => {
+    // The first lookup finds no blog; by the insert, a running standard term exists.
+    createdConcurrently = { ...tenantRow!, subscription_expires_at: months(12) };
+    tenantRow = undefined;
+    await pay(Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 1);
+    expect(planUpdate()?.params[3]).toBeNull();
+    expect(credited()).toBe(1);
   });
 
   it('needs no premium on a blog that is already on the custom-domain plan', async () => {

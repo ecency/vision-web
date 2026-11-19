@@ -361,26 +361,6 @@ export class PaymentListener {
           await client.query(`SELECT * FROM tenants WHERE username = $1 FOR UPDATE`, [username])
         ).rows[0];
 
-        // A ':domain' payment on a standard blog with time left moves that whole term to the
-        // custom-domain plan, so it first pays the prorated premium for the months already paid at
-        // the standard rate (the amount the quote included). The term can change between the
-        // quote and this transfer (another payment extended it), so a payment that no longer
-        // covers the premium is kept as standard time rather than refused: see
-        // creditCustomDomainPayment, shared with the card rail.
-        if (pro && row) {
-          const credit = Pricing.creditCustomDomainPayment(
-            amount,
-            months,
-            {
-              plan: row.subscription_plan,
-              expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
-            },
-            new Date()
-          );
-          pro = credit.pro;
-          months = credit.months;
-        }
-
         // 2. Claim the transfer (dedup via unique trx_id).
         const insertResult = await client.query(
           `INSERT INTO payments
@@ -439,6 +419,27 @@ export class PaymentListener {
           console.log('[PaymentListener] Created new tenant:', username);
         }
 
+        // A ':domain' payment on a standard blog with time left moves that whole term to the
+        // custom-domain plan, so it first pays the prorated premium for the months already paid at
+        // the standard rate (the amount the quote included). The term can change between the
+        // quote and this transfer (another payment extended it), so a payment that no longer
+        // covers the premium is kept as standard time rather than refused: see
+        // creditCustomDomainPayment, shared with the card rail. Priced on the FINAL row: one created
+        // or activated by another request since the first lookup carries the premium too.
+        if (pro && row) {
+          const credit = Pricing.creditCustomDomainPayment(
+            amount,
+            months,
+            {
+              plan: row.subscription_plan,
+              expiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+            },
+            new Date()
+          );
+          pro = credit.pro;
+          months = credit.months;
+        }
+
         // 4. Extend from the later of now / current expiry (same rule as activateSubscription).
         const now = new Date();
         const currentExpiry = row.subscription_expires_at
@@ -466,9 +467,9 @@ export class PaymentListener {
         // 5. Mark the payment processed in the SAME transaction.
         await client.query(
           `UPDATE payments
-           SET tenant_id = $2, status = 'processed', subscription_extended_to = $3
+           SET tenant_id = $2, status = 'processed', subscription_extended_to = $3, months_credited = $4
            WHERE id = $1`,
-          [paymentId, row.id, newExpiry]
+          [paymentId, row.id, newExpiry, months]
         );
 
         console.log('[PaymentListener] Subscription activated for', username, 'until', newExpiry);
