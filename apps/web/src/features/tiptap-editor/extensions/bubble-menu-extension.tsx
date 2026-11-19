@@ -1,7 +1,6 @@
 import { Button, StyledTooltip } from "@/features/ui";
 import { flip, shift, useFloating } from "@floating-ui/react-dom";
 import { safeAutoUpdate } from "@ui/util";
-import { posToDOMRect } from "@tiptap/core";
 import {
   UilArrow,
   UilBold,
@@ -17,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PublishEditorToolbarLinkForm } from "./link-form";
 import { openInNewTab } from "@/utils/open-in-new-tab";
+import { createSelectionReference, type SelectionRectMemory } from "./bubble-menu-rect";
 
 interface Props {
   editor: any | null;
@@ -33,6 +33,9 @@ export function BubbleMenu({ editor }: Props) {
   // input steals focus from the editor, which churns selection/focus events —
   // this flag keeps the form mounted and anchored instead of tearing it down.
   const isEditingLinkRef = useRef(false);
+  // Last measured selection rect, kept across re-anchors so a failed measure
+  // during an IME desync reuses it instead of jumping (#2140).
+  const selectionRectRef = useRef<SelectionRectMemory>({ rect: null });
 
   const { refs, floatingStyles } = useFloating({
     whileElementsMounted: safeAutoUpdate,
@@ -43,6 +46,7 @@ export function BubbleMenu({ editor }: Props) {
 
   const hideAll = useCallback(() => {
     isEditingLinkRef.current = false;
+    selectionRectRef.current.rect = null;
     setShow(false);
     setMode(undefined);
     setLinkHref(undefined);
@@ -52,10 +56,7 @@ export function BubbleMenu({ editor }: Props) {
     if (!editor) {
       return;
     }
-    const { from, to } = editor.state.selection;
-    refs.setReference({
-      getBoundingClientRect: () => posToDOMRect(editor.view, from, to)
-    });
+    refs.setReference(createSelectionReference(editor, selectionRectRef.current));
   }, [editor, refs]);
 
   useEffect(() => {
@@ -115,6 +116,9 @@ export function BubbleMenu({ editor }: Props) {
     return () => {
       editor.off("selectionUpdate", updateMenu);
       editor.off("blur", handleBlur);
+      // The anchor still reads this editor; don't leave the menu on a swapped
+      // or destroyed one.
+      hideAll();
     };
   }, [editor, refs, hideAll, anchorToSelection]);
 
