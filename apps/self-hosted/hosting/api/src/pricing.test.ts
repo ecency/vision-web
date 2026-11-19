@@ -102,9 +102,9 @@ describe('creditCustomDomainPayment', () => {
   it('takes the premium for the months left first, then buys months at the custom-domain rate', () => {
     const t = standard('2026-06-15T00:00:00Z'); // 5 months left
     const premium = customDomainUpgradeHbd(t.expiresAt, now);
-    expect(creditCustomDomainPayment(premium + 2 * PRO, 2, t, now)).toEqual({ pro: true, months: 2 });
+    expect(creditCustomDomainPayment(premium + 2 * PRO, 2, t, now)).toMatchObject({ pro: true, months: 2 });
     // The memo asked for more months than the amount covers after the premium.
-    expect(creditCustomDomainPayment(premium + 2 * PRO, 3, t, now)).toEqual({ pro: true, months: 2 });
+    expect(creditCustomDomainPayment(premium + 2 * PRO, 3, t, now)).toMatchObject({ pro: true, months: 2 });
   });
 
   it('keeps a payment that no longer covers the premium as standard time, never as nothing', () => {
@@ -136,5 +136,28 @@ describe('hbdAsTimeMs', () => {
     expect(hbdAsTimeMs(MONTHLY_PRICE_HBD, MONTHLY_PRICE_HBD)).toBe(Math.floor(month));
     expect(hbdAsTimeMs(MONTHLY_PRICE_HBD / 2, MONTHLY_PRICE_HBD)).toBe(Math.floor(month / 2));
     expect(hbdAsTimeMs(0, MONTHLY_PRICE_HBD)).toBe(0);
+  });
+});
+
+describe('a quote-exact payment whose term grew keeps every unit', () => {
+  it('credits what is left after the premium and the whole months as time at the custom-domain rate', () => {
+    // 18 HBD quoted: 12 months of premium plus two custom-domain months. The term grew to 13 months
+    // before it landed: 13 of premium, one month (3), and 2 HBD left over.
+    const PRO = CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+    const grown = { plan: 'standard', expiresAt: new Date(now.getTime() + 13 * 30.4369 * 86400000) };
+    const premium = customDomainUpgradeHbd(grown.expiresAt, now);
+    const paid = 18;
+    const credit = creditCustomDomainPayment(paid, 2, grown, now);
+    expect(credit.pro).toBe(true);
+    expect(credit.months).toBe(Math.floor((paid - premium) / PRO));
+    const left = paid - premium - credit.months * PRO;
+    expect(left).toBeGreaterThan(0);
+    expect(credit.extraMs).toBe(hbdAsTimeMs(left, PRO));
+  });
+
+  it('adds no extra time when the payment is exactly the premium plus whole months', () => {
+    const t = { plan: 'standard', expiresAt: new Date('2026-06-15T00:00:00Z') };
+    const premium = customDomainUpgradeHbd(t.expiresAt, now);
+    expect(creditCustomDomainPayment(premium + 2 * CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 2, t, now).extraMs ?? 0).toBe(0);
   });
 });

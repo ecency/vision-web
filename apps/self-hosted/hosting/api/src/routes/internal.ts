@@ -160,7 +160,7 @@ internalRoutes.post('/activate', async (c) => {
                 },
                 new Date()
               )
-            : { pro: false, months, timeMs: undefined as number | undefined };
+            : { pro: false, months, timeMs: undefined as number | undefined, extraMs: undefined as number | undefined };
         const creditedMonths = credit.months;
 
         // Idempotent Pro upgrade for THIS tenant (a standard activation never touches the plan, so
@@ -228,6 +228,8 @@ internalRoutes.post('/activate', async (c) => {
           newExpiry.setTime(base.getTime() + credit.timeMs);
         } else {
           newExpiry.setMonth(newExpiry.getMonth() + creditedMonths);
+          // What is left after the premium and the whole months, as time at the custom-domain rate.
+          newExpiry.setTime(newExpiry.getTime() + (credit.extraMs ?? 0));
         }
         const startedAt = tenant.subscription_started_at || now;
 

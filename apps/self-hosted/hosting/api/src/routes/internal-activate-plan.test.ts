@@ -102,6 +102,21 @@ describe('POST /activate with the custom-domain plan', () => {
     expect(claim()?.params.at(-1)).toBe(1);
   });
 
+  it('keeps what a fixed-price order has left after the premium as custom-domain time', async () => {
+    // A 3-month order at $9 on a blog with 4 months left: 4 of premium, one month (3), and 2
+    // left over, which is added as time instead of being dropped.
+    tenantRow.subscription_expires_at = inMonths(4);
+    const from = tenantRow.subscription_expires_at as Date;
+    const paid = 3 * Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+    const credit = Pricing.creditCustomDomainPayment(paid, 3, { plan: 'standard', expiresAt: from }, new Date());
+    const { body } = await activate(3, paid);
+    expect(body.plan).toBe('pro');
+    expect(credit.extraMs).toBeGreaterThan(0);
+    const expected = new Date(from);
+    expected.setMonth(expected.getMonth() + credit.months);
+    expect(extendedTo()!.getTime()).toBe(expected.getTime() + credit.extraMs!);
+  });
+
   it('charges no premium on a blog with no time left', async () => {
     tenantRow.subscription_status = 'expired';
     tenantRow.subscription_expires_at = new Date(Date.now() - 86400000);

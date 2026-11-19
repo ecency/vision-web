@@ -135,6 +135,26 @@ describe('a custom-domain payment on a standard blog with time left', () => {
     expect(credited()).toBe(2);
   });
 
+  it('keeps the remainder of a quote-exact payment whose term grew, as custom-domain time', async () => {
+    // 18 HBD was quoted for 12 months of premium plus two custom-domain months; the term grew to
+    // 13 months before it landed: 13 of premium, one month (3), and the rest as exact time.
+    tenantRow!.subscription_expires_at = months(13);
+    const from = new Date(String(tenantRow!.subscription_expires_at));
+    const paid = 18;
+    await pay(paid, Math.floor(paid / Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD), 2);
+    const prem = Pricing.customDomainUpgradeHbd(from, new Date());
+    const credit = Pricing.creditCustomDomainPayment(paid, 6, { plan: 'standard', expiresAt: from }, new Date());
+    expect(planUpdate()?.params[3]).toBe('pro');
+    expect(credited()).toBe(credit.months);
+    const expected = new Date(from);
+    expected.setMonth(expected.getMonth() + credit.months);
+    const left = paid - prem - credit.months * Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD;
+    expect(left).toBeGreaterThan(0);
+    const extendedTo = planUpdate()?.params[2] as Date;
+    expect(extendedTo.getTime()).toBe(expected.getTime() + Pricing.hbdAsTimeMs(left, Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD));
+    expect(failedPayments()).toHaveLength(0);
+  });
+
   it('credits the months the payment covers when that is fewer than the memo asked for', async () => {
     await pay(premium() + Pricing.CUSTOM_DOMAIN_MONTHLY_PRICE_HBD, 3, 3);
     expect(planUpdate()?.params[3]).toBe('pro');
