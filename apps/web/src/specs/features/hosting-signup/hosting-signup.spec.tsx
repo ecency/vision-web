@@ -564,6 +564,43 @@ describe("HostingSignup one-click HBD pay", () => {
     expect(screen.getByText("hosting.custom-domain-plan-renewal")).toBeTruthy();
   });
 
+  it("keeps the lock when the blog was renewed elsewhere before the old expiry", async () => {
+    hostingApi.createTenant.mockRejectedValue(new Error("Username already registered"));
+    const first = {
+      username: "alice",
+      owner: "alice",
+      subscriptionStatus: "active" as const,
+      subscriptionPlan: "pro" as const,
+      customDomain: null,
+      subscriptionExpiresAt: new Date(Date.now() + 1500).toISOString()
+    };
+    hostingApi.tenant.mockResolvedValue(first);
+    renderWithQueryClient(<HostingSignup />);
+    fireEvent.click(screen.getByText("g.continue"));
+    fireEvent.click(await screen.findByText("g.continue"));
+    await screen.findByText("hosting.custom-domain-plan-renewal");
+    // A gift or another tab renewed it meanwhile: a month more on the plan.
+    hostingApi.tenant.mockResolvedValue({ ...first, subscriptionExpiresAt: new Date(Date.now() + 30 * 86400000).toISOString() });
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(screen.getByText("hosting.custom-domain-plan-renewal")).toBeTruthy();
+  });
+
+  it("after a community payment resumes, offers its setup only to the community's owner", async () => {
+    hostingApi.tenant.mockResolvedValue({
+      username: "hive-123456", owner: "carol", subscriptionStatus: "active", subscriptionPlan: "pro",
+      subscriptionExpiresAt: "2026-08-16T00:00:00.000Z"
+    });
+    sessionStorage.setItem(
+      "ecency:hosting:pending-hbd",
+      JSON.stringify({ tenant: "hive-123456", blogUrl: "https://hive-123456.blogs.ecency.com", baseline: null })
+    );
+    renderWithQueryClient(<HostingSignup />);
+    await screen.findByText("hosting.success-title");
+    await new Promise((r) => setTimeout(r, 50));
+    // alice paid (a gift) but carol owns the community.
+    expect(screen.queryByText("custom-domain-manager")).toBeNull();
+  });
+
   it("does not offer domain setup when the plan cannot be read", async () => {
     hostingApi.tenant.mockResolvedValueOnce({
       username: "alice",
