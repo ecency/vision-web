@@ -1,0 +1,2 @@
+import {c}from'./chunk-RHZ2GIC6.js';import {queryOptions}from'@tanstack/react-query';function s(t){return queryOptions({queryKey:["search","path",t],queryFn:async()=>{let e=await fetch(c.privateApiHost+"/search-api/search-path",{method:"POST",headers:{"Content-Type":"application/json","X-Ecency-Client":c.clientId},body:JSON.stringify({q:t})});if(!e.ok)throw new Error(`Search path failed: ${e.status}`);let n=await e.json();return n?.length>0?n:[t]}})}export{s as a};//# sourceMappingURL=chunk-QQ4F6OGR.js.map
+//# sourceMappingURL=chunk-QQ4F6OGR.js.map

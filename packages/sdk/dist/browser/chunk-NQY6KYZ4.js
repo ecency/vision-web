@@ -1,0 +1,2 @@
+import {m}from'./chunk-KS4P7JGA.js';import {queryOptions}from'@tanstack/react-query';function s(t,e,r){let a=i=>i.toISOString().replace(/\.\d{3}Z$/,"");return queryOptions({queryKey:["market","history",t,e.getTime(),r.getTime()],queryFn:()=>m("condenser_api.get_market_history",[t,a(e),a(r)])})}export{s as a};//# sourceMappingURL=chunk-NQY6KYZ4.js.map
+//# sourceMappingURL=chunk-NQY6KYZ4.js.map

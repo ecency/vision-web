@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.5
+
+### Patch Changes
+
+- fix(sdk): upstream rate limiting behind the SSR proxy does not open its breaker (#2147)
+
 ## 2.9.4
 
 ### Patch Changes

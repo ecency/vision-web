@@ -1,2 +1,0 @@
-import {m}from'./chunk-256XNI26.js';import {queryOptions}from'@tanstack/react-query';function o(){return queryOptions({queryKey:["market","current-median-history-price"],queryFn:async()=>{try{return await m("condenser_api.get_current_median_history_price",[])}catch(r){throw r}}})}export{o as a};//# sourceMappingURL=chunk-AI23IZCU.js.map
-//# sourceMappingURL=chunk-AI23IZCU.js.map

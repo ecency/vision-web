@@ -1,2 +1,0 @@
-import {e}from'./chunk-C5RLXPLY.js';import {queryOptions}from'@tanstack/react-query';function i(){return queryOptions({queryKey:["assets","hive-engine","markets"],staleTime:6e4,refetchInterval:9e4,queryFn:async()=>e()})}export{i as a};//# sourceMappingURL=chunk-LP54R7SB.js.map
-//# sourceMappingURL=chunk-LP54R7SB.js.map
