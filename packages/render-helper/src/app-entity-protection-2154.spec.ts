@@ -186,3 +186,20 @@ describe('#2154 PR review edges', () => {
     expect(render(`${taken}\n\nx &copy; y`)).toContain('x &copy; y')
   })
 })
+
+describe('#2154 reference definitions per paragraph (PR review)', () => {
+  it.each([
+    '[q] and ]: stuff\n[b]: <https://e.com/a b?q=&amp;amp;>\n\n[b]: <https://e.com/a b?q=&amp;amp;>\n\n[x][b]',
+    '[a]: <https://e.com/u>\nNote: [b]: <https://e.com/a b?q=&amp;amp;>\n\n[b]: <https://e.com/a b?q=&amp;amp;>\n\n[x][b]'
+  ])('a paragraph ending like a later one never takes its definition (%#)', (body) => {
+    for (const forApp of [true, false]) expect(render(body, forApp)).toContain('https://e.com/a%20b?q=&amp;amp;"')
+  })
+
+  it.each([
+    '[a]: <https://e.com/u> "t\n[]: <https://e.com/c d?q=&copy;&amp;>"\n[]: <https://e.com/a b?q=&amp;amp;>\n\n[][]',
+    '[r]: <https://e.com/u>\n　[]: <https://e.com/a b?q=&amp;amp;>\n\n[][]'
+  ])('reads an empty-label definition after a title or a wide indent (%#)', (body) => {
+    for (const forApp of [true, false]) expect(render(body, forApp)).toContain('https://e.com/a%20b?q=&amp;amp;"')
+  })
+
+})

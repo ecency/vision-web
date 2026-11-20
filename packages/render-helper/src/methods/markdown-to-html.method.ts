@@ -301,28 +301,22 @@ type CoreState = {
   env: { references?: Record<string, { href: string }> }
 }
 
-// The same for reference definitions. The core rule parses each paragraph's
+// The same for reference definitions. The core rule parses a paragraph's
 // definitions one after another, each on its own inline state, until one
 // fails: what it consumed is the paragraph's content before minus after, and
-// an attempt starting past that is the one that failed. The states are
-// collected through skipToken, which the label scan calls; an empty label
-// (`[]:`, which Remarkable accepts) calls nothing, so those are found in the
-// consumed text. Each definition is then read back in source order, the first
-// of a label winning, as in the parser.
+// an attempt starting there or later is the one that failed. The rule runs on
+// one paragraph at a time (it reads nothing else), so the states collected
+// through skipToken, which the label scan calls, are that paragraph's
+// attempts. An empty label (`[]:`, which Remarkable accepts) calls nothing, so
+// those are looked for in the consumed text; a misread there never changes a
+// destination (undecodedAngleDestination compares with the parser's value).
+// Each definition is read in source order, the first of a label winning.
 function withAngleReferences(rule: (state: CoreState) => unknown, unswap: Unswap): (state: CoreState) => unknown {
   return (state) => {
     const parser = state.inline
     const skipToken = parser.skipToken
-    const seen: InlineState[] = []
-    const seenSet = new Set<InlineState>()
-    const known = new Set(Object.keys(state.env.references ?? {}))
-    const tokens = state.tokens
-    const paragraphs: Array<{ token: { content?: string }; before: string }> = []
-    for (let i = 1; i < tokens.length - 1; i++) {
-      if (tokens[i].type === 'inline' && tokens[i - 1].type === 'paragraph_open' && tokens[i + 1].type === 'paragraph_close') {
-        paragraphs.push({ token: tokens[i], before: tokens[i].content ?? '' })
-      }
-    }
+    let seen: InlineState[] = []
+    let seenSet = new Set<InlineState>()
     parser.skipToken = function (this: unknown, inline: InlineState) {
       if (!seenSet.has(inline)) {
         seenSet.add(inline)
@@ -330,47 +324,57 @@ function withAngleReferences(rule: (state: CoreState) => unknown, unswap: Unswap
       }
       return skipToken.call(this, inline)
     }
+    const known = new Set(Object.keys(state.env.references ?? {}))
+    const tokens = state.tokens
     let result: unknown
     try {
-      result = rule(state)
+      // The env (references) is created by the rule even with no paragraph.
+      result = rule({ ...state, tokens: [] })
+      for (let i = 1; i < tokens.length - 1; i++) {
+        if (tokens[i].type !== 'inline' || tokens[i - 1].type !== 'paragraph_open' || tokens[i + 1].type !== 'paragraph_close') continue
+        const before = tokens[i].content ?? ''
+        seen = []
+        seenSet = new Set()
+        result = rule({ ...state, tokens: [tokens[i - 1], tokens[i], tokens[i + 1]] })
+        const references = state.env.references
+        if (!references || before.charCodeAt(0) !== 0x5b) continue
+        readDefinitions(before, before.length - (tokens[i].content ?? '').length, seen, references, known, unswap)
+      }
     } finally {
       parser.skipToken = skipToken
     }
-    const references = state.env.references
-    if (!references) return result
-    let next = 0
-    for (const { token, before } of paragraphs) {
-      if (before.charCodeAt(0) !== 0x5b) continue
-      const consumed = before.length - (token.content ?? '').length
-      const attempts: Array<{ at: number; inline?: InlineState }> = []
-      let last = -1
-      while (next < seen.length) {
-        const at = before.length - seen[next].src.length
-        if (at <= last || !before.endsWith(seen[next].src)) break
-        attempts.push({ at, inline: seen[next] })
-        last = at
-        next++
-      }
-      for (let at = before.indexOf('[]:'); at !== -1 && at < consumed; at = before.indexOf('[]:', at + 1)) {
-        let k = at - 1
-        while (k >= 0 && before.charCodeAt(k) === 0x20) k--
-        if (k === -1 || before.charCodeAt(k) === 0x0a) attempts.push({ at })
-      }
-      attempts.sort((x, y) => x.at - y.at)
-      for (const { at, inline } of attempts) {
-        if (at >= consumed) break
-        const labelEnd = inline ? at + linkLabelEnd(inline, 0) : at + 1
-        if (labelEnd < at || before.charCodeAt(labelEnd) !== 0x5d || before.charCodeAt(labelEnd + 1) !== 0x3a) continue
-        const key = before.slice(at + 1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
-        if (known.has(key)) continue
-        known.add(key)
-        const raw = angleDestination(before, skipSpaces(before, labelEnd + 2, before.length), before.length)
-        if (raw === null || !references[key]) continue
-        const undecoded = undecodedAngleDestination(references[key].href, raw, unswap)
-        if (undecoded !== undefined) references[key].href = undecoded
-      }
-    }
     return result
+  }
+}
+
+function readDefinitions(
+  before: string,
+  consumed: number,
+  seen: InlineState[],
+  references: Record<string, { href: string }>,
+  known: Set<string>,
+  unswap: Unswap
+): void {
+  const attempts: Array<{ at: number; inline?: InlineState }> = seen.map((inline) => ({ at: before.length - inline.src.length, inline }))
+  for (let at = before.indexOf('[]:'); at !== -1 && at < consumed; at = before.indexOf('[]:', at + 1)) {
+    // An attempt starts a line, after whatever the parser's trim() skips.
+    let k = at - 1
+    while (k >= 0 && before.charCodeAt(k) !== 0x0a && /\s/.test(before[k])) k--
+    if (k === -1 || before.charCodeAt(k) === 0x0a) attempts.push({ at })
+  }
+  attempts.sort((x, y) => x.at - y.at)
+  for (const { at, inline } of attempts) {
+    if (at >= consumed) break
+    const labelEnd = inline ? at + linkLabelEnd(inline, 0) : at + 1
+    if (labelEnd < at || before.charCodeAt(labelEnd) !== 0x5d || before.charCodeAt(labelEnd + 1) !== 0x3a) continue
+    const key = before.slice(at + 1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
+    if (known.has(key)) continue
+    const raw = angleDestination(before, skipSpaces(before, labelEnd + 2, before.length), before.length)
+    const undecoded = raw === null || !references[key] ? undefined : undecodedAngleDestination(references[key].href, raw, unswap)
+    // A `[]:` found by text may sit inside another definition's title: an
+    // angle one whose value is not the label's then claims nothing.
+    if (inline || raw === null || undecoded !== undefined) known.add(key)
+    if (undecoded !== undefined) references[key].href = undecoded
   }
 }
 
