@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.54
+
+### Patch Changes
+
+- fix(render-helper): in-site path guard checks only the render's placeholder delimiter (#2165) (#2166)
+
 ## 2.5.53
 
 ### Patch Changes

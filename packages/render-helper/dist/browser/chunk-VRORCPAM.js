@@ -1,10 +1,11 @@
+import { activePlaceholderDelimiter } from './chunk-NJPAOL3G.js';
 import { removeChildNodes } from './chunk-VXSEAEHB.js';
 import { getSerializedInnerHTML } from './chunk-6JBQDGO4.js';
 import { createImageHTML } from './chunk-UHNNLXTF.js';
 import { markInternalThumbnail } from './chunk-NQZM6AV2.js';
 import { SECTION_LIST } from './chunk-P5HRQG6E.js';
 import { WHITE_LIST } from './chunk-4J745Z46.js';
-import { IMG_REGEX, IPFS_REGEX, POST_REGEX, MENTION_REGEX, INTERNAL_POST_TAG_REGEX, PLACEHOLDER_DELIMITER_CHARS, INTERNAL_MENTION_REGEX, INTERNAL_POST_REGEX, TOPIC_REGEX, INTERNAL_TOPIC_REGEX, CUSTOM_COMMUNITY_REGEX, CCC_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, ODYSEE_WATCH_REGEX, YOUTUBE_REGEX, VIMEO_REGEX, TWITCH_REGEX, SPOTIFY_REGEX, LOOM_REGEX, D_TUBE_REGEX, D_TUBE_REGEX2, SPEAK_REGEX, SPEAK_AUDIO_REGEX, LIKETU_AUDIO_REGEX, TWITTER_REGEX } from './chunk-AS65CVY3.js';
+import { IMG_REGEX, IPFS_REGEX, POST_REGEX, MENTION_REGEX, INTERNAL_POST_TAG_REGEX, INTERNAL_MENTION_REGEX, INTERNAL_POST_REGEX, TOPIC_REGEX, INTERNAL_TOPIC_REGEX, CUSTOM_COMMUNITY_REGEX, CCC_REGEX, BITCHUTE_REGEX, RUMBLE_REGEX, BRIGHTEON_REGEX, ODYSEE_WATCH_REGEX, YOUTUBE_REGEX, VIMEO_REGEX, TWITCH_REGEX, SPOTIFY_REGEX, LOOM_REGEX, D_TUBE_REGEX, D_TUBE_REGEX2, SPEAK_REGEX, SPEAK_AUDIO_REGEX, LIKETU_AUDIO_REGEX, TWITTER_REGEX } from './chunk-5HL7IVFO.js';
 import { proxifyImageSrc } from './chunk-LT2KELO7.js';
 import { DOMParser } from './chunk-DBKALPTB.js';
 import { imageUrlEnd, sanitizePermlink, isValidPermlink, isValidUsername, youtubeVideoLinkClass, extractYtStartTime, stripHtmlTags, trimTrailingSlash } from './chunk-QVFPA3RG.js';
@@ -188,7 +189,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf("/") === 0) {
       const path = href.split(/[?#]/, 1)[0];
-      const placeholder = forApp ? PLACEHOLDER_DELIMITER_CHARS.test(path) : path.includes("\u200B");
+      const delimiter = activePlaceholderDelimiter();
+      const placeholder = path.includes("\u200B") || delimiter !== null && path.includes(delimiter);
       isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes(".")) {
       const domain = tpostMatch[1].replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -713,5 +715,5 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
 }
 
 export { a };
-//# sourceMappingURL=chunk-3DCNOHEB.js.map
-//# sourceMappingURL=chunk-3DCNOHEB.js.map
+//# sourceMappingURL=chunk-VRORCPAM.js.map
+//# sourceMappingURL=chunk-VRORCPAM.js.map

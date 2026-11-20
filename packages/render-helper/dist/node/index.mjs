@@ -467,7 +467,6 @@ var ID_WHITELIST = /^[A-Za-z][-A-Za-z0-9_]*$/;
 var PLACEHOLDER_DELIMITERS = ["\u200B", "\u2060", "\u2061", "\u2062", "\u2063", "\u2064"];
 var PRIVATE_DELIMITERS_FROM = 57600;
 var PRIVATE_DELIMITERS_TO = 63743;
-var PLACEHOLDER_DELIMITER_CHARS = /[\u200B\u2060-\u2064\uE100-\uF8FF]/;
 
 // src/consts/allowed-attributes.const.ts
 var ALLOWED_ATTRIBUTES = {
@@ -1453,6 +1452,19 @@ function createImageHTML(src, isLCP, forApp = true) {
   return imgTag;
 }
 
+// src/methods/placeholder-delimiter.ts
+var active = null;
+var activePlaceholderDelimiter = () => active;
+function withPlaceholderDelimiter(delimiter, render) {
+  const previous = active;
+  active = delimiter;
+  try {
+    return render();
+  } finally {
+    active = previous;
+  }
+}
+
 // src/methods/a.method.ts
 var NOFOLLOW_REPUTATION_THRESHOLD = 40;
 var FOLLOW_PAYOUT_THRESHOLD = 5;
@@ -1632,7 +1644,8 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf("/") === 0) {
       const path = href.split(/[?#]/, 1)[0];
-      const placeholder = forApp ? PLACEHOLDER_DELIMITER_CHARS.test(path) : path.includes("\u200B");
+      const delimiter = activePlaceholderDelimiter();
+      const placeholder = path.includes("\u200B") || delimiter !== null && path.includes(delimiter);
       isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes(".")) {
       const domain = tpostMatch[1].replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -11303,31 +11316,33 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   }
   const untransformed = { ...renderOptions, untransformed: true };
   const nonce = createRenderNonce();
-  try {
-    output = md.render(input);
-    if (ampEscapes) output = sourceAmp(output);
-    output = fixBlockLevelTagsInParagraphs(output);
-    const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
-    stripAuthorMarkers(doc);
-    traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
-    output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
-  } catch (error) {
+  withPlaceholderDelimiter(delimiter, () => {
     try {
-      const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true });
-      const dom = htmlparser2.parseDocument(preSanitized, {
-        // lenient options - don't throw on malformed HTML
-        lowerCaseTags: false,
-        lowerCaseAttributeNames: false
-      });
-      const repairedHtml = domSerializer(dom.children);
-      const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, "text/html");
+      output = md.render(input);
+      if (ampEscapes) output = sourceAmp(output);
+      output = fixBlockLevelTagsInParagraphs(output);
+      const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
       stripAuthorMarkers(doc);
       traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
       output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
-    } catch (fallbackError) {
-      output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
+    } catch (error) {
+      try {
+        const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true });
+        const dom = htmlparser2.parseDocument(preSanitized, {
+          // lenient options - don't throw on malformed HTML
+          lowerCaseTags: false,
+          lowerCaseAttributeNames: false
+        });
+        const repairedHtml = domSerializer(dom.children);
+        const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, "text/html");
+        stripAuthorMarkers(doc);
+        traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
+        output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
+      } catch (fallbackError) {
+        output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
+      }
     }
-  }
+  });
   if (output && entityPlaceholders.length > 0) {
     output = unswap(output);
   }

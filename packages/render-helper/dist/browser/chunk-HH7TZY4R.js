@@ -1,8 +1,9 @@
-import { sanitizeHtml } from './chunk-CUJE3JDO.js';
+import { sanitizeHtml } from './chunk-RSO7K4ZG.js';
 import { stripAuthorMarkers } from './chunk-FAKJ3NFL.js';
-import { traverse } from './chunk-PPU366T7.js';
+import { traverse } from './chunk-GVKUQEXT.js';
 import { createRenderNonce, xmldomNodeFilter } from './chunk-YYHKRTAC.js';
-import { ENTITY_REGEX, PLACEHOLDER_DELIMITERS, PRIVATE_DELIMITERS_FROM, PRIVATE_DELIMITERS_TO } from './chunk-AS65CVY3.js';
+import { withPlaceholderDelimiter } from './chunk-NJPAOL3G.js';
+import { ENTITY_REGEX, PLACEHOLDER_DELIMITERS, PRIVATE_DELIMITERS_FROM, PRIVATE_DELIMITERS_TO } from './chunk-5HL7IVFO.js';
 import { regexMatches } from './chunk-SH6RGNOF.js';
 import { XMLDOMSerializer, DOMParser } from './chunk-DBKALPTB.js';
 import { hasAmpSentinel, removeDuplicateAttributes, decodeCompleteReferences, decodeEntities, moveBlockClosingTagOutOfParagraph } from './chunk-QVFPA3RG.js';
@@ -466,31 +467,33 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   }
   const untransformed = { ...renderOptions, untransformed: true };
   const nonce = createRenderNonce();
-  try {
-    output = md.render(input);
-    if (ampEscapes) output = sourceAmp(output);
-    output = fixBlockLevelTagsInParagraphs(output);
-    const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
-    stripAuthorMarkers(doc);
-    traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
-    output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
-  } catch (error) {
+  withPlaceholderDelimiter(delimiter, () => {
     try {
-      const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true });
-      const dom = htmlparser2.parseDocument(preSanitized, {
-        // lenient options - don't throw on malformed HTML
-        lowerCaseTags: false,
-        lowerCaseAttributeNames: false
-      });
-      const repairedHtml = domSerializer(dom.children);
-      const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, "text/html");
+      output = md.render(input);
+      if (ampEscapes) output = sourceAmp(output);
+      output = fixBlockLevelTagsInParagraphs(output);
+      const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(output)}</body>`, "text/html");
       stripAuthorMarkers(doc);
       traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
       output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
-    } catch (fallbackError) {
-      output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
+    } catch (error) {
+      try {
+        const preSanitized = sanitizeHtml(output, { ...renderOptions, beforeTransform: true });
+        const dom = htmlparser2.parseDocument(preSanitized, {
+          // lenient options - don't throw on malformed HTML
+          lowerCaseTags: false,
+          lowerCaseAttributeNames: false
+        });
+        const repairedHtml = domSerializer(dom.children);
+        const doc = DOMParser.parseFromString(`<body id="root">${removeDuplicateAttributes(repairedHtml)}</body>`, "text/html");
+        stripAuthorMarkers(doc);
+        traverse(doc, forApp, 0, { firstImageFound: false }, parentDomain, seoContext, renderOptions);
+        output = serializer.serializeToString(doc, xmldomNodeFilter(nonce));
+      } catch (fallbackError) {
+        output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
+      }
     }
-  }
+  });
   if (output && entityPlaceholders.length > 0) {
     output = unswap(output);
   }
@@ -499,5 +502,5 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
 }
 
 export { markdownToHTML, stripDocumentWrapper };
-//# sourceMappingURL=chunk-2WKZYA3X.js.map
-//# sourceMappingURL=chunk-2WKZYA3X.js.map
+//# sourceMappingURL=chunk-HH7TZY4R.js.map
+//# sourceMappingURL=chunk-HH7TZY4R.js.map

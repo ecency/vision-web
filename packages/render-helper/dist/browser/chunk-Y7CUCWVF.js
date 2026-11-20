@@ -1,4 +1,4 @@
-import { sanitizeHtml } from './chunk-CUJE3JDO.js';
+import { sanitizeHtml } from './chunk-RSO7K4ZG.js';
 import { Remarkable } from 'remarkable';
 import { linkify } from 'remarkable/linkify';
 
@@ -20,5 +20,5 @@ function simpleMarkdownToHTML(input) {
 }
 
 export { simpleMarkdownToHTML };
-//# sourceMappingURL=chunk-E445N5CF.js.map
-//# sourceMappingURL=chunk-E445N5CF.js.map
+//# sourceMappingURL=chunk-Y7CUCWVF.js.map
+//# sourceMappingURL=chunk-Y7CUCWVF.js.map
