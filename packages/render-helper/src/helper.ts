@@ -103,15 +103,26 @@ export function imageUrlEnd(token: string): number {
   if (!/[?#]/.test(token)) {
     while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
   } else {
+    // A `)` is unmatched when no `(` before it is still open, read in source
+    // order: `?a=)&b=(1)` keeps the `)` that closes `(1)`.
     let open = 0
+    let unmatchedTail = 0
     for (let i = 0; i < token.length; i++) {
-      if (token[i] === '(') open++
-      else if (token[i] === ')') open--
+      if (token[i] === '(') {
+        open++
+        unmatchedTail = 0
+      } else if (token[i] === ')') {
+        if (open > 0) {
+          open--
+          unmatchedTail = 0
+        } else {
+          unmatchedTail++
+        }
+      } else {
+        unmatchedTail = 0
+      }
     }
-    while (open < 0 && token[contentEnd - 1] === ')') {
-      contentEnd--
-      open++
-    }
+    contentEnd -= unmatchedTail
   }
   IMAGE_EXT_G.lastIndex = 0
   let m: RegExpExecArray | null

@@ -378,7 +378,11 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       // such a path is not judged in-site; one in the query or fragment cannot
       // move the host. An entity spelling `?` or `#` is itself a placeholder
       // in the path, so it stays rejected.
-      isValidDomain = !PLACEHOLDER_DELIMITER_CHARS.test(href.split(/[?#]/, 1)[0]) && isInSiteHref(href);
+      // The web render holds no placeholders: it keeps the old check, so an
+      // author's U+2060 there does not change what the path means.
+      const path = href.split(/[?#]/, 1)[0];
+      const placeholder = forApp ? PLACEHOLDER_DELIMITER_CHARS.test(path) : path.includes('\u200B');
+      isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
       const domain = tpostMatch[1]

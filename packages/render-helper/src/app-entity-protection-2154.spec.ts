@@ -24,8 +24,8 @@ describe('app render entity protection (#2154)', () => {
   })
 
   it('leaves author text that looks like a placeholder as written', () => {
-    expect(render('`​0​` and &amp;')).toBe('<p dir="auto"><code>​0​</code> and &amp;</p>')
-    expect(render('​0​ and &amp;')).toBe('<p dir="auto">​0​ and &amp;</p>')
+    expect(render('`\u200B0\u200B` and &amp;')).toBe('<p dir="auto"><code>\u200B0\u200B</code> and &amp;</p>')
+    expect(render('\u200B0\u200B and &amp;')).toBe('<p dir="auto">\u200B0\u200B and &amp;</p>')
   })
 
   it('renders an indented code block like a fenced one', () => {
@@ -65,7 +65,7 @@ describe('#2154 review edges', () => {
   it.each(['/&#47;evil.example/@alice/X_y', '/&#47;evil.example/@alice/some-post', '/&#92;evil.example/@alice/posts'])(
     'a path entity is never in-site, whatever the delimiter (%s)',
     (path) => {
-      for (const prefix of ['', 'zero​width\n\n', 'a​⁠⁡⁢⁣⁤b\n\n']) {
+      for (const prefix of ['', 'zero\u200Bwidth\n\n', 'a\u200B\u2060\u2061\u2062\u2063\u2064b\n\n']) {
         const html = render(`${prefix}[x](${path})`)
         expect(html).toContain('class="markdown-external-link"')
         expect(html).not.toMatch(/markdown-(?:post|profile)-link/)
@@ -82,7 +82,11 @@ describe('#2154 review edges', () => {
   })
 
   it.each(['```\nx&lt;\ty\n```', '    x&lt;\ty &amp;\tz\n', 'a\tb\n\n```\n&copy;\t|\n```'])('keeps tab stops in code as on the web (%j)', (body) => {
-    const code = (html: string) => html.replace(/<span class="ll-[a-z]+">|<\/span>/g, '').match(/<code>([\s\S]*?)<\/code>/)?.[1]
+    const code = (html: string) => {
+      const text = html.replace(/<span class="ll-[a-z]+">|<\/span>/g, '').match(/<code>([\s\S]*?)<\/code>/)?.[1]
+      expect(text).toBeDefined()
+      return text
+    }
     expect(code(render(body))).toBe(code(render(body, false)))
   })
 
@@ -106,7 +110,7 @@ describe('#2154 second review edges', () => {
     expect(render(body)).toContain(want)
   })
 
-  it.each(['a\r\r\n\r\r\nb &amp;', '&amp;\r\r\nx', 'a \tb &amp;\r\n\tc'])('keeps line breaks as the web reads them (%j)', (body) => {
+  it.each(['a\r\r\n\r\r\nb &amp;', '&amp;\r\r\nx', 'a\u2028\tb &amp;\r\n\tc'])('keeps line breaks as the web reads them (%j)', (body) => {
     expect(render(body).replace(/&amp;/g, '&')).toBe(render(body, false).replace(/&amp;/g, '&'))
   })
 
@@ -119,20 +123,66 @@ describe('#2154 second review edges', () => {
 })
 
 describe('#2154 third review edges', () => {
-  it.each([' ', '\u0085', '␤'])('an angle span does not cross a parser line break (%j)', (br) => {
+  it.each(['\u2028', '\u0085', '\u2424'])('an angle span does not cross a parser line break (%j)', (br) => {
     expect(render(`x (<https://e.com/a${br}b &copy; c>) y`)).toContain('&copy; c')
     expect(render(`[r]: <https://e.com/a${br}b &copy; c>`)).toContain('&copy; c')
   })
 })
 
 describe('#2154 fourth review edges', () => {
-  it.each([' ', '\n'])('an escaped line break stays inside an angle destination (%j)', (br) => {
-    expect(render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)).not.toContain('%E2%80%8B')
+  it.each(['\u2028', '\n'])('an escaped line break stays inside an angle destination (%j)', (br) => {
+    const html = render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)
+    expect(html).not.toContain('%E2%80%8B')
+    expect(html).toContain('data-href="https://e.com/a%5C')
+    expect(html).toContain('?q=©&amp;z=1"')
   })
 })
 
 describe('#2154 fifth review edges', () => {
   it.each(['\r\n', '\r\u0085'])('an escaped CR line break stays inside an angle destination (%j)', (br) => {
-    expect(render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)).not.toContain('%E2%80%8B')
+    const html = render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)
+    expect(html).not.toContain('%E2%80%8B')
+    expect(html).toContain('data-href="https://e.com/a%5C')
+    expect(html).toContain('?q=©&amp;z=1"')
+  })
+})
+
+// PR #2162 review: destinations are read by the parser, never guessed.
+describe('#2154 PR review edges', () => {
+  it.each([
+    'see (<https://e.com/a b &copy; c>) end',
+    'see ( <https://e.com/a b &copy;>) end',
+    'text ]: <https://e.com/a b &copy;> end',
+    'See (<https://example.com/a b &copy; c>) here'
+  ])('protects entities in prose that only looks like a destination (%j)', (body) => {
+    expect(render(body)).toContain('&copy;')
+    expect(render(body)).not.toContain('©')
+  })
+
+  it.each([
+    ['[x](<mailto:alice@example.com?subject=One&amp;body=Two>)', 'mailto:alice@example.com?subject=One&amp;body=Two'],
+    ['[x](</path?q=&amp;amp;>)', '/path?q=&amp;amp;'],
+    ['[x](<https://e.com/a<b?q=&amp;z>)', '?q=&amp;z'],
+    ['> [x](<https://e.com/a\\\n> b?q=&copy;>)', '?q=©']
+  ])('names the destination the web names, whatever its form (%j)', (body, part) => {
+    const app = render(body)
+    expect(app).not.toMatch(/%E2%80%8B|\u200B|\u2060/)
+    expect(app).toContain(part)
+    const href = (html: string) => html.match(/(?:data-)?href="([^"]*)"/)?.[1]
+    expect(href(app)).toBeDefined()
+    expect(href(app)).toBe(href(render(body, false)))
+  })
+
+  it.each([true, false])('reads an empty-label angle definition once (forApp %s)', (forApp) => {
+    const plain = render('[]: https://example.com/?q=&amp;amp;\n\n[x][]', forApp)
+    expect(render('[]: <https://example.com/?q=&amp;amp;>\n\n[x][]', forApp)).toBe(plain)
+    // The first definition wins, the empty label included.
+    expect(render('[]: https://example.com/?q=&amp;\n[ ]: <https://example.com/?q=&amp;amp;>\n\n[x][]', forApp)).toContain('?q=&amp;"')
+  })
+
+  it('protects entities when every single delimiter character is taken', () => {
+    let taken = '\u200B\u2060\u2061\u2062\u2063\u2064'
+    for (let c = 0xe100; c <= 0xf8ff; c++) taken += String.fromCharCode(c)
+    expect(render(`${taken}\n\nx &copy; y`)).toContain('x &copy; y')
   })
 })

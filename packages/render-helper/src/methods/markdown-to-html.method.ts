@@ -19,17 +19,10 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092),
 // and so does an unclosed `(` (`a_(x&amp;y.png`), which no markdown construct
 // closes. Nothing follows the repetition, so the first (greedy) parse is taken
-// without backtracking: linear. An angle-bracket destination is taken whole
-// to its `>`, as the parser reads it, so a `)` or a space inside does not end
-// it (`[x](<https://e.com/a)b?x=1&amp;y=2>)`, #2154): after `(` or `]:` (the
-// opening of a destination), anything but a line break (also
-// U+2028, U+0085 and U+2424, which the parser turns into one) unless
-// escaped, which the parser skips; elsewhere (an
-// autolink) no whitespace, so text like `<https://e.com/a b &copy; c>` keeps
-// its entities protected. A span holds no `<`, so a failed attempt stops at
-// the next one: linear too. A bare URL stops before such an opening, so one
-// ending a label (`[https://a.com](<...>)`) leaves the destination whole.
-const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n\u2028\u0085\u2424<>\\]|\\(?:\r[\n\u0085]|[\s\S]))*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
+// without backtracking: linear. Entities in a markdown destination are left
+// to the parser's own reading of it (undecodedAngleDestination), not guessed
+// here (#2154).
+const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
@@ -214,10 +207,17 @@ const uriNormalized = (url: string): string => {
   return encodeURI(url)
 }
 
-function undecodedAngleDestination(value: string | undefined, raw: string): string | undefined {
-  const unescaped = utils.unescapeMd(raw)
+// The app render's placeholders back to the entities they stand for.
+type Unswap = (text: string) => string
+
+// `raw` is the source as the parser read it, with the app render's
+// placeholders (which Remarkable percent-encoded, so the final restore could
+// never find them, #2154): those go back to their entities first, so the
+// destination reads exactly as written, whatever its scheme.
+function undecodedAngleDestination(value: string | undefined, raw: string, unswap: Unswap): string | undefined {
   try {
-    return value === uriNormalized(utils.replaceEntities(unescaped)) ? uriNormalized(unescaped) : undefined
+    if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return undefined
+    return uriNormalized(utils.unescapeMd(unswap(raw)))
   } catch {
     return undefined
   }
@@ -275,7 +275,7 @@ function linkLabelEnd(state: InlineState, start: number): number {
   return end
 }
 
-function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => boolean) {
+function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => boolean, unswap: Unswap) {
   return (state: InlineState, silent?: boolean): boolean => {
     const start = state.pos
     const before = state.tokens.length
@@ -289,7 +289,7 @@ function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => b
     const token = state.tokens.slice(before).find((t) => t.type === 'link_open' || t.type === 'image')
     if (!token) return ok
     const field = token.type === 'image' ? 'src' : 'href'
-    const undecoded = undecodedAngleDestination(token[field], raw)
+    const undecoded = undecodedAngleDestination(token[field], raw, unswap)
     if (undecoded !== undefined) token[field] = undecoded
     return ok
   }
@@ -301,17 +301,33 @@ type CoreState = {
   env: { references?: Record<string, { href: string }> }
 }
 
-// The same for reference definitions. Each one is parsed on its own inline
-// state, which the label scan hands to skipToken: those are collected while
-// the rule runs, and each definition is read back from its own state after.
-function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreState) => unknown {
+// The same for reference definitions. The core rule parses each paragraph's
+// definitions one after another, each on its own inline state, until one
+// fails: what it consumed is the paragraph's content before minus after, and
+// an attempt starting past that is the one that failed. The states are
+// collected through skipToken, which the label scan calls; an empty label
+// (`[]:`, which Remarkable accepts) calls nothing, so those are found in the
+// consumed text. Each definition is then read back in source order, the first
+// of a label winning, as in the parser.
+function withAngleReferences(rule: (state: CoreState) => unknown, unswap: Unswap): (state: CoreState) => unknown {
   return (state) => {
     const parser = state.inline
     const skipToken = parser.skipToken
-    const seen = new Set<InlineState>()
+    const seen: InlineState[] = []
+    const seenSet = new Set<InlineState>()
     const known = new Set(Object.keys(state.env.references ?? {}))
+    const tokens = state.tokens
+    const paragraphs: Array<{ token: { content?: string }; before: string }> = []
+    for (let i = 1; i < tokens.length - 1; i++) {
+      if (tokens[i].type === 'inline' && tokens[i - 1].type === 'paragraph_open' && tokens[i + 1].type === 'paragraph_close') {
+        paragraphs.push({ token: tokens[i], before: tokens[i].content ?? '' })
+      }
+    }
     parser.skipToken = function (this: unknown, inline: InlineState) {
-      seen.add(inline)
+      if (!seenSet.has(inline)) {
+        seenSet.add(inline)
+        seen.push(inline)
+      }
       return skipToken.call(this, inline)
     }
     let result: unknown
@@ -322,28 +338,37 @@ function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreS
     }
     const references = state.env.references
     if (!references) return result
-    // A paragraph's definitions are parsed one after another until one
-    // fails, which leaves the rest of the paragraph (its src) as the
-    // paragraph's content. Every other state defined its label.
-    const failed = new Set<string>()
-    const tokens = state.tokens
-    for (let i = 1; i < tokens.length - 1; i++) {
-      if (tokens[i].type === 'inline' && tokens[i - 1].type === 'paragraph_open' && tokens[i + 1].type === 'paragraph_close') {
-        failed.add(tokens[i].content ?? '')
+    let next = 0
+    for (const { token, before } of paragraphs) {
+      if (before.charCodeAt(0) !== 0x5b) continue
+      const consumed = before.length - (token.content ?? '').length
+      const attempts: Array<{ at: number; inline?: InlineState }> = []
+      let last = -1
+      while (next < seen.length) {
+        const at = before.length - seen[next].src.length
+        if (at <= last || !before.endsWith(seen[next].src)) break
+        attempts.push({ at, inline: seen[next] })
+        last = at
+        next++
       }
-    }
-    for (const inline of seen) {
-      if (failed.has(inline.src) || inline.src.charCodeAt(0) !== 0x5b) continue
-      const labelEnd = linkLabelEnd(inline, 0)
-      if (labelEnd < 0 || inline.src.charCodeAt(labelEnd + 1) !== 0x3a) continue
-      // The first definition of a label wins, as in the parser.
-      const key = inline.src.slice(1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
-      if (known.has(key)) continue
-      known.add(key)
-      const raw = angleDestination(inline.src, skipSpaces(inline.src, labelEnd + 2, inline.posMax), inline.posMax)
-      if (raw === null || !references[key]) continue
-      const undecoded = undecodedAngleDestination(references[key].href, raw)
-      if (undecoded !== undefined) references[key].href = undecoded
+      for (let at = before.indexOf('[]:'); at !== -1 && at < consumed; at = before.indexOf('[]:', at + 1)) {
+        let k = at - 1
+        while (k >= 0 && before.charCodeAt(k) === 0x20) k--
+        if (k === -1 || before.charCodeAt(k) === 0x0a) attempts.push({ at })
+      }
+      attempts.sort((x, y) => x.at - y.at)
+      for (const { at, inline } of attempts) {
+        if (at >= consumed) break
+        const labelEnd = inline ? at + linkLabelEnd(inline, 0) : at + 1
+        if (labelEnd < at || before.charCodeAt(labelEnd) !== 0x5d || before.charCodeAt(labelEnd + 1) !== 0x3a) continue
+        const key = before.slice(at + 1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
+        if (known.has(key)) continue
+        known.add(key)
+        const raw = angleDestination(before, skipSpaces(before, labelEnd + 2, before.length), before.length)
+        if (raw === null || !references[key]) continue
+        const undecoded = undecodedAngleDestination(references[key].href, raw, unswap)
+        if (undecoded !== undefined) references[key].href = undecoded
+      }
     }
     return result
   }
@@ -353,8 +378,9 @@ function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreS
 // delimiter is a character the body does not hold, so author text can never
 // read as a placeholder (#2154): a zero-width space as before, or the first
 // free one of a few other invisible characters, then the private use area
-// (past AMP_PAIR). Null when none is free: the body then renders unprotected.
-function placeholderDelimiter(input: string): string | null {
+// (past AMP_PAIR). When the body holds every one of those, a pair of private
+// use characters it never holds in that order.
+function placeholderDelimiter(input: string): string {
   // Raw or written as a reference (`&#8203;`), which the DOM decodes.
   if (input.includes('&')) input += decodeEntities(input)
   const free = PLACEHOLDER_DELIMITERS.find((d) => !input.includes(d))
@@ -365,7 +391,18 @@ function placeholderDelimiter(input: string): string | null {
     if (code >= PRIVATE_DELIMITERS_FROM && code <= PRIVATE_DELIMITERS_TO) used[code - PRIVATE_DELIMITERS_FROM] = 1
   }
   const at = used.indexOf(0)
-  return at === -1 ? null : String.fromCharCode(PRIVATE_DELIMITERS_FROM + at)
+  if (at !== -1) return String.fromCharCode(PRIVATE_DELIMITERS_FROM + at)
+  const size = used.length
+  const pairs = new Set<number>()
+  for (let i = 0; i + 1 < input.length; i++) {
+    const first = input.charCodeAt(i) - PRIVATE_DELIMITERS_FROM
+    const second = input.charCodeAt(i + 1) - PRIVATE_DELIMITERS_FROM
+    if (first >= 0 && first < size && second >= 0 && second < size) pairs.add(first * size + second)
+  }
+  // At most input.length pairs are taken, so a free one turns up within that.
+  let pair = 0
+  while (pairs.has(pair)) pair++
+  return String.fromCharCode(PRIVATE_DELIMITERS_FROM + Math.floor(pair / size), PRIVATE_DELIMITERS_FROM + (pair % size))
 }
 
 // Expands each tab as Remarkable's ParserBlock.parse will: to the next
@@ -573,10 +610,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
   // The angle wrappers go on first, so they read the source the paired
   // wrappers hand the rule.
-  wrapRule(md.inline.ruler as unknown as RuleList, 'links', withAngleDestinations)
+  wrapRule(md.inline.ruler as unknown as RuleList, 'links', (rule) => withAngleDestinations(rule, (text) => unswap(text)))
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
   wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', withOriginalSource)
-  wrapRule(md.core.ruler as unknown as RuleList, 'references', withAngleReferences)
+  wrapRule(md.core.ruler as unknown as RuleList, 'references', (rule) => withAngleReferences(rule, (text) => unswap(text)))
   wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'

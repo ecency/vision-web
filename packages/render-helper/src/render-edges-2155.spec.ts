@@ -140,3 +140,15 @@ describe('nested kept iframes after a nested pair (#2155 review)', () => {
     expect(untransformed(`${yt}${yt}</iframe>${vimeo}</iframe></iframe>REST`)).toBe(`${yt}${yt}</iframe>${vimeo}</iframe></iframe>REST`)
   })
 })
+
+describe('#2155 PR review edges', () => {
+  it('keeps a matched ) after an earlier unmatched one', () => {
+    expect(imageUrlEnd('https://host.example/photo.jpg?a=)&amp;b=(1)')).toBe('https://host.example/photo.jpg?a=)&amp;b=(1)'.length)
+    expect(imageUrlEnd('https://host.example/photo.jpg?a=)&b=(1))')).toBe('https://host.example/photo.jpg?a=)&b=(1)'.length)
+  })
+
+  it('leaves an author U+2060 in a web path to the in-site check', () => {
+    const html = markdown2Html(entry('<a href="/topic\u2060/@alice/some-post">x</a>'), false)
+    expect(html).toContain('href="/@alice/some-post"')
+  })
+})
