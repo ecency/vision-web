@@ -119,3 +119,16 @@ describe('nested kept iframes keep every close (#2155 review)', () => {
     expect(out.endsWith('</iframe></iframe>after the embed')).toBe(true)
   })
 })
+
+describe('a kept iframe ends at its first close (#2155 review)', () => {
+  const yt = '<iframe src="https://www.youtube.com/embed/abcdefghijk">'
+  const evil = '<iframe src="https://evil.example.com/x">'
+  it.each([
+    [`${yt}${yt}</iframe>${evil}<p>rest of post</p>`, `${yt}${yt}</iframe><p>rest of post</p>`],
+    [`${yt}${yt}</iframe>${evil}<b>x</b></iframe>after`, `${yt}${yt}</iframe><b>x</b>after`],
+    [`${yt}${yt}</iframe>${evil}fb</iframe>after`, `${yt}${yt}</iframe>after`],
+    [`${yt}${yt}${yt}</iframe> bad<p>rest</p></iframe> bad<p>rest2</p>`, `${yt}${yt}${yt}</iframe> bad<p>rest</p></iframe> bad<p>rest2</p>`]
+  ])('removes a refused iframe after a nested kept pair (%#)', (input, want) => {
+    expect(untransformed(input)).toBe(want)
+  })
+})

@@ -124,3 +124,9 @@ describe('#2154 third review edges', () => {
     expect(render(`[r]: <https://e.com/a${br}b &copy; c>`)).toContain('&copy; c')
   })
 })
+
+describe('#2154 fourth review edges', () => {
+  it.each([' ', '\n'])('an escaped line break stays inside an angle destination (%j)', (br) => {
+    expect(render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)).not.toContain('%E2%80%8B')
+  })
+})
