@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.53
+
+### Patch Changes
+
+- fix(render-helper): entity protection edge cases (#2154), iframe, image URL and Dapplr edges (#2155) (#2162)
+
 ## 2.5.52
 
 ### Patch Changes

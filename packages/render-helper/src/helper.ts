@@ -97,10 +97,32 @@ const TRAILING_PUNCTUATION = '.,;:!)]}*_~'
  */
 export function imageUrlEnd(token: string): number {
   // Trailing punctuation is prose only without a query or fragment, where a
-  // `;` or `)` can belong to the URL.
+  // `;` or `)` can belong to the URL. With one, only an unbalanced `)` is
+  // prose (`(https://e.com/i.jpg?size=1)`, #2155); `?a=(1)` keeps its own.
   let contentEnd = token.length
   if (!/[?#]/.test(token)) {
     while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--
+  } else {
+    // A `)` is unmatched when no `(` before it is still open, read in source
+    // order: `?a=)&b=(1)` keeps the `)` that closes `(1)`.
+    let open = 0
+    let unmatchedTail = 0
+    for (let i = 0; i < token.length; i++) {
+      if (token[i] === '(') {
+        open++
+        unmatchedTail = 0
+      } else if (token[i] === ')') {
+        if (open > 0) {
+          open--
+          unmatchedTail = 0
+        } else {
+          unmatchedTail++
+        }
+      } else {
+        unmatchedTail = 0
+      }
+    }
+    contentEnd -= unmatchedTail
   }
   IMAGE_EXT_G.lastIndex = 0
   let m: RegExpExecArray | null

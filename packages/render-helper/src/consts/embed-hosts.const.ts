@@ -1,4 +1,4 @@
-import { BITCHUTE_REGEX, BRIGHTEON_REGEX } from './regexes.const'
+import { BITCHUTE_REGEX, BRIGHTEON_REGEX, DAPPLR_REGEX } from './regexes.const'
 
 // Authoritative allowlist of hosts the renderer is allowed to embed in an
 // <iframe>. This is the SAME trust boundary that iframe.method.ts and
@@ -119,6 +119,9 @@ const EMBED_HOST_PATH_PATTERNS: Record<string, RegExp> = {
 const EMBED_SUFFIX_PATH_PATTERNS: Record<string, RegExp> = {
   '.dapplr.in': /^\/file\/dapplr-videos\//
 }
+const EMBED_SUFFIX_TRANSFORM_PATTERNS: Record<string, RegExp> = {
+  '.dapplr.in': DAPPLR_REGEX
+}
 
 /**
  * True iff `value` is an absolute https:// URL whose host is one the renderer
@@ -171,7 +174,12 @@ export function isAllowedEmbedSrc(value?: string | null): boolean {
   const suffix = ALLOWED_EMBED_HOST_SUFFIXES.find(s => host.endsWith(s) && host.length > s.length && !host.startsWith('.'))
   if (!suffix) return false
   const suffixPattern = EMBED_SUFFIX_PATH_PATTERNS[suffix]
-  return !suffixPattern || suffixPattern.test(url.pathname)
+  if (suffixPattern && !suffixPattern.test(url.pathname)) return false
+  // The src as written must also be one iframe() frames (DAPPLR_REGEX), so
+  // the two never disagree: no empty inner label, port, credentials or
+  // backslash path the URL parser would otherwise normalise away (#2155).
+  const transformPattern = EMBED_SUFFIX_TRANSFORM_PATTERNS[suffix]
+  return !transformPattern || transformPattern.test(trimmed)
 }
 
 /**

@@ -46,6 +46,25 @@ function imageUrlEnd(token) {
   let contentEnd = token.length;
   if (!/[?#]/.test(token)) {
     while (contentEnd > 0 && TRAILING_PUNCTUATION.includes(token[contentEnd - 1])) contentEnd--;
+  } else {
+    let open = 0;
+    let unmatchedTail = 0;
+    for (let i2 = 0; i2 < token.length; i2++) {
+      if (token[i2] === "(") {
+        open++;
+        unmatchedTail = 0;
+      } else if (token[i2] === ")") {
+        if (open > 0) {
+          open--;
+          unmatchedTail = 0;
+        } else {
+          unmatchedTail++;
+        }
+      } else {
+        unmatchedTail = 0;
+      }
+    }
+    contentEnd -= unmatchedTail;
   }
   IMAGE_EXT_G.lastIndex = 0;
   let m;
@@ -418,7 +437,7 @@ var D_TUBE_REGEX = /(https?:\/\/d\.tube\/#!\/v\/)(\w+)\/(\w+)/g;
 var D_TUBE_REGEX2 = /(https?:\/\/d\.tube\/v\/)(\w+)\/(\w+)/g;
 var D_TUBE_EMBED_REGEX = /^https:\/\/emb\.d\.tube\/#!\/[^/?#]+\/[^/?#]+(?:$|[?#])/i;
 var TWITCH_REGEX = /https?:\/\/(?:www\.)?twitch\.tv\/(?:(videos)\/)?([a-zA-Z0-9][\w]{3,24})/i;
-var DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-videos\/.*/i;
+var DAPPLR_REGEX = /^(https?:)?\/\/(?:[a-z\d-]+\.)+dapplr\.in\/file\/dapplr-videos\/.*/i;
 var TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i;
 var LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i;
 var ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i;
@@ -445,6 +464,10 @@ var LOOM_EMBED_REGEX = /^(https?:)?\/\/www\.loom\.com\/embed\/([^/?#]+)(?:$|[?#]
 var AUREAL_EMBED_REGEX = /^(https?:)?\/\/(www\.)?(?:aureal-embed)\.web\.app\/([0-9]+)(?:$|[?#])/i;
 var ENTITY_REGEX = /&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-fA-F]{1,6});/ig;
 var ID_WHITELIST = /^[A-Za-z][-A-Za-z0-9_]*$/;
+var PLACEHOLDER_DELIMITERS = ["\u200B", "\u2060", "\u2061", "\u2062", "\u2063", "\u2064"];
+var PRIVATE_DELIMITERS_FROM = 57600;
+var PRIVATE_DELIMITERS_TO = 63743;
+var PLACEHOLDER_DELIMITER_CHARS = /[\u200B\u2060-\u2064\uE100-\uF8FF]/;
 
 // src/consts/allowed-attributes.const.ts
 var ALLOWED_ATTRIBUTES = {
@@ -680,6 +703,9 @@ var EMBED_HOST_PATH_PATTERNS = {
 var EMBED_SUFFIX_PATH_PATTERNS = {
   ".dapplr.in": /^\/file\/dapplr-videos\//
 };
+var EMBED_SUFFIX_TRANSFORM_PATTERNS = {
+  ".dapplr.in": DAPPLR_REGEX
+};
 var isTrimmable = (code2) => code2 >= 1 && code2 <= 32;
 function trimC0AndSpace(value) {
   let start = 0;
@@ -707,7 +733,9 @@ function isAllowedEmbedSrc(value) {
   const suffix = ALLOWED_EMBED_HOST_SUFFIXES.find((s) => host.endsWith(s) && host.length > s.length && !host.startsWith("."));
   if (!suffix) return false;
   const suffixPattern = EMBED_SUFFIX_PATH_PATTERNS[suffix];
-  return !suffixPattern || suffixPattern.test(url.pathname);
+  if (suffixPattern && !suffixPattern.test(url.pathname)) return false;
+  const transformPattern = EMBED_SUFFIX_TRANSFORM_PATTERNS[suffix];
+  return !transformPattern || transformPattern.test(trimmed);
 }
 function canonicalEmbedSrc(src) {
   let s = src.trim().replace(/^(?:https?:)?\/\//i, "https://").replace(/^https:\/\/(?:m\.)?youtube\.com\//i, "https://www.youtube.com/").replace(/^https:\/\/(?:play\.)?3speak\.[a-z]+\//i, "https://play.3speak.tv/");
@@ -1056,6 +1084,61 @@ var hasQuotedAttr = (attrs, wanted) => {
   }
   return false;
 };
+var IFRAME_TAG = /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>|<\/iframe\s*>/gi;
+var IFRAME_START = /<iframe\b/gi;
+var IFRAME_CLOSE = /<\/iframe\s*>/gi;
+function dropRefusedIframes(html) {
+  const find = (re, from) => {
+    re.lastIndex = from;
+    const m = re.exec(html);
+    return m ? [m.index, re.lastIndex] : [-1, 0];
+  };
+  let out = "";
+  let last = 0;
+  let kept = 0;
+  let inner = 0;
+  let surplus = 0;
+  let close = [-2, 0];
+  let next = [-2, 0];
+  IFRAME_TAG.lastIndex = 0;
+  let tag;
+  while ((tag = IFRAME_TAG.exec(html)) !== null) {
+    if (kept > 0 && tag[1] !== void 0) {
+      if (hasQuotedAttr(tag[1], "src")) inner++;
+      continue;
+    }
+    if (tag[1] === void 0) {
+      if (kept > 0) {
+        kept = 0;
+        surplus += inner;
+        inner = 0;
+        continue;
+      }
+      if (surplus > 0) {
+        surplus--;
+        continue;
+      }
+      out += html.slice(last, tag.index);
+      last = IFRAME_TAG.lastIndex;
+      continue;
+    }
+    if (hasQuotedAttr(tag[1], "src")) {
+      kept = 1;
+      continue;
+    }
+    out += html.slice(last, tag.index);
+    last = IFRAME_TAG.lastIndex;
+    if (close[0] !== -1 && close[0] < last) close = find(IFRAME_CLOSE, last);
+    if (close[0] === -1) continue;
+    if (next[0] !== -1 && next[0] < last) next = find(IFRAME_START, last);
+    if (next[0] !== -1 && next[0] < close[0]) continue;
+    const content = html.slice(last, close[0]);
+    if (content.includes("<")) out += content;
+    last = close[1];
+    IFRAME_TAG.lastIndex = last;
+  }
+  return out + html.slice(last);
+}
 var isUrlAttribute = (tag, name) => name === "src" && tag !== "a" || name === "srcset" || name === "poster" || name === "data-href" || EMBED_SRC_DATA_ATTRS.has(name);
 var RENDER_HELPER_RELS = /* @__PURE__ */ new Set(["nofollow ugc noopener", "noopener"]);
 var xssSafeAttrValue = xss.safeAttrValue;
@@ -1218,10 +1301,7 @@ function sanitizeHtml(html, options) {
     let previous;
     do {
       previous = withoutBareIframe;
-      withoutBareIframe = withoutBareIframe.replace(
-        /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
-        (t, attrs) => hasQuotedAttr(attrs, "src") ? t : ""
-      );
+      withoutBareIframe = dropRefusedIframes(withoutBareIframe);
     } while (withoutBareIframe !== previous);
   }
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
@@ -1551,7 +1631,9 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
   let isValidDomain = false;
   if (tpostMatch && tpostMatch.length === 4) {
     if (tpostMatch[1].indexOf("/") === 0) {
-      isValidDomain = !href.split(/[?#]/, 1)[0].includes("\u200B") && isInSiteHref(href);
+      const path = href.split(/[?#]/, 1)[0];
+      const placeholder = forApp ? PLACEHOLDER_DELIMITER_CHARS.test(path) : path.includes("\u200B");
+      isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes(".")) {
       const domain = tpostMatch[1].replace(/^https?:\/\//, "").replace(/^www\./, "");
       isValidDomain = WHITE_LIST.includes(domain);
@@ -4845,6 +4927,12 @@ function decodeEntity(name) {
     return name;
   }
 }
+function typeOf(obj) {
+  return Object.prototype.toString.call(obj);
+}
+function isString(obj) {
+  return typeOf(obj) === "[object String]";
+}
 var hasOwn$1 = Object.prototype.hasOwnProperty;
 function has$1(object, key) {
   return object ? hasOwn$1.call(object, key) : false;
@@ -4944,6 +5032,16 @@ function escapeHtml(str) {
   }
   return str;
 }
+var utils = /* @__PURE__ */ Object.freeze({
+  isString,
+  has: has$1,
+  assign,
+  unescapeMd,
+  isValidEntityCode,
+  fromCodePoint,
+  replaceEntities,
+  escapeHtml
+});
 var rules = {};
 rules.blockquote_open = function() {
   return "<blockquote>\n";
@@ -10844,215 +10942,227 @@ function decodeDestinations(state) {
   }
   return true;
 }
-var QUOTE = -1;
-var isSpace = (line, at) => line.charCodeAt(at) === 32;
-function readContainers(line, from = 0, fromColumn = 0, carriedIndent = 0) {
-  const containers = [];
-  let at = from;
-  let column = fromColumn;
-  for (let first = true; ; first = false) {
-    let indent = first ? carriedIndent : 0;
-    const spacesFrom = indent;
-    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++;
-    if (indent > 3) break;
-    const markerAt = at + indent - spacesFrom;
-    const c = line[markerAt];
-    if (c === ">") {
-      containers.push(QUOTE);
-      at = markerAt + 1;
-      column += indent - spacesFrom + 1;
-      if (isSpace(line, at)) {
-        at++;
-        column++;
-      }
-      continue;
-    }
-    let markerLength = 0;
-    if (c === "-" || c === "*" || c === "+") {
-      markerLength = 1;
-    } else {
-      let d = markerAt;
-      while (d - markerAt < 9 && line.charCodeAt(d) >= 48 && line.charCodeAt(d) <= 57) d++;
-      if (d > markerAt && (line[d] === "." || line[d] === ")")) markerLength = d - markerAt + 1;
-    }
-    if (markerLength === 0) break;
-    const afterMarker = column + indent - spacesFrom + markerLength;
-    let gapColumns = 0;
-    let gapChars = 0;
-    while (gapColumns < 5) {
-      const g = line[markerAt + markerLength + gapChars];
-      if (g === " ") gapColumns++;
-      else if (g === "	") gapColumns += 4 - (afterMarker + gapColumns) % 4;
-      else break;
-      gapChars++;
-    }
-    if (gapChars === 0) break;
-    const wide = gapColumns >= 5;
-    const width = indent + markerLength + (wide ? 1 : gapColumns);
-    containers.push(width);
-    at = markerAt + markerLength + (wide ? 1 : gapChars);
-    column += width - spacesFrom;
-    if (wide) {
-      if (line[at - 1] === "	") {
-        const tabWidth = 4 - afterMarker % 4;
-        return { containers, at, column: column + tabWidth - 1, carry: tabWidth - 1 };
-      }
+var uriNormalized = (url) => {
+  try {
+    url = decodeURI(url);
+  } catch {
+  }
+  return encodeURI(url);
+};
+function undecodedAngleDestination(value, raw, unswap) {
+  try {
+    if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return void 0;
+    return uriNormalized(utils.unescapeMd(unswap(raw)));
+  } catch {
+    return void 0;
+  }
+}
+function angleDestination(src, pos, max) {
+  if (src.charCodeAt(pos) !== 60) return null;
+  for (let at = pos + 1; at < max; at++) {
+    const code2 = src.charCodeAt(at);
+    if (code2 === 10) return null;
+    if (code2 === 62) return src.slice(pos + 1, at);
+    if (code2 === 92 && at + 1 < max) at++;
+  }
+  return null;
+}
+var skipSpaces2 = (src, pos, max) => {
+  while (pos < max && (src.charCodeAt(pos) === 32 || src.charCodeAt(pos) === 10)) pos++;
+  return pos;
+};
+function linkLabelEnd(state, start) {
+  const oldPos = state.pos;
+  const oldFlag = state.isInLabel;
+  state.pos = start + 1;
+  state.isInLabel = true;
+  let level = 1;
+  let end = -1;
+  while (state.pos < state.posMax) {
+    const code2 = state.src.charCodeAt(state.pos);
+    if (code2 === 91) level++;
+    else if (code2 === 93 && --level === 0) {
+      end = state.pos;
       break;
     }
+    state.parser.skipToken(state);
   }
-  return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 };
+  state.pos = oldPos;
+  state.isInLabel = oldFlag;
+  return end;
 }
-function insideContainersAt(line, containers, blank) {
+function withAngleDestinations(rule, unswap) {
+  return (state, silent) => {
+    const start = state.pos;
+    const before = state.tokens.length;
+    const ok = rule(state, silent);
+    if (!ok || silent) return ok;
+    const label = state.src.charCodeAt(start) === 33 ? start + 1 : start;
+    const labelEnd = linkLabelEnd(state, label);
+    if (labelEnd < 0 || state.src.charCodeAt(labelEnd + 1) !== 40) return ok;
+    const raw = angleDestination(state.src, skipSpaces2(state.src, labelEnd + 2, state.posMax), state.posMax);
+    if (raw === null) return ok;
+    const token = state.tokens.slice(before).find((t) => t.type === "link_open" || t.type === "image");
+    if (!token) return ok;
+    const field = token.type === "image" ? "src" : "href";
+    const undecoded = undecodedAngleDestination(token[field], raw, unswap);
+    if (undecoded !== void 0) token[field] = undecoded;
+    return ok;
+  };
+}
+function withAngleReferences(rule, unswap) {
+  return (state) => {
+    const parser = state.inline;
+    const skipToken = parser.skipToken;
+    let seen = [];
+    let seenSet = /* @__PURE__ */ new Set();
+    parser.skipToken = function(inline2) {
+      if (!seenSet.has(inline2)) {
+        seenSet.add(inline2);
+        seen.push(inline2);
+      }
+      return skipToken.call(this, inline2);
+    };
+    const known = new Set(Object.keys(state.env.references ?? {}));
+    const tokens = state.tokens;
+    let result;
+    try {
+      result = rule({ ...state, tokens: [] });
+      for (let i2 = 1; i2 < tokens.length - 1; i2++) {
+        if (tokens[i2].type !== "inline" || tokens[i2 - 1].type !== "paragraph_open" || tokens[i2 + 1].type !== "paragraph_close") continue;
+        const before = tokens[i2].content ?? "";
+        seen = [];
+        seenSet = /* @__PURE__ */ new Set();
+        result = rule({ ...state, tokens: [tokens[i2 - 1], tokens[i2], tokens[i2 + 1]] });
+        const references2 = state.env.references;
+        if (!references2 || before.charCodeAt(0) !== 91) continue;
+        readDefinitions(before, before.length - (tokens[i2].content ?? "").length, seen, references2, known, unswap);
+      }
+    } finally {
+      parser.skipToken = skipToken;
+    }
+    return result;
+  };
+}
+function destinationEnd(src, pos, max) {
+  if (src.charCodeAt(pos) === 60) {
+    const raw = angleDestination(src, pos, max);
+    return raw === null ? -1 : pos + raw.length + 2;
+  }
+  const start = pos;
+  let level = 0;
+  while (pos < max) {
+    const code2 = src.charCodeAt(pos);
+    if (code2 === 32 || code2 < 32 || code2 === 127) break;
+    if (code2 === 92 && pos + 1 < max) {
+      pos += 2;
+      continue;
+    }
+    if (code2 === 40 && ++level > 1) break;
+    if (code2 === 41 && --level < 0) break;
+    pos++;
+  }
+  return pos === start ? -1 : pos;
+}
+function titleEnd(src, pos, max) {
+  let marker = src.charCodeAt(pos);
+  if (marker !== 34 && marker !== 39 && marker !== 40) return -1;
+  if (marker === 40) marker = 41;
+  for (let at = pos + 1; at < max; at++) {
+    const code2 = src.charCodeAt(at);
+    if (code2 === marker) return at + 1;
+    if (code2 === 92 && at + 1 < max) at++;
+  }
+  return -1;
+}
+function definitionEnd(src, labelEnd) {
+  const max = src.length;
+  if (src.charCodeAt(labelEnd + 1) !== 58) return -1;
+  const end = destinationEnd(src, skipSpaces2(src, labelEnd + 2, max), max);
+  if (end === -1) return -1;
+  let pos = skipSpaces2(src, end + 1, max);
+  pos = pos < max && end !== pos ? titleEnd(src, pos, max) : -1;
+  if (pos === -1) pos = end;
+  while (pos < max && src.charCodeAt(pos) === 32) pos++;
+  return pos < max && src.charCodeAt(pos) !== 10 ? -1 : pos;
+}
+function readDefinitions(before, consumed, seen, references2, known, unswap) {
+  const stateAt = /* @__PURE__ */ new Map();
+  for (const inline2 of seen) stateAt.set(before.length - inline2.src.length, inline2);
   let at = 0;
-  let column = 0;
-  let carry = 0;
-  for (let k = 0; k < containers.length; k++) {
-    const container = containers[k];
-    const prefix = { at: -1, column, carry, matched: k, prefixAt: at };
-    if (container === QUOTE) {
-      let indent = 0;
-      while (indent < 4 && isSpace(line, at + indent)) indent++;
-      if (indent > 3 || line[at + indent] !== ">") return prefix;
-      at += indent + 1;
-      column += indent + 1;
-      carry = 0;
-      if (isSpace(line, at)) {
-        at++;
-        column++;
+  while (at < consumed) {
+    const inline2 = stateAt.get(at);
+    const labelEnd = inline2 ? at + linkLabelEnd(inline2, 0) : before.startsWith("[]", at) ? at + 1 : -1;
+    if (labelEnd < at) return;
+    const end = definitionEnd(before, labelEnd);
+    if (end === -1) return;
+    const key = before.slice(at + 1, labelEnd).trim().replace(/\s+/g, " ").toUpperCase();
+    if (!known.has(key)) {
+      known.add(key);
+      const raw = angleDestination(before, skipSpaces2(before, labelEnd + 2, before.length), before.length);
+      if (raw !== null && references2[key]) {
+        const undecoded = undecodedAngleDestination(references2[key].href, raw, unswap);
+        if (undecoded !== void 0) references2[key].href = undecoded;
       }
-    } else {
-      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length };
-      let needed = container - carry;
-      carry = 0;
-      while (needed > 0) {
-        if (isSpace(line, at)) {
-          at++;
-          column++;
-          needed--;
-        } else if (line[at] === "	") {
-          const width = 4 - column % 4;
-          at++;
-          column += width;
-          needed -= width;
-        } else {
-          return prefix;
-        }
-      }
-      carry = -needed;
     }
+    at = end;
+    while (at < before.length && /\s/.test(before[at])) at++;
   }
-  return { at, column, carry, matched: containers.length, prefixAt: at };
 }
-function fenceAt(line, at, column = 0, carried = 0) {
-  let indent = carried;
-  let col = column;
-  let start = at;
-  while (indent <= 3) {
-    if (isSpace(line, start)) {
-      indent++;
-      col++;
-    } else if (line[start] === "	") {
-      const width = 4 - col % 4;
-      indent += width;
-      col += width;
-    } else {
-      break;
-    }
-    start++;
+function placeholderDelimiter(input) {
+  if (input.includes("&")) input += decodeEntities(input);
+  const free = PLACEHOLDER_DELIMITERS.find((d) => !input.includes(d));
+  if (free) return free;
+  const used = new Uint8Array(PRIVATE_DELIMITERS_TO - PRIVATE_DELIMITERS_FROM + 1);
+  for (let i2 = 0; i2 < input.length; i2++) {
+    const code2 = input.charCodeAt(i2);
+    if (code2 >= PRIVATE_DELIMITERS_FROM && code2 <= PRIVATE_DELIMITERS_TO) used[code2 - PRIVATE_DELIMITERS_FROM] = 1;
   }
-  if (indent > 3) return null;
-  const char = line[start];
-  if (char !== "`" && char !== "~") return null;
-  let end = start;
-  while (line[end] === char) end++;
-  return end - start >= 3 ? { char, length: end - start, end } : null;
+  const at = used.indexOf(0);
+  if (at !== -1) return String.fromCharCode(PRIVATE_DELIMITERS_FROM + at);
+  const size = used.length;
+  const pairs = /* @__PURE__ */ new Set();
+  for (let i2 = 0; i2 + 1 < input.length; i2++) {
+    const first = input.charCodeAt(i2) - PRIVATE_DELIMITERS_FROM;
+    const second = input.charCodeAt(i2 + 1) - PRIVATE_DELIMITERS_FROM;
+    if (first >= 0 && first < size && second >= 0 && second < size) pairs.add(first * size + second);
+  }
+  let pair = 0;
+  while (pairs.has(pair)) pair++;
+  return String.fromCharCode(PRIVATE_DELIMITERS_FROM + Math.floor(pair / size), PRIVATE_DELIMITERS_FROM + pair % size);
 }
-function codeRanges(src) {
-  const ranges = [];
-  const runs = [];
-  let item = null;
-  let pos = 0;
-  while (pos < src.length) {
-    const eol = src.indexOf("\n", pos);
-    const lineEnd = eol === -1 ? src.length : eol;
-    const line = src.slice(pos, lineEnd);
-    const blank = line.trim() === "";
-    let containers = [];
-    let open = null;
-    const read = readContainers(line);
-    if (read.containers.length > 0) {
-      containers = read.containers;
-      open = fenceAt(line, read.at, read.column, read.carry);
-      item = containers.some((c) => c !== QUOTE) ? containers : null;
-    } else if (!blank) {
-      if (item) {
-        let inside = insideContainersAt(line, item, false);
-        if (inside.at === -1 && inside.matched > 0) {
-          item = item.slice(0, inside.matched);
-          inside = { ...inside, at: inside.prefixAt };
-        }
-        if (inside.at === -1) {
-          item = null;
-        } else {
-          const nested = readContainers(line, inside.at, inside.column, inside.carry);
-          if (nested.containers.length > 0) {
-            containers = [...item, ...nested.containers];
-            open = fenceAt(line, nested.at, nested.column, nested.carry);
-            if (nested.containers.some((c) => c !== QUOTE)) item = containers;
-          } else if (open = fenceAt(line, inside.at, inside.column, inside.carry)) {
-            containers = item;
-          }
-        }
-      }
-      if (!open) open = fenceAt(line, 0);
+function expandTabsLikeRemarkable(src) {
+  if (!src.includes("	")) return src;
+  const normalized = src.replace(/\u00a0/g, " ").replace(/\r[\n\u0085]|[\u2424\u2028\u0085]/g, "\n");
+  const widths = [];
+  let lineStart = 0;
+  let lastTabPos = 0;
+  for (let offset = 0; offset < normalized.length; offset++) {
+    const code2 = normalized.charCodeAt(offset);
+    if (code2 === 10) {
+      lineStart = offset + 1;
+      lastTabPos = 0;
+    } else if (code2 === 9) {
+      widths.push("    ".slice((offset - lineStart - lastTabPos) % 4));
+      lastTabPos = offset - lineStart + 1;
     }
-    if (open) {
-      const fence = open;
-      let end = src.length;
-      let p2 = lineEnd + 1;
-      while (p2 < src.length) {
-        const e = src.indexOf("\n", p2);
-        const le = e === -1 ? src.length : e;
-        const next = src.slice(p2, le);
-        const inside = insideContainersAt(next, containers, next.trim() === "");
-        const at = inside.at;
-        if (at === -1) {
-          end = p2 - 1;
-          break;
-        }
-        const close = fenceAt(next, at, inside.column, inside.carry);
-        if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === "") {
-          end = le;
-          break;
-        }
-        p2 = le + 1;
-      }
-      ranges.push([pos, end]);
-      pos = end + 1;
-      continue;
+  }
+  let k = 0;
+  return src.replace(/\t/g, () => widths[k++]);
+}
+function restoreCodeEntities(unswap) {
+  const restore = (token) => {
+    if (token.type !== "code" && token.type !== "fence") return;
+    if (token.content) token.content = unswap(token.content);
+    if (token.params) token.params = unswap(token.params);
+  };
+  return (state) => {
+    for (const token of state.tokens) {
+      restore(token);
+      if (token.type === "inline" && token.children) token.children.forEach(restore);
     }
-    for (let i2 = pos; i2 < lineEnd; i2++) {
-      if (src.charCodeAt(i2) !== 96) continue;
-      let j = i2;
-      while (j < lineEnd && src.charCodeAt(j) === 96) j++;
-      runs.push([i2, j - i2]);
-      i2 = j - 1;
-    }
-    pos = lineEnd + 1;
-  }
-  const nextSame = new Array(runs.length).fill(-1);
-  const lastOfLength = /* @__PURE__ */ new Map();
-  for (let k = runs.length - 1; k >= 0; k--) {
-    nextSame[k] = lastOfLength.get(runs[k][1]) ?? -1;
-    lastOfLength.set(runs[k][1], k);
-  }
-  for (let k = 0; k < runs.length; k++) {
-    const close = nextSame[k];
-    if (close === -1) continue;
-    ranges.push([runs[k][0], runs[close][0] + runs[close][1]]);
-    k = close;
-  }
-  return ranges.sort((a2, b) => a2[0] - b[0]);
+    return true;
+  };
 }
 var lolightPromise = null;
 var lolightModule = null;
@@ -11133,8 +11243,10 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     }
   }).use(linkify2);
   md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
+  wrapRule(md.inline.ruler, "links", (rule) => withAngleDestinations(rule, (text3) => unswap(text3)));
   wrapRule(md.inline.ruler, "links", withPairedSource);
   wrapRule(md.inline.ruler, "autolink", withOriginalSource);
+  wrapRule(md.core.ruler, "references", (rule) => withAngleReferences(rule, (text3) => unswap(text3)));
   wrapRule(md.core.ruler, "references", withPairedReferences);
   md.core.ruler.enable([
     "abbr"
@@ -11156,9 +11268,13 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   }
   let output = "";
   ampEscapes = input.includes("\\&") && !hasAmpSentinel(input);
-  const entities2 = input.match(ENTITY_REGEX);
+  const entities2 = forApp ? input.match(ENTITY_REGEX) : null;
   const entityPlaceholders = [];
-  if (entities2 && forApp) {
+  const delimiter = entities2 ? placeholderDelimiter(input) : null;
+  const placeholderRe = delimiter ? new RegExp(`${delimiter}(0|[1-9]\\d*)${delimiter}`, "g") : null;
+  const unswap = (text3) => placeholderRe ? text3.replace(placeholderRe, (placeholder, index) => entityPlaceholders[+index] ?? placeholder) : text3;
+  if (entities2 && delimiter) {
+    input = expandTabsLikeRemarkable(input);
     const indexOf2 = /* @__PURE__ */ new Map();
     for (const entity2 of entities2) {
       if (!indexOf2.has(entity2)) {
@@ -11173,26 +11289,17 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
     };
     const swap = (text3) => text3.replace(ENTITY_REGEX, (entity2, ...rest) => {
       const at = rest[rest.length - 2];
-      return escaped(text3, at) ? entity2 : `\u200B${indexOf2.get(entity2)}\u200B`;
+      return escaped(text3, at) ? entity2 : `${delimiter}${indexOf2.get(entity2)}${delimiter}`;
     });
-    const protect = (text3) => {
-      let out = "";
-      let last2 = 0;
-      for (const m of regexMatches(text3, URL_RUN)) {
-        const at = m.index ?? 0;
-        out += swap(text3.slice(last2, at)) + m[0];
-        last2 = at + m[0].length;
-      }
-      return out + swap(text3.slice(last2));
-    };
     let protectedInput = "";
     let last = 0;
-    for (const [start, end] of codeRanges(input)) {
-      if (start < last) continue;
-      protectedInput += protect(input.slice(last, start)) + input.slice(start, end);
-      last = end;
+    for (const m of regexMatches(input, URL_RUN)) {
+      const at = m.index ?? 0;
+      protectedInput += swap(input.slice(last, at)) + m[0];
+      last = at + m[0].length;
     }
-    input = protectedInput + protect(input.slice(last));
+    input = protectedInput + swap(input.slice(last));
+    md.core.ruler.before("linkify", "restore_code_entities", restoreCodeEntities(unswap), {});
   }
   const untransformed = { ...renderOptions, untransformed: true };
   const nonce = createRenderNonce();
@@ -11221,21 +11328,8 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
       output = sanitizeHtml(output || (ampEscapes ? sourceAmp(md.render(input)) : md.render(input)), untransformed);
     }
   }
-  if (forApp && output && entityPlaceholders.length > 0) {
-    const placeholderRe = /\u200B(0|[1-9]\d*)\u200B/g;
-    let restored = "";
-    let last = 0;
-    let match;
-    while ((match = placeholderRe.exec(output)) !== null) {
-      const entity2 = entityPlaceholders[+match[1]];
-      if (entity2 === void 0) {
-        placeholderRe.lastIndex = match.index + 1;
-        continue;
-      }
-      restored += output.slice(last, match.index) + entity2;
-      last = placeholderRe.lastIndex;
-    }
-    output = restored + output.slice(last);
+  if (output && entityPlaceholders.length > 0) {
+    output = unswap(output);
   }
   output = stripDocumentWrapper(output);
   return sanitizeHtml(output, { ...renderOptions, renderNonce: nonce });
