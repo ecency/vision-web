@@ -203,3 +203,13 @@ describe('#2154 reference definitions per paragraph (PR review)', () => {
   })
 
 })
+
+describe('#2154 definitions walked as the parser consumes them (PR review)', () => {
+  it.each([
+    '[a]: <https://e.com/u> "t\n[]: https://e.com/fake"\n[]: <https://e.com/a b?q=&amp;amp;>\n\n[][]',
+    '[a]: <https://e.com/u> (t\n[]: https://e.com/fake)\n[]: <https://e.com/a b?q=&amp;amp;>\n\n[][]',
+    '[x]:\n[]:\n[]: <https://e.com/a b?q=&amp;amp;>\n\n[][]'
+  ])('text inside another definition never claims its label (%#)', (body) => {
+    for (const forApp of [true, false]) expect(render(body, forApp)).toContain('https://e.com/a%20b?q=&amp;amp;"')
+  })
+})

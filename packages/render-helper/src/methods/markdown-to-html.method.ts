@@ -307,10 +307,8 @@ type CoreState = {
 // an attempt starting there or later is the one that failed. The rule runs on
 // one paragraph at a time (it reads nothing else), so the states collected
 // through skipToken, which the label scan calls, are that paragraph's
-// attempts. An empty label (`[]:`, which Remarkable accepts) calls nothing, so
-// those are looked for in the consumed text; a misread there never changes a
-// destination (undecodedAngleDestination compares with the parser's value).
-// Each definition is read in source order, the first of a label winning.
+// attempts. An empty label (`[]:`, which Remarkable accepts) calls nothing;
+// readDefinitions walks the definitions as the rule consumed them.
 function withAngleReferences(rule: (state: CoreState) => unknown, unswap: Unswap): (state: CoreState) => unknown {
   return (state) => {
     const parser = state.inline
@@ -347,6 +345,61 @@ function withAngleReferences(rule: (state: CoreState) => unknown, unswap: Unswap
   }
 }
 
+// Where a definition's destination starting at `pos` ends, read as
+// Remarkable's parseLinkDestination reads it, or -1.
+function destinationEnd(src: string, pos: number, max: number): number {
+  if (src.charCodeAt(pos) === 0x3c) {
+    const raw = angleDestination(src, pos, max)
+    return raw === null ? -1 : pos + raw.length + 2
+  }
+  const start = pos
+  let level = 0
+  while (pos < max) {
+    const code = src.charCodeAt(pos)
+    if (code === 0x20 || code < 0x20 || code === 0x7f) break
+    if (code === 0x5c && pos + 1 < max) {
+      pos += 2
+      continue
+    }
+    if (code === 0x28 && ++level > 1) break
+    if (code === 0x29 && --level < 0) break
+    pos++
+  }
+  return pos === start ? -1 : pos
+}
+
+// Where a title starting at `pos` ends, as parseLinkTitle reads it, or -1.
+function titleEnd(src: string, pos: number, max: number): number {
+  let marker = src.charCodeAt(pos)
+  if (marker !== 0x22 && marker !== 0x27 && marker !== 0x28) return -1
+  if (marker === 0x28) marker = 0x29
+  for (let at = pos + 1; at < max; at++) {
+    const code = src.charCodeAt(at)
+    if (code === marker) return at + 1
+    if (code === 0x5c && at + 1 < max) at++
+  }
+  return -1
+}
+
+// Where the definition whose label ends at `labelEnd` ends (at its line
+// break), as parseReference reads it, or -1.
+function definitionEnd(src: string, labelEnd: number): number {
+  const max = src.length
+  if (src.charCodeAt(labelEnd + 1) !== 0x3a) return -1
+  const end = destinationEnd(src, skipSpaces(src, labelEnd + 2, max), max)
+  if (end === -1) return -1
+  let pos = skipSpaces(src, end + 1, max)
+  pos = pos < max && end !== pos ? titleEnd(src, pos, max) : -1
+  if (pos === -1) pos = end
+  while (pos < max && src.charCodeAt(pos) === 0x20) pos++
+  return pos < max && src.charCodeAt(pos) !== 0x0a ? -1 : pos
+}
+
+// The paragraph's definitions, walked as the core rule consumes them: each
+// starts where the trimmed rest of the previous one does. A label is read
+// with its own parse state (the label scan's cache), or is empty (`[]`, which
+// calls no skipToken). Each definition reads in source order, the first of a
+// label winning.
 function readDefinitions(
   before: string,
   consumed: number,
@@ -355,26 +408,27 @@ function readDefinitions(
   known: Set<string>,
   unswap: Unswap
 ): void {
-  const attempts: Array<{ at: number; inline?: InlineState }> = seen.map((inline) => ({ at: before.length - inline.src.length, inline }))
-  for (let at = before.indexOf('[]:'); at !== -1 && at < consumed; at = before.indexOf('[]:', at + 1)) {
-    // An attempt starts a line, after whatever the parser's trim() skips.
-    let k = at - 1
-    while (k >= 0 && before.charCodeAt(k) !== 0x0a && /\s/.test(before[k])) k--
-    if (k === -1 || before.charCodeAt(k) === 0x0a) attempts.push({ at })
-  }
-  attempts.sort((x, y) => x.at - y.at)
-  for (const { at, inline } of attempts) {
-    if (at >= consumed) break
-    const labelEnd = inline ? at + linkLabelEnd(inline, 0) : at + 1
-    if (labelEnd < at || before.charCodeAt(labelEnd) !== 0x5d || before.charCodeAt(labelEnd + 1) !== 0x3a) continue
+  const stateAt = new Map<number, InlineState>()
+  for (const inline of seen) stateAt.set(before.length - inline.src.length, inline)
+  let at = 0
+  while (at < consumed) {
+    const inline = stateAt.get(at)
+    const labelEnd = inline ? at + linkLabelEnd(inline, 0) : before.startsWith('[]', at) ? at + 1 : -1
+    if (labelEnd < at) return
+    const end = definitionEnd(before, labelEnd)
+    if (end === -1) return
     const key = before.slice(at + 1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
-    if (known.has(key)) continue
-    const raw = angleDestination(before, skipSpaces(before, labelEnd + 2, before.length), before.length)
-    const undecoded = raw === null || !references[key] ? undefined : undecodedAngleDestination(references[key].href, raw, unswap)
-    // A `[]:` found by text may sit inside another definition's title: an
-    // angle one whose value is not the label's then claims nothing.
-    if (inline || raw === null || undecoded !== undefined) known.add(key)
-    if (undecoded !== undefined) references[key].href = undecoded
+    if (!known.has(key)) {
+      known.add(key)
+      const raw = angleDestination(before, skipSpaces(before, labelEnd + 2, before.length), before.length)
+      if (raw !== null && references[key]) {
+        const undecoded = undecodedAngleDestination(references[key].href, raw, unswap)
+        if (undecoded !== undefined) references[key].href = undecoded
+      }
+    }
+    // The rest is trimmed (String.prototype.trim's whitespace) before the next.
+    at = end
+    while (at < before.length && /\s/.test(before[at])) at++
   }
 }
 
