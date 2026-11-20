@@ -5,7 +5,7 @@ import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
 import { decodeCompleteReferences, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
-import { Remarkable } from 'remarkable'
+import { Remarkable, utils } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
 import * as htmlparser2 from 'htmlparser2'
 import * as domSerializerModule from 'dom-serializer'
@@ -19,8 +19,11 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092),
 // and so does an unclosed `(` (`a_(x&amp;y.png`), which no markdown construct
 // closes. Nothing follows the repetition, so the first (greedy) parse is taken
-// without backtracking: linear.
-const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+// without backtracking: linear. An angle-bracket destination or autolink is
+// taken whole to its `>`, as the parser reads it: a `)` or a space inside
+// does not end it (`[x](<https://e.com/a)b?x=1&amp;y=2>)`, #2154). It holds
+// no `<`, so a failed attempt stops at the next one: linear too.
+const URL_RUN = /<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
@@ -189,270 +192,187 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
   return true
 }
 
-// The containers a line sits in, outermost first: QUOTE for a blockquote
-// marker, or a list item's content width (marker, its indent and the spaces
-// after it). Read with a moving index, never a pattern: a line of thousands
-// of list markers is one pass (an earlier pattern backtracked on it).
-const QUOTE = -1
-const isSpace = (line: string, at: number) => line.charCodeAt(at) === 0x20
+// An angle-bracket destination (`[x](<url>)`, `[r]: <url>`) is decoded by
+// Remarkable itself (normalizeLink: references, then decodeURI/encodeURI), and
+// decode_destinations decoded it again, so `<?q=&amp;amp;>` named `?q=&` where
+// the plain form names `?q=&amp;` (#2154). Its value goes back to the source,
+// URI-normalised as Remarkable does but undecoded, and decode_destinations
+// decodes it once like every other destination. Only when the token holds
+// exactly what Remarkable makes of that source, so a misread never changes one.
+const uriNormalized = (url: string): string => {
+  try {
+    url = decodeURI(url)
+  } catch {
+    // Remarkable keeps a malformed URI as it is too.
+  }
+  return encodeURI(url)
+}
 
-function readContainers(
-  line: string,
-  from = 0,
-  fromColumn = 0,
-  carriedIndent = 0
-): { containers: number[]; at: number; column: number; carry: number } {
-  const containers: number[] = []
-  let at = from
-  // Columns, not characters: a tab after a list marker indents to the next
-  // multiple of four, as the parser counts it. Containers hold content widths
-  // in columns, which insideContainers strips the same way.
-  let column = fromColumn
-  for (let first = true; ; first = false) {
-    // Columns of indent a tab already covered before `from` count as indent.
-    let indent = first ? carriedIndent : 0
-    const spacesFrom = indent
-    while (indent < 4 && isSpace(line, at + indent - spacesFrom)) indent++
-    if (indent > 3) break
-    const markerAt = at + indent - spacesFrom
-    const c = line[markerAt]
-    if (c === '>') {
-      containers.push(QUOTE)
-      at = markerAt + 1
-      column += indent - spacesFrom + 1
-      if (isSpace(line, at)) {
-        at++
-        column++
-      }
-      continue
-    }
-    let markerLength = 0
-    if (c === '-' || c === '*' || c === '+') {
-      markerLength = 1
-    } else {
-      let d = markerAt
-      while (d - markerAt < 9 && line.charCodeAt(d) >= 0x30 && line.charCodeAt(d) <= 0x39) d++
-      if (d > markerAt && (line[d] === '.' || line[d] === ')')) markerLength = d - markerAt + 1
-    }
-    if (markerLength === 0) break
-    const afterMarker = column + indent - spacesFrom + markerLength
-    let gapColumns = 0
-    let gapChars = 0
-    while (gapColumns < 5) {
-      const g = line[markerAt + markerLength + gapChars]
-      if (g === ' ') gapColumns++
-      else if (g === '\t') gapColumns += 4 - ((afterMarker + gapColumns) % 4)
-      else break
-      gapChars++
-    }
-    if (gapChars === 0) break
-    // Five or more columns after the marker: the content starts one column
-    // in, and the rest is an indented code block.
-    const wide = gapColumns >= 5
-    const width = indent + markerLength + (wide ? 1 : gapColumns)
-    containers.push(width)
-    at = markerAt + markerLength + (wide ? 1 : gapChars)
-    column += width - spacesFrom
-    if (wide) {
-      // A tab there is consumed whole but the content starts one column in:
-      // its other columns count as indent of what follows (so `-\t\t~~~` is
-      // indented code, not a fence). Nothing after a wide gap opens a container.
-      if (line[at - 1] === '\t') {
-        const tabWidth = 4 - (afterMarker % 4)
-        return { containers, at, column: column + tabWidth - 1, carry: tabWidth - 1 }
-      }
+function undecodedAngleDestination(value: string | undefined, raw: string): string | undefined {
+  const unescaped = utils.unescapeMd(raw)
+  try {
+    return value === uriNormalized(utils.replaceEntities(unescaped)) ? uriNormalized(unescaped) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// What between `<` and `>` an angle destination at `pos` holds, read as
+// Remarkable's parseLinkDestination reads it, or null when there is none.
+function angleDestination(src: string, pos: number, max: number): string | null {
+  if (src.charCodeAt(pos) !== 0x3c) return null
+  for (let at = pos + 1; at < max; at++) {
+    const code = src.charCodeAt(at)
+    if (code === 0x0a) return null
+    if (code === 0x3e) return src.slice(pos + 1, at)
+    if (code === 0x5c && at + 1 < max) at++
+  }
+  return null
+}
+
+const skipSpaces = (src: string, pos: number, max: number): number => {
+  while (pos < max && (src.charCodeAt(pos) === 0x20 || src.charCodeAt(pos) === 0x0a)) pos++
+  return pos
+}
+
+type InlineToken = { type: string; href?: string; src?: string }
+type InlineState = {
+  src: string
+  pos: number
+  posMax: number
+  isInLabel?: boolean
+  tokens: InlineToken[]
+  parser: { skipToken: (state: InlineState) => void }
+}
+
+// Where the label opened by the `[` at `start` ends, read exactly as
+// Remarkable's parseLinkLabel does (with its own skipToken, whose cache the
+// parse that just ran filled, so each step is a lookup), or -1.
+function linkLabelEnd(state: InlineState, start: number): number {
+  const oldPos = state.pos
+  const oldFlag = state.isInLabel
+  state.pos = start + 1
+  state.isInLabel = true
+  let level = 1
+  let end = -1
+  while (state.pos < state.posMax) {
+    const code = state.src.charCodeAt(state.pos)
+    if (code === 0x5b) level++
+    else if (code === 0x5d && --level === 0) {
+      end = state.pos
       break
     }
+    state.parser.skipToken(state)
   }
-  // No container read: the carried indent still counts before the content.
-  return { containers, at, column, carry: containers.length === 0 ? carriedIndent : 0 }
+  state.pos = oldPos
+  state.isInLabel = oldFlag
+  return end
 }
 
-// Where a line's content starts inside `containers`: its index, its column,
-// and the columns of a tab that ran past the last container's indent (they
-// count as indent of what follows). A blockquote needs its `>`, a list item its
-// content indent, and a blank line stays in the item; a tab indents to the
-// next multiple of four columns, as the parser counts it. A line outside the
-// containers has at = -1, and `matched`/`prefixAt` say how many of them it is
-// still inside and where that prefix ends, for a caller that falls back to the
-// enclosing item.
-type Inside = { at: number; column: number; carry: number; matched: number; prefixAt: number }
-
-function insideContainersAt(line: string, containers: number[], blank: boolean): Inside {
-  let at = 0
-  let column = 0
-  let carry = 0
-  for (let k = 0; k < containers.length; k++) {
-    const container = containers[k]
-    const prefix = { at: -1, column, carry, matched: k, prefixAt: at }
-    if (container === QUOTE) {
-      let indent = 0
-      while (indent < 4 && isSpace(line, at + indent)) indent++
-      if (indent > 3 || line[at + indent] !== '>') return prefix
-      at += indent + 1
-      column += indent + 1
-      carry = 0
-      if (isSpace(line, at)) {
-        at++
-        column++
-      }
-    } else {
-      if (blank) return { at: line.length, column, carry: 0, matched: containers.length, prefixAt: line.length }
-      let needed = container - carry
-      carry = 0
-      while (needed > 0) {
-        if (isSpace(line, at)) {
-          at++
-          column++
-          needed--
-        } else if (line[at] === '\t') {
-          const width = 4 - (column % 4)
-          at++
-          column += width
-          needed -= width
-        } else {
-          return prefix
-        }
-      }
-      carry = -needed
-    }
+function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => boolean) {
+  return (state: InlineState, silent?: boolean): boolean => {
+    const start = state.pos
+    const before = state.tokens.length
+    const ok = rule(state, silent)
+    if (!ok || silent) return ok
+    const label = state.src.charCodeAt(start) === 0x21 ? start + 1 : start
+    const labelEnd = linkLabelEnd(state, label)
+    if (labelEnd < 0 || state.src.charCodeAt(labelEnd + 1) !== 0x28) return ok
+    const raw = angleDestination(state.src, skipSpaces(state.src, labelEnd + 2, state.posMax), state.posMax)
+    if (raw === null) return ok
+    const token = state.tokens.slice(before).find((t) => t.type === 'link_open' || t.type === 'image')
+    if (!token) return ok
+    const field = token.type === 'image' ? 'src' : 'href'
+    const undecoded = undecodedAngleDestination(token[field], raw)
+    if (undecoded !== undefined) token[field] = undecoded
+    return ok
   }
-  return { at, column, carry, matched: containers.length, prefixAt: at }
 }
 
-// The fence run (``` or ~~~, three or more) a line has at `at` after up to
-// three columns of indent, or null. `column` is where `at` sits on the line
-// and `carried` the columns a tab before `at` already indents past the
-// container, so a tab counts to the next four-column stop as the parser reads it.
-function fenceAt(line: string, at: number, column = 0, carried = 0): { char: string; length: number; end: number } | null {
-  let indent = carried
-  let col = column
-  let start = at
-  while (indent <= 3) {
-    if (isSpace(line, start)) {
-      indent++
-      col++
-    } else if (line[start] === '\t') {
-      const width = 4 - (col % 4)
-      indent += width
-      col += width
-    } else {
-      break
-    }
-    start++
-  }
-  if (indent > 3) return null
-  const char = line[start]
-  if (char !== '`' && char !== '~') return null
-  let end = start
-  while (line[end] === char) end++
-  return end - start >= 3 ? { char, length: end - start, end } : null
+type CoreState = {
+  tokens: Array<{ type: string; content?: string }>
+  inline: InlineState['parser']
+  env: { references?: Record<string, { href: string }> }
 }
 
-/**
- * Code in the markdown source, as [start, end) ranges in order: fenced blocks
- * (``` or ~~~ at a line start, inside blockquotes and list items too, to the
- * matching close, the end of the container it sits in, or the end) and inline
- * code spans (a backtick run to the next run of the same length). Linear: each
- * line is read once, and each backtick run is paired through a precomputed
- * "next run of the same length" table rather than a search.
- */
-function codeRanges(src: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = []
-  const runs: Array<[number, number]> = [] // [start, length] of backtick runs outside fences
-  // The containers of the last list item opened, for its continuation lines
-  // (`- item`, blank, then an indented fence).
-  let item: number[] | null = null
-  let pos = 0
-  while (pos < src.length) {
-    const eol = src.indexOf('\n', pos)
-    const lineEnd = eol === -1 ? src.length : eol
-    const line = src.slice(pos, lineEnd)
-    const blank = line.trim() === ''
-    let containers: number[] = []
-    let open: ReturnType<typeof fenceAt> = null
-    const read = readContainers(line)
-    if (read.containers.length > 0) {
-      containers = read.containers
-      open = fenceAt(line, read.at, read.column, read.carry)
-      // A quote line outside the item ends it.
-      item = containers.some((c) => c !== QUOTE) ? containers : null
-    } else if (!blank) {
-      if (item) {
-        let inside = insideContainersAt(line, item, false)
-        if (inside.at === -1 && inside.matched > 0) {
-          // Out of the innermost item but still inside an enclosing one (a
-          // fence back at the parent's indent after nested bullets).
-          item = item.slice(0, inside.matched)
-          inside = { ...inside, at: inside.prefixAt }
-        }
-        if (inside.at === -1) {
-          item = null
-        } else {
-          // A nested item on the parent's continuation line (`- a`, then
-          // `\t- ```` or `  - ````), its markers read from the right column.
-          const nested = readContainers(line, inside.at, inside.column, inside.carry)
-          if (nested.containers.length > 0) {
-            containers = [...item, ...nested.containers]
-            open = fenceAt(line, nested.at, nested.column, nested.carry)
-            if (nested.containers.some((c) => c !== QUOTE)) item = containers
-          } else if ((open = fenceAt(line, inside.at, inside.column, inside.carry))) {
-            containers = item
-          }
-        }
-      }
-      if (!open) open = fenceAt(line, 0)
+// The same for reference definitions. Each one is parsed on its own inline
+// state, which the label scan hands to skipToken: those are collected while
+// the rule runs, and each definition is read back from its own state after.
+function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreState) => unknown {
+  return (state) => {
+    const parser = state.inline
+    const skipToken = parser.skipToken
+    const seen = new Set<InlineState>()
+    const known = new Set(Object.keys(state.env.references ?? {}))
+    parser.skipToken = function (this: unknown, inline: InlineState) {
+      seen.add(inline)
+      return skipToken.call(this, inline)
     }
-    if (open) {
-      const fence = open
-      let end = src.length
-      let p = lineEnd + 1
-      while (p < src.length) {
-        const e = src.indexOf('\n', p)
-        const le = e === -1 ? src.length : e
-        const next = src.slice(p, le)
-        // The fence ends with its container: a quote line without `>`, a
-        // list item line indented less than the item's content.
-        const inside = insideContainersAt(next, containers, next.trim() === '')
-        const at = inside.at
-        if (at === -1) {
-          end = p - 1
-          break
-        }
-        const close = fenceAt(next, at, inside.column, inside.carry)
-        if (close && close.char === fence.char && close.length >= fence.length && next.slice(close.end).trim() === '') {
-          end = le
-          break
-        }
-        p = le + 1
-      }
-      ranges.push([pos, end])
-      pos = end + 1
-      continue
+    let result: unknown
+    try {
+      result = rule(state)
+    } finally {
+      parser.skipToken = skipToken
     }
-    for (let i = pos; i < lineEnd; i++) {
-      if (src.charCodeAt(i) !== 0x60) continue
-      let j = i
-      while (j < lineEnd && src.charCodeAt(j) === 0x60) j++
-      runs.push([i, j - i])
-      i = j - 1
+    const references = state.env.references
+    if (!references) return result
+    for (const inline of seen) {
+      if (inline.src.charCodeAt(0) !== 0x5b) continue
+      const labelEnd = linkLabelEnd(inline, 0)
+      if (labelEnd < 0 || inline.src.charCodeAt(labelEnd + 1) !== 0x3a) continue
+      const raw = angleDestination(inline.src, skipSpaces(inline.src, labelEnd + 2, inline.posMax), inline.posMax)
+      if (raw === null) continue
+      // The first definition of a label wins, as in the parser.
+      const key = inline.src.slice(1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
+      if (known.has(key) || !references[key]) continue
+      known.add(key)
+      const undecoded = undecodedAngleDestination(references[key].href, raw)
+      if (undecoded !== undefined) references[key].href = undecoded
     }
-    pos = lineEnd + 1
+    return result
   }
-  // Inline spans: a run opens a span closed by the next run of the same length.
-  const nextSame: number[] = new Array(runs.length).fill(-1)
-  const lastOfLength = new Map<number, number>()
-  for (let k = runs.length - 1; k >= 0; k--) {
-    nextSame[k] = lastOfLength.get(runs[k][1]) ?? -1
-    lastOfLength.set(runs[k][1], k)
+}
+
+// Entities the app render swaps out wait as DELIMITER index DELIMITER. The
+// delimiter is a character the body does not hold, so author text can never
+// read as a placeholder (#2154): a zero-width space as before, or the first
+// free one of a few other invisible characters, then the private use area
+// (past AMP_PAIR). Null when none is free: the body then renders unprotected.
+const PLACEHOLDER_DELIMITERS = ['​', '⁠', '⁡', '⁢', '⁣', '⁤']
+const PRIVATE_DELIMITERS_FROM = 0xe100
+const PRIVATE_DELIMITERS_TO = 0xf8ff
+
+function placeholderDelimiter(input: string): string | null {
+  const free = PLACEHOLDER_DELIMITERS.find((d) => !input.includes(d))
+  if (free) return free
+  const used = new Uint8Array(PRIVATE_DELIMITERS_TO - PRIVATE_DELIMITERS_FROM + 1)
+  for (let i = 0; i < input.length; i++) {
+    const code = input.charCodeAt(i)
+    if (code >= PRIVATE_DELIMITERS_FROM && code <= PRIVATE_DELIMITERS_TO) used[code - PRIVATE_DELIMITERS_FROM] = 1
   }
-  for (let k = 0; k < runs.length; k++) {
-    const close = nextSame[k]
-    if (close === -1) continue
-    ranges.push([runs[k][0], runs[close][0] + runs[close][1]])
-    k = close
+  const at = used.indexOf(0)
+  return at === -1 ? null : String.fromCharCode(PRIVATE_DELIMITERS_FROM + at)
+}
+
+type CodeToken = { type: string; content?: string; params?: string; children?: CodeToken[] }
+
+// Code renders its text verbatim, so it gets back the entities as written,
+// in exactly the code the parser found: blocks fenced or indented, and spans
+// paired within one block (#2093, #2154). Before the highlighter runs, which
+// split a placeholder across spans (`0 1b2` for `&amp; &lt;b&gt;`, #2093).
+function restoreCodeEntities(unswap: (text: string) => string) {
+  const restore = (token: CodeToken) => {
+    if (token.type !== 'code' && token.type !== 'fence') return
+    if (token.content) token.content = unswap(token.content)
+    if (token.params) token.params = unswap(token.params)
   }
-  return ranges.sort((a, b) => a[0] - b[0])
+  return (state: { tokens: CodeToken[] }): boolean => {
+    for (const token of state.tokens) {
+      restore(token)
+      if (token.type === 'inline' && token.children) token.children.forEach(restore)
+    }
+    return true
+  }
 }
 
 // Conditionally load lolight for syntax highlighting (Node.js only)
@@ -611,8 +531,12 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // Before linkify, so every link and image token here was written as
   // markdown (linkify's hrefs come from text, already decoded).
   md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})
+  // The angle wrappers go on first, so they read the source the paired
+  // wrappers hand the rule.
+  wrapRule(md.inline.ruler as unknown as RuleList, 'links', withAngleDestinations)
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
   wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', withOriginalSource)
+  wrapRule(md.core.ruler as unknown as RuleList, 'references', withAngleReferences)
   wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'
@@ -638,13 +562,17 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
   ampEscapes = input.includes('\\&') && !hasAmpSentinel(input)
 
-  // Replace entities with deterministic placeholders to preserve them during rendering
-  const entities = input.match(ENTITY_REGEX);
+  // Replace entities with placeholders to preserve them during rendering
+  const entities = forApp ? input.match(ENTITY_REGEX) : null;
   const entityPlaceholders: string[] = [];
+  const delimiter = entities ? placeholderDelimiter(input) : null;
+  const placeholderRe = delimiter ? new RegExp(`${delimiter}(0|[1-9]\\d*)${delimiter}`, 'g') : null;
+  const unswap = (text: string) =>
+    placeholderRe ? text.replace(placeholderRe, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder) : text;
 
-  if (entities && forApp) {
+  if (entities && delimiter) {
     // Deduplicate entities to avoid duplicate placeholders. Each distinct entity
-    // gets a markdown-inert placeholder (zero-width spaces around its index).
+    // gets a markdown-inert placeholder (the delimiter around its index).
     const indexOf = new Map<string, number>();
     for (const entity of entities) {
       if (!indexOf.has(entity)) {
@@ -659,10 +587,8 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     // URL than the post names (#2092). One regex pass per segment, linear in
     // its length (a split/join per distinct entity was not).
     //
-    // Code is left out too: a code span or block renders its text verbatim,
-    // and the syntax highlighter split a placeholder across spans, so the
-    // restore missed it and the app showed `0 1b2` for `&amp; &lt;b&gt;`
-    // (#2093). Code renders exactly as on the web.
+    // Code is swapped too and gets its entities back from the parser's own
+    // code tokens (restoreCodeEntities), so it renders exactly as on the web.
     // An escaped `\\&` (odd backslash run) is a literal ampersand on the
     // web, in a destination of any scheme and in text: the entity after it is
     // not one, so it is left for the parser as the web leaves it (#2098).
@@ -674,26 +600,17 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     const swap = (text: string) =>
       text.replace(ENTITY_REGEX, (entity: string, ...rest: unknown[]) => {
         const at = rest[rest.length - 2] as number;
-        return escaped(text, at) ? entity : `\u200B${indexOf.get(entity)}\u200B`;
+        return escaped(text, at) ? entity : `${delimiter}${indexOf.get(entity)}${delimiter}`;
       });
-    const protect = (text: string) => {
-      let out = '';
-      let last = 0;
-      for (const m of regexMatches(text, URL_RUN)) {
-        const at = m.index ?? 0;
-        out += swap(text.slice(last, at)) + m[0];
-        last = at + m[0].length;
-      }
-      return out + swap(text.slice(last));
-    };
     let protectedInput = '';
     let last = 0;
-    for (const [start, end] of codeRanges(input)) {
-      if (start < last) continue;
-      protectedInput += protect(input.slice(last, start)) + input.slice(start, end);
-      last = end;
+    for (const m of regexMatches(input, URL_RUN)) {
+      const at = m.index ?? 0;
+      protectedInput += swap(input.slice(last, at)) + m[0];
+      last = at + m[0].length;
     }
-    input = protectedInput + protect(input.slice(last));
+    input = protectedInput + swap(input.slice(last));
+    md.core.ruler.before('linkify', 'restore_code_entities', restoreCodeEntities(unswap), {})
   }
 
   // The sanitize-only fallback below skips the DOM transforms, so the
@@ -756,29 +673,11 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     }
   }
 
-  // Restore original entities from placeholders
-  // in one pass (a split/join per distinct entity was quadratic on a body of
-  // many distinct references).
-  // A zero-width space the author wrote can sit right before a placeholder
-  // (`\u200B2024` then `\u200B0\u200B`): a match whose index is not one of ours
-  // must not consume the placeholder's opening zero-width space, so the scan
-  // resumes one character later. Indices are written without leading zeros, so
-  // `\u200B00\u200B` is the author's text, not placeholder 0.
-  if (forApp && output && entityPlaceholders.length > 0) {
-    const placeholderRe = /\u200B(0|[1-9]\d*)\u200B/g;
-    let restored = '';
-    let last = 0;
-    let match: RegExpExecArray | null;
-    while ((match = placeholderRe.exec(output)) !== null) {
-      const entity = entityPlaceholders[+match[1]];
-      if (entity === undefined) {
-        placeholderRe.lastIndex = match.index + 1;
-        continue;
-      }
-      restored += output.slice(last, match.index) + entity;
-      last = placeholderRe.lastIndex;
-    }
-    output = restored + output.slice(last);
+  // Restore original entities from placeholders, in one pass (a split/join
+  // per distinct entity was quadratic on a body of many distinct references).
+  // The delimiter is not in the body, so every match is one of ours.
+  if (output && entityPlaceholders.length > 0) {
+    output = unswap(output);
   }
 
   output = stripDocumentWrapper(output)

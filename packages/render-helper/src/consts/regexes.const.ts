@@ -41,7 +41,9 @@ export const D_TUBE_REGEX = /(https?:\/\/d\.tube\/#!\/v\/)(\w+)\/(\w+)/g
 export const D_TUBE_REGEX2 = /(https?:\/\/d\.tube\/v\/)(\w+)\/(\w+)/g
 export const D_TUBE_EMBED_REGEX = /^https:\/\/emb\.d\.tube\/#!\/[^/?#]+\/[^/?#]+(?:$|[?#])/i
 export const TWITCH_REGEX = /https?:\/\/(?:www\.)?twitch\.tv\/(?:(videos)\/)?([a-zA-Z0-9][\w]{3,24})/i
-export const DAPPLR_REGEX = /^(https?:)?\/\/[a-z]*\.dapplr\.in\/file\/dapplr-videos\/.*/i
+// Any `<label>.` chain before dapplr.in, as the embed allow list accepts it
+// (#2155): `player.eu.dapplr.in` too, never an empty label.
+export const DAPPLR_REGEX = /^(https?:)?\/\/(?:[a-z\d-]+\.)+dapplr\.in\/file\/dapplr-videos\/.*/i
 export const TRUVVL_REGEX = /^https?:\/\/embed\.truvvl\.com\/(@[\w.\d-]+)\/(.*)/i
 export const LBRY_REGEX = /^(https?:)?\/\/lbry\.tv\/\$\/embed\/[^?#]+(?:$|[?#])/i
 export const ODYSEE_REGEX = /^(https?:)?\/\/odysee\.com\/(?:\$|%24)\/embed\/[^?#]+(?:$|[?#])/i

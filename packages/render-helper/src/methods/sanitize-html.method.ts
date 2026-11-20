@@ -73,6 +73,43 @@ const hasQuotedAttr = (attrs: string, wanted: string): boolean => {
   return false
 }
 
+const IFRAME_OPEN = /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi
+const IFRAME_START = /<iframe\b/gi
+const IFRAME_CLOSE = /<\/iframe\s*>/gi
+
+// Drops each iframe whose src was refused, from its opening tag through its
+// `</iframe>`: a browser never shows an iframe's content (the author's
+// fallback text), and the DOM path replaces the whole element too (#2155).
+// The close is its own only when no other iframe opens first; an unclosed one
+// loses only its opening tag, so it cannot swallow what follows. Linear: the
+// next close and the next opening are each looked up again only once the
+// read position has passed them.
+function dropRefusedIframes(html: string): string {
+  const find = (re: RegExp, from: number): [number, number] => {
+    re.lastIndex = from
+    const m = re.exec(html)
+    return m ? [m.index, re.lastIndex] : [-1, 0]
+  }
+  let out = ''
+  let last = 0
+  let close: [number, number] = [-2, 0] // -2: not looked up yet, -1: none left
+  let next: [number, number] = [-2, 0]
+  IFRAME_OPEN.lastIndex = 0
+  let open: RegExpExecArray | null
+  while ((open = IFRAME_OPEN.exec(html)) !== null) {
+    if (hasQuotedAttr(open[1], 'src')) continue
+    out += html.slice(last, open.index)
+    last = IFRAME_OPEN.lastIndex
+    if (close[0] !== -1 && close[0] < last) close = find(IFRAME_CLOSE, last)
+    if (close[0] !== -1) {
+      if (next[0] !== -1 && next[0] < last) next = find(IFRAME_START, last)
+      if (next[0] === -1 || close[0] < next[0]) last = close[1]
+    }
+    IFRAME_OPEN.lastIndex = last
+  }
+  return out + html.slice(last)
+}
+
 // Attributes whose value is a URL the checks above validate.
 const isUrlAttribute = (tag: string, name: string): boolean =>
   (name === 'src' && tag !== 'a') ||
@@ -419,10 +456,9 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
     /\btype\s*=\s*["'](?:image\/avif|image\/webp)["']/i.test(t) ? t : ''
   );
   // An iframe whose src was refused above would render an empty frame; drop
-  // its opening tag (and an immediately following close tag). Only the opening
-  // tag: an unclosed one must not swallow the content after it. xss writes
-  // every kept attribute as name="value", so walk those rather than search
-  // the raw text, where `src=` could sit inside another attribute's value.
+  // it (dropRefusedIframes). xss writes every kept attribute as name="value",
+  // so walk those rather than search the raw text, where `src=` could sit
+  // inside another attribute's value.
   //
   // Repeated until nothing more is removed, so dropping one tag can never join
   // its neighbours into a new `<iframe`. On xss output a stray `<` is always
@@ -432,10 +468,7 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
     let previous: string;
     do {
       previous = withoutBareIframe;
-      withoutBareIframe = withoutBareIframe.replace(
-        /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>(?:\s*<\/iframe>)?/gi,
-        (t, attrs: string) => (hasQuotedAttr(attrs, 'src') ? t : '')
-      );
+      withoutBareIframe = dropRefusedIframes(withoutBareIframe);
     } while (withoutBareIframe !== previous);
   }
   return preserveImageDimensions ? enforceImageDimensionPair(withoutBareIframe) : withoutBareIframe;
