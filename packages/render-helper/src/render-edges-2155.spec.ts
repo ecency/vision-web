@@ -109,3 +109,13 @@ describe('a kept iframe keeps its close (#2155 review)', () => {
     expect(untransformed(`${ok}<iframe src="https://evil.example.com/x">text</iframe> rest of post`)).toContain('</iframe> rest of post')
   })
 })
+
+describe('nested kept iframes keep every close (#2155 review)', () => {
+  it('keeps the outer close', () => {
+    const yt = '<iframe src="https://www.youtube.com/embed/abcdefghijk">'
+    const vimeo = '<iframe src="https://player.vimeo.com/video/123456">'
+    const out = untransformed(`${yt}${vimeo}</iframe></iframe>after the embed`)
+    expect(out.match(/<\/iframe>/g)).toHaveLength(2)
+    expect(out.endsWith('</iframe></iframe>after the embed')).toBe(true)
+  })
+})

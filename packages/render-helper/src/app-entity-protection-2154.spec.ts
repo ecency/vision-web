@@ -117,3 +117,10 @@ describe('#2154 second review edges', () => {
     }
   })
 })
+
+describe('#2154 third review edges', () => {
+  it.each([' ', '\u0085', '␤'])('an angle span does not cross a parser line break (%j)', (br) => {
+    expect(render(`x (<https://e.com/a${br}b &copy; c>) y`)).toContain('&copy; c')
+    expect(render(`[r]: <https://e.com/a${br}b &copy; c>`)).toContain('&copy; c')
+  })
+})

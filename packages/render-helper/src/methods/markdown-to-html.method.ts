@@ -22,12 +22,13 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // without backtracking: linear. An angle-bracket destination is taken whole
 // to its `>`, as the parser reads it, so a `)` or a space inside does not end
 // it (`[x](<https://e.com/a)b?x=1&amp;y=2>)`, #2154): after `(` or `]:` (the
-// opening of a destination), anything but a line break; elsewhere (an
+// opening of a destination), anything but a line break (also
+// U+2028, U+0085 and U+2424, which the parser turns into one); elsewhere (an
 // autolink) no whitespace, so text like `<https://e.com/a b &copy; c>` keeps
 // its entities protected. A span holds no `<`, so a failed attempt stops at
 // the next one: linear too. A bare URL stops before such an opening, so one
 // ending a label (`[https://a.com](<...>)`) leaves the destination whole.
-const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
+const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n\u2028\u0085\u2424<>\\]|\\[^\n\u2028\u0085\u2424])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
