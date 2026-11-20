@@ -130,3 +130,9 @@ describe('#2154 fourth review edges', () => {
     expect(render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)).not.toContain('%E2%80%8B')
   })
 })
+
+describe('#2154 fifth review edges', () => {
+  it.each(['\r\n', '\r\u0085'])('an escaped CR line break stays inside an angle destination (%j)', (br) => {
+    expect(render(`[x](<https://e.com/a\\${br}b?q=&copy;&amp;z=1>)`)).not.toContain('%E2%80%8B')
+  })
+})

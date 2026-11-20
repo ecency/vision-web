@@ -29,7 +29,7 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // its entities protected. A span holds no `<`, so a failed attempt stops at
 // the next one: linear too. A bare URL stops before such an opening, so one
 // ending a label (`[https://a.com](<...>)`) leaves the destination whole.
-const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n\u2028\u0085\u2424<>\\]|\\[\s\S])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
+const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n\u2028\u0085\u2424<>\\]|\\(?:\r[\n\u0085]|[\s\S]))*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names

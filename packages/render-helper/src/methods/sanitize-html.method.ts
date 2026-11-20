@@ -98,7 +98,7 @@ function dropRefusedIframes(html: string): string {
   let last = 0
   let kept = 0 // 1 while a kept iframe is open at the scan position
   let inner = 0 // kept openings inside it, whose closes are theirs
-  let surplus = 0 // those closes still to come, until the next opening
+  let surplus = 0 // those closes still to come
   let close: [number, number] = [-2, 0] // -2: not looked up yet, -1: none left
   let next: [number, number] = [-2, 0]
   IFRAME_TAG.lastIndex = 0
@@ -113,11 +113,12 @@ function dropRefusedIframes(html: string): string {
     }
     if (tag[1] === undefined) {
       // A close tag. The first one ends a kept iframe, as a browser reads it;
-      // the closes of kept iframes nested in it follow straight after and
-      // are kept too, so the markup stays balanced for a tree parser.
+      // the closes of kept iframes nested in it are kept too, so the markup
+      // stays balanced for a tree parser. A refused iframe takes its own close
+      // through the lookahead below, never one of these.
       if (kept > 0) {
         kept = 0
-        surplus = inner
+        surplus += inner
         inner = 0
         continue
       }
@@ -129,7 +130,6 @@ function dropRefusedIframes(html: string): string {
       last = IFRAME_TAG.lastIndex
       continue
     }
-    surplus = 0
     if (hasQuotedAttr(tag[1], 'src')) {
       kept = 1
       continue

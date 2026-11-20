@@ -132,3 +132,11 @@ describe('a kept iframe ends at its first close (#2155 review)', () => {
     expect(untransformed(input)).toBe(want)
   })
 })
+
+describe('nested kept iframes after a nested pair (#2155 review)', () => {
+  it('keeps the outer close when another kept iframe opens in between', () => {
+    const yt = '<iframe src="https://www.youtube.com/embed/abcdefghijk">'
+    const vimeo = '<iframe src="https://player.vimeo.com/video/123456">'
+    expect(untransformed(`${yt}${yt}</iframe>${vimeo}</iframe></iframe>REST`)).toBe(`${yt}${yt}</iframe>${vimeo}</iframe></iframe>REST`)
+  })
+})
