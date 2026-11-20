@@ -1,5 +1,5 @@
 import { proxifyImageSrc } from './proxify-image-src'
-import { hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
+import { hasAmpSentinel, imageUrlEnd, unescapeDestination, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -328,10 +328,26 @@ function stripHiddenRegions(text: string): string {
 // plain form is group 2.
 const MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\s]{1,2048}))(?:\s+["'][^"']*["'])?\s*\)/
 
-// An angle destination in the spelling its plain form has: only whitespace
-// and controls percent-encoded (markdown-to-html plainForm), so it then
-// decodes like any destination.
-const angleAsPlain = (raw: string): string => raw.replace(/[\s\u0000-\u001f\u007f"<>\\^`{|}]/g, (c) => encodeURIComponent(c))
+// An angle destination in the spelling its plain form has, as the render's
+// plainForm writes it: escapes resolved first, then whitespace, controls and
+// the ASCII encodeURI encodes percent-encoded (`%` and non-ASCII as written,
+// unless a `%` starts no escape: then encodeURI's reading). A `\\` left after
+// the unescape is encoded, so the destination decode unescapes nothing again.
+const ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
+function angleAsPlain(raw: string, ampEscapes: boolean): string {
+  const url = unescapeDestination(raw, ampEscapes)
+  if (!ANGLE_UNSAFE.test(url)) return url
+  if (/%(?![\da-f]{2})/i.test(url)) {
+    let normalized = url
+    try {
+      normalized = decodeURI(normalized)
+    } catch {
+      // kept as written, as Remarkable does
+    }
+    return encodeURI(normalized)
+  }
+  return url.replace(new RegExp(ANGLE_UNSAFE.source, 'g'), (c) => encodeURIComponent(c))
+}
 // A markdown image whose URL exceeds MD_IMAGE_RE's length bound (or whose syntax is broken)
 // isn't captured by it — leaving `mdMatch` null, or (MD_IMAGE_RE is unanchored) matching a
 // *later* image instead. This linear detector (label excludes `[`; no closing `)` required)
@@ -598,7 +614,10 @@ function autolinkUrlEnd(text: string): number {
   const scheme = /^https?:\/\//i.exec(text)
   if (!scheme) return 0
   let end = scheme[0].length
-  while (end < text.length && (autolinkWordChar(text[end]) || text[end] === '.' || text[end] === '-')) end++
+  // Labels of word characters, `-` and `_` (getDomainNameStr), joined by
+  // dots; the host never ends on a separator.
+  while (end < text.length && (autolinkWordChar(text[end]) || '.-_'.includes(text[end]))) end++
+  while (end > scheme[0].length && '.-_'.includes(text[end - 1])) end--
   const port = /^:\d+/.exec(text.slice(end, end + 8))
   if (port) end += port[0].length
   if ('/?#'.includes(text[end] ?? ' ') && end < text.length) {
@@ -688,6 +707,35 @@ function firstBodyImageRawUrl(body: string): string | null {
   return bodyImageRawUrl(body, prepareBody(body))
 }
 
+// The text a bare URL at `pos` sits in, as the inline parser leaves it for
+// linkify: to whitespace or `<`, and before what the parser takes itself, the
+// emphasis run that opened just before the URL closing again (`**url**`,
+// `~~url~~`), or a link, image or footnote reference starting right after.
+function markdownTextSpan(body: string, pos: number): string {
+  let end = pos
+  while (end < body.length && !/[\s<]/.test(body[end])) end++
+  let span = body.slice(pos, end)
+  let open = pos
+  while (open > 0 && '*_~'.includes(body[open - 1])) open--
+  const marker = body.slice(open, pos)
+  if (marker) {
+    const close = span.indexOf(marker)
+    if (close > 0) span = span.slice(0, close)
+  }
+  // One pass: the latest `[` opens the label a `]` followed by `(` or `[`
+  // closes; `[^` opens a footnote reference.
+  let label = -1
+  for (let i = 0; i < span.length; i++) {
+    if (span[i] === '[') {
+      if (span[i + 1] === '^') return span.slice(0, i)
+      label = i
+    } else if (span[i] === ']' && label !== -1 && (span[i + 1] === '(' || span[i + 1] === '[')) {
+      return span.slice(0, label > 0 && span[label - 1] === '!' ? label - 1 : label)
+    }
+  }
+  return span
+}
+
 // Whether `pos` starts a reference definition's destination: `]:`, then
 // spaces and at most one line break.
 function definitionDestinationAt(body: string, pos: number): boolean {
@@ -725,9 +773,8 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   }
   // Markdown text: decoded as the parser decodes it, then read to where the
   // render's linkify (Autolinker) ends the URL (#2157).
-  let spanEnd = candidate.pos
-  while (spanEnd < body.length && !/[\s<]/.test(body[spanEnd])) spanEnd++
-  const text = decodeCompleteReferences(body.slice(candidate.pos, spanEnd).replace(/\\&/g, '&amp;'))
+  const text = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
+    .replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
   const url = text.slice(0, autolinkUrlEnd(text))
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }
@@ -918,7 +965,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // markdown parser handle it — returning a truncated URL would be wrong.
   // An angle destination is whole whatever it holds; a plain one with `(` may
   // have been cut short by the capture class.
-  const mdUrl = mdMatch ? (mdMatch[1] !== undefined ? angleAsPlain(mdMatch[1]) : mdMatch[2]) : undefined
+  const mdUrl = mdMatch ? (mdMatch[1] !== undefined ? angleAsPlain(mdMatch[1], !hasAmpSentinel(cleaned)) : mdMatch[2]) : undefined
   if (mdMatch) {
     const url = mdUrl
     if (!url || !SAFE_URL_RE.test(url) || (mdMatch[1] === undefined && url.includes('('))) {
@@ -1035,10 +1082,8 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
   }
 }
 
-// Percent-decoded too, as the render decodes its <img> src before proxying
-// (decodeDomImageSrc), so `a%20b.png` preloads the image the body shows.
 function proxifyFound(src: string, width: number, height: number, format: string): string {
-  return proxifyImageSrc(decodeDomImageSrc(decodeEntities(src)), width, height, format)
+  return proxifyImageSrc(decodeEntities(src), width, height, format)
 }
 
 function getImage(entry: Entry, width: number, height: number, format: string, renderFirstImage: RenderFirstImage | null): string | null {

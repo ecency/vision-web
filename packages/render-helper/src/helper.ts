@@ -176,9 +176,15 @@ const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
  * Raw HTML differs only for a legacy name without `;` before a
  * non-alphanumeric character, which an HTML attribute decodes.
  */
+// A markdown destination's backslash escapes resolved as Remarkable resolves
+// them; an escaped `&` is a literal one (`&amp;`) when ampEscapes.
+export function unescapeDestination(src: string, ampEscapes = true): string {
+  return src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+}
+
 export function decodeRawBodyImageSrc(src: string, destination = false, ampEscapes = true): string {
   const unescaped = destination
-    ? src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+    ? unescapeDestination(src, ampEscapes)
     : src.replace(/\\&/g, '&amp;')
   return decodeDomImageSrc(decodeCompleteReferences(unescaped))
 }

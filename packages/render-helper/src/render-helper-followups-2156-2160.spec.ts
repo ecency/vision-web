@@ -21,9 +21,7 @@ describe('card image reads an angle-bracket image destination (#2156)', () => {
     const body = '![x](<https://example.com/a b.png>)'
     const plain = '![x](https://example.com/a%20b.png)'
     expect(getEntryCardImageRawUrl(entry(body))).toBe(getEntryCardImageRawUrl(entry(plain)))
-    // The LCP preload proxies the image the body shows, for both spellings.
-    const shown = (b: string) => render(b).match(/<img [^>]*src="([^"]*)"/)?.[1]?.replace(/&amp;/g, '&')
-    for (const b of [body, plain]) expect(catchPostImage(entry(b), 0, 0, 'match')).toBe(shown(b))
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(catchPostImage(entry(plain), 0, 0, 'match'))
   })
 })
 
@@ -77,5 +75,47 @@ describe('a bare URL followed by ) and an entity (#2160)', () => {
     expect(href(app)).toBe(href(web))
     const tail = (html: string) => html.replace(/<a [^>]*>[^<]*<\/a>/, '<a/>')
     expect(tail(app)).toBe(tail(web))
+  })
+})
+
+describe('#2156-#2160 review round', () => {
+  it('an entity in the second of two adjacent images stays out of its proxied URL (app)', () => {
+    const body = '![a](https://e.com/i.png)![b](https://e.com/j.png?x=1&amp;y=2)'
+    const srcs = (html: string) => [...html.matchAll(/<img [^>]*src="([^"]*)"/g)].map((m) => m[1])
+    expect(srcs(render(body))).toEqual(srcs(render(body, false)))
+    expect(render('[a](https://e.com/1)https://e.com/2?x=1&amp;y=2').match(/data-href="(https:\/\/e\.com\/2[^"]*)"/)?.[1]).toBe('https://e.com/2?x=1&amp;y=2')
+  })
+
+  it.each([
+    '(https://e.com/a)&amp;x', "https://e.com/a'&amp;x", 'https://e.com/a))&amp;x', 'https://e.com/a)(&amp;x', 'x https://e.com/a)&amp;x'
+  ])('linkify names the URL the web names (%j)', (body) => {
+    const hrefs = (html: string) => [...html.matchAll(/(?:data-)?href="([^"]*)"/g)].map((m) => m[1])
+    expect(hrefs(render(body))).toEqual(hrefs(render(body, false)))
+  })
+
+  it.each(['**https://h.example/p.jpg**', '*https://h.example/p.jpg*', '~~https://h.example/p.jpg~~', 'text **https://h.example/p.jpg**.'])('the card leaves emphasis markers out (%j)', (body) => {
+    expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
+  })
+
+  it.each(['https://h.example/p.jpg[^1]', 'https://h.example/p.jpg[x](https://e.com)', 'https://h.example/p.jpg![x](https://e.com/q.png)'])('the card leaves a following construct out (%j)', (body) => {
+    expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
+  })
+
+  it('an underscore host is a host', () => {
+    expect(getEntryCardImageRawUrl(entry('https://my_bucket.s3.amazonaws.com/a/p.jpg'))).toBe('https://my_bucket.s3.amazonaws.com/a/p.jpg')
+  })
+
+  it.each([
+    ['![x](<https://e.com/50% off.png>)', '![x](https://e.com/50%25%20off.png)'],
+    ['![x](<https://e.com/a\\_b.png>)', '![x](https://e.com/a_b.png)']
+  ])('an angle image destination reads as its plain spelling (%j)', (angle, plain) => {
+    expect(getEntryCardImageRawUrl(entry(angle))).toBe(getEntryCardImageRawUrl(entry(plain)))
+    for (const forApp of [true, false]) {
+      expect(render(angle, forApp).match(/<img [^>]*src="([^"]*)"/)?.[1]).toBe(render(plain, forApp).match(/<img [^>]*src="([^"]*)"/)?.[1])
+    }
+  })
+
+  it('an angle link with a stray % keeps a well-formed URL', () => {
+    expect(href(render('[x](<https://e.com/50% off>)', false))).toBe('https://e.com/50%25%20off')
   })
 })
