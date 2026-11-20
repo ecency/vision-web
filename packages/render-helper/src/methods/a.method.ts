@@ -4,7 +4,6 @@ import {
   CUSTOM_COMMUNITY_REGEX,
   INTERNAL_POST_REGEX,
   INTERNAL_POST_TAG_REGEX,
-  PLACEHOLDER_DELIMITER_CHARS,
   D_TUBE_REGEX,
   D_TUBE_REGEX2,
   IMG_REGEX,
@@ -36,6 +35,7 @@ import { proxifyImageSrc } from '../proxify-image-src'
 import { removeChildNodes } from './remove-child-nodes.method'
 import { extractYtStartTime, imageUrlEnd, youtubeVideoLinkClass, isValidPermlink, isValidUsername, sanitizePermlink, stripHtmlTags, trimTrailingSlash } from '../helper'
 import { createImageHTML } from "./img.method";
+import { activePlaceholderDelimiter } from "./placeholder-delimiter";
 import { RenderOptions, SeoContext } from '../types'
 
 const NOFOLLOW_REPUTATION_THRESHOLD = 40;
@@ -372,16 +372,14 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       // `/\host/...`, which a browser reads as another site (isInSiteHref).
       // On the app render an entity in the href is still a placeholder
       // (delimiter, index, delimiter) here and is restored after this check.
-      // The delimiter is chosen per render (markdown-to-html), so every
-      // character it can be counts (PLACEHOLDER_DELIMITER_CHARS). In the path
-      // it could spell the host's slashes (`/&#47;host` reads as `//host`), so
-      // such a path is not judged in-site; one in the query or fragment cannot
-      // move the host. An entity spelling `?` or `#` is itself a placeholder
-      // in the path, so it stays rejected.
-      // The web render holds no placeholders: it keeps the old check, so an
-      // author's U+2060 there does not change what the path means.
+      // In the path it could spell the host's slashes (`/&#47;host` reads as
+      // `//host`), so such a path is not judged in-site; one in the query or
+      // fragment cannot move the host. An entity spelling `?` or `#` is itself
+      // a placeholder in the path, so it stays rejected. Only the delimiter
+      // this render chose marks one (#2165); with none (the web render, or a
+      // body without entities) the old zero-width space check stays.
       const path = href.split(/[?#]/, 1)[0];
-      const placeholder = forApp ? PLACEHOLDER_DELIMITER_CHARS.test(path) : path.includes('\u200B');
+      const placeholder = path.includes(activePlaceholderDelimiter() ?? '\u200B');
       isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
