@@ -21,6 +21,7 @@ export enum QueryIdentifiers {
   SWAP_FORM_CURRENCY_RATE = "swap-form-currency-rate",
   THREE_SPEAK_VIDEO_LIST = "three-speak-video-list",
   THREE_SPEAK_VIDEO_LIST_FILTERED = "three-speak-video-list-filtered",
+  THREE_SPEAK_UPLOAD_QUOTA = "three-speak-upload-quota",
   CONTRIBUTORS = "contributors",
   GIFS = "GIFS",
   MARKET_TRADING_VIEW = "market-trading-view",

@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
 import { EcencyConfigManager } from "@/config";
+import {
+  parseThreeSpeakUploadLimitText,
+  toThreeSpeakUploadLimitBody
+} from "@/api/threespeak-embed/upload-limits";
 import { resolveUser, unauthorizedResponse } from "../resolve-user";
 
 function getConfig() {
@@ -68,6 +72,20 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+
+      // Daily upload limit for free accounts: hand the refusal on, so web and
+      // mobile clients can show 3Speak's message, the next upload time and the
+      // upgrade link instead of a generic "try again".
+      const limit = res.status === 429 ? parseThreeSpeakUploadLimitText(text) : null;
+      if (limit) {
+        console.warn(`[3Speak] Daily ${limit.kind ?? "upload"} limit reached for ${owner}`);
+        const retryAfter = res.headers.get("retry-after");
+        return Response.json(toThreeSpeakUploadLimitBody(limit), {
+          status: 429,
+          headers: retryAfter && /^\d+$/.test(retryAfter) ? { "Retry-After": retryAfter } : {}
+        });
+      }
+
       console.error(`[3Speak] Token request failed: ${res.status} ${text}`);
       return Response.json({ error: "Failed to obtain upload token" }, { status: res.status });
     }

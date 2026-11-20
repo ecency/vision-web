@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { uploadVideoEmbed } from "./api";
 import { VideoUploadResult } from "./types";
+import { isThreeSpeakUploadLimitError } from "./upload-limits";
 import { error } from "@/features/shared";
 import i18next from "i18next";
 
@@ -32,6 +33,12 @@ export function useThreeSpeakEmbedUpload() {
           (e as any)?.originalResponse?.getStatus?.() ??
           (e as any)?.status ??
           undefined;
+
+        // The daily limit is not a failure to report: the upload dialog shows
+        // it inline, with the next upload time and the upgrade link.
+        if (isThreeSpeakUploadLimitError(e)) {
+          throw e;
+        }
 
         console.error("[3Speak] Video upload failed:", { status, error: e });
 

@@ -10,15 +10,27 @@ import { useThreeSpeakEmbedUpload } from "@/api/threespeak-embed";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import i18next from "i18next";
 import { formatError } from "@/api/format-error";
+import {
+  isThreeSpeakUploadLimitError,
+  ThreeSpeakUploadLimit
+} from "@/api/threespeak-embed/upload-limits";
 
 interface Props {
   onEmbedUrlReady: (embedUrl: string, permlink: string) => void;
   setSelectedFile: (v: string, mime: string) => void;
   onReset: () => void;
+  /** 3Speak refused the upload over the free daily limit; the recording is kept. */
+  onLimitReached?: (limit: ThreeSpeakUploadLimit) => void;
   isShort?: boolean;
 }
 
-export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile, isShort }: Props) {
+export function VideoUploadRecorder({
+  onEmbedUrlReady,
+  onReset,
+  setSelectedFile,
+  onLimitReached,
+  isShort
+}: Props) {
   const { activeUser } = useActiveAccount();
   const [stream, setStream] = useState<MediaStream>();
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder>();
@@ -205,6 +217,10 @@ export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile,
                         setSelectedFile(fileUrl, mime);
                       }
                     } catch (e) {
+                      if (isThreeSpeakUploadLimitError(e)) {
+                        onLimitReached?.(e.limit);
+                        return;
+                      }
                       error(...formatError(e));
                     }
                   }}

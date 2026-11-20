@@ -1,5 +1,12 @@
 import { useThreeSpeakEmbedUpload } from "@/api/threespeak-embed";
-import { setVideoThumbnail } from "@/api/threespeak-embed/api";
+import { getUploadQuota, setVideoThumbnail } from "@/api/threespeak-embed/api";
+import {
+  isThreeSpeakUploadLimitError,
+  quotaToThreeSpeakUploadLimit,
+  ThreeSpeakUploadLimit
+} from "@/api/threespeak-embed/upload-limits";
+import { QueryIdentifiers } from "@/core/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useUploadImageMutation } from "@/api/sdk-mutations";
 import { useGlobalStore } from "@/core/global-store";
 import { error } from "@/features/shared";
@@ -11,6 +18,7 @@ import React, { ChangeEvent, ReactNode, useCallback, useEffect, useRef, useState
 import useMountedState from "react-use/lib/useMountedState";
 import { VideoUploadItem } from "./video-upload-item";
 import { VideoUploadRecorder } from "./video-upload-recorder";
+import { VideoUploadLimitNotice } from "./video-upload-limit-notice";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 interface Props {
@@ -55,8 +63,29 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const [hasManualThumbnail, setHasManualThumbnail] = useState(false);
   // When isShort prop is undefined, let the user toggle; default to false (regular video)
   const [shortToggle, setShortToggle] = useState(false);
+  // 3Speak refused an upload over the free daily limit.
+  const [limitRefusal, setLimitRefusal] = useState<ThreeSpeakUploadLimit | null>(null);
 
   const isShortResolved = props.isShort ?? shortToggle;
+  const uploadKind = isShortResolved ? "short" : "video";
+
+  // The allowance, read when the dialog opens so a free account at its limit
+  // sees the notice before picking a file. Any failure resolves null (no limit
+  // known) and never blocks: the token request stays the source of truth.
+  const { data: uploadQuota } = useQuery({
+    queryKey: [QueryIdentifiers.THREE_SPEAK_UPLOAD_QUOTA, activeUser?.username],
+    queryFn: () => getUploadQuota(activeUser!.username),
+    enabled: props.show && !!activeUser?.username,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false
+  });
+
+  const limitNotice =
+    limitRefusal && (limitRefusal.kind === null || limitRefusal.kind === uploadKind)
+      ? limitRefusal
+      : quotaToThreeSpeakUploadLimit(uploadQuota, uploadKind);
   const showTypeSelector = props.isShort === undefined;
   const isUploading = videoPercentage > 0 && videoPercentage < 100;
 
@@ -79,6 +108,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       setVideoPercentage(0);
       setShowRecorder(false);
       setShortToggle(false);
+      setLimitRefusal(null);
     }
   }, [props.show, setVideoPercentage]);
 
@@ -112,10 +142,13 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       if (result && dialogOpenRef.current) {
         setVideoData({ embedUrl: result.embedUrl, permlink: result.permlink });
       }
-    } catch {
-      // Error already shown by the mutation's error handler.
-      // Reset file state so the selector reappears and user can retry.
+    } catch (err) {
+      // Error already shown by the mutation's error handler, or, for the daily
+      // limit, by the notice. Reset file state so the selector reappears.
       if (dialogOpenRef.current) {
+        if (isThreeSpeakUploadLimitError(err)) {
+          setLimitRefusal(err.limit);
+        }
         setSelectedFile(null);
       }
     }
@@ -290,6 +323,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
         <VideoUploadRecorder
           isShort={isShortResolved}
           onEmbedUrlReady={handleRecordedUpload}
+          onLimitReached={setLimitRefusal}
           setSelectedFile={(url, mime) => {
             setSelectedFile(url);
             setSelectedFileType(mime);
@@ -405,6 +439,9 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
           <ModalBody>
             <div className="dialog-content">
               {typeSelector}
+              {limitNotice && !videoData && (
+                <VideoUploadLimitNotice limit={limitNotice} username={activeUser?.username} />
+              )}
               {sourceSection}
               {previewSection}
               <Button
