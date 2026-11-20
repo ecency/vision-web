@@ -395,11 +395,17 @@ function withDecodedLinkify(rule: (state: { tokens: LinkifyToken[] }) => unknown
         }
         const source = sources.get(token)
         if (!source) continue
+        // A linkified URL's own text keeps the web's reading, so the link
+        // reads as its href (a.method promotes an image link by that);
+        // the text around it gets its placeholders back.
         let d = 0
+        let inLink = false
         for (const piece of pieces) {
+          if (piece.type === 'link_open') inLink = true
+          else if (piece.type === 'link_close') inLink = false
           if (piece.type !== 'text' || piece.content === undefined) continue
           const length = piece.content.length
-          piece.content = source.source.slice(source.at[d], source.at[d + length])
+          if (!inLink) piece.content = source.source.slice(source.at[d], source.at[d + length])
           d += length
         }
       }

@@ -605,34 +605,35 @@ const autolinkWordChar = (c: string): boolean => AUTOLINK_ALNUM.test(c) || AUTOL
 const AUTOLINK_CLOSE: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
 
 /**
- * Where Autolinker ends a scheme URL at the start of `text` (decoded markdown
- * text, as the render's linkify reads it, #2157): the host and port, then a
- * path, query or fragment to its last allowed end character, without a
- * trailing `?`, and without one closing bracket the match does not open.
+ * Where Autolinker 3.16 ends a scheme URL at the start of `text` (decoded
+ * markdown text, as the render's linkify reads it, #2157), ported from
+ * url-matcher.js: the host's labels (getDomainNameStr: a word character, then
+ * word characters, `-` and `_`, ending on a word character, joined by dots),
+ * a port, then a path, query or fragment to its last allowed end character;
+ * then a trailing `?` dropped, and either one closing bracket the match does
+ * not open dropped, or the match cut where matchHasInvalidCharAfterTld cuts it.
  */
 function autolinkUrlEnd(text: string): number {
   const scheme = /^https?:\/\//i.exec(text)
   if (!scheme) return 0
-  let end = scheme[0].length
-  // Labels as Autolinker 3.16 reads them (checked against it): a word
-  // character, then word characters and `-` (and `_` in the first label
-  // only), ending on a word character; joined by dots. A label ending on a
-  // separator ends the host at its last word character.
-  let pos = end
-  for (let first = true; pos < text.length && autolinkWordChar(text[pos]); first = false) {
+  const hostStart = scheme[0].length
+  let end = hostStart
+  let pos = hostStart
+  while (pos < text.length && autolinkWordChar(text[pos])) {
     let k = pos
     let lastWord = pos
-    while (k < text.length && (autolinkWordChar(text[k]) || text[k] === '-' || (first && text[k] === '_'))) {
+    while (k < text.length && (autolinkWordChar(text[k]) || text[k] === '-' || text[k] === '_')) {
       if (autolinkWordChar(text[k])) lastWord = k
       k++
     }
     end = lastWord + 1
-    if (end !== k || text[k] !== '.' || !autolinkWordChar(text[k + 1] ?? '')) break
-    pos = k + 1
+    if (text[end] !== '.' || !autolinkWordChar(text[end + 1] ?? '')) break
+    pos = end + 1
   }
-  const port = /^:\d+/.exec(text.slice(end, end + 8))
+  if (end === hostStart) return 0
+  const port = /^:[0-9]+/.exec(text.slice(end))
   if (port) end += port[0].length
-  if ('/?#'.includes(text[end] ?? ' ') && end < text.length) {
+  if (end < text.length && '/?#'.includes(text[end])) {
     let last = end + 1
     for (let i = end + 1; i < text.length; i++) {
       const c = text[i]
@@ -650,8 +651,25 @@ function autolinkUrlEnd(text: string): number {
       if (text[i] === open) depth++
       else if (text[i] === text[end - 1]) depth = Math.max(depth - 1, 0)
     }
-    if (depth === 0) end--
+    if (depth === 0) return end - 1
   }
+  // matchHasInvalidCharAfterTld: the longest `[-.w]*[-w]\.[-w]+` after the
+  // `//` (w a word character), and a cut there when what follows is not one
+  // of `[-.A-Za-z0-9:/?#]`. One pass: the match may end after any [-w] whose
+  // segment since the last dot is non-empty, that dot having a [-w] before it.
+  let tld = -1
+  let dotOk = false
+  for (let i = hostStart; i < end; i++) {
+    const c = text[i]
+    if (c === '.') {
+      dotOk = i > hostStart && text[i - 1] !== '.'
+    } else if (c === '-' || autolinkWordChar(c)) {
+      if (dotOk) tld = i + 1
+    } else {
+      break
+    }
+  }
+  if (tld !== -1 && tld < end && !/[-.A-Za-z0-9:/?#]/.test(text[tld])) return tld
   return end
 }
 
@@ -726,7 +744,17 @@ function firstBodyImageRawUrl(body: string): string | null {
 function markdownTextSpan(body: string, pos: number): string {
   let end = pos
   while (end < body.length && !/[\s<[]/.test(body[end])) end++
-  return body.slice(pos, end)
+  // A trailing run of emphasis markers is the parser's closer (`**url**`,
+  // `*Source: url*`), read on the raw text so one written as a reference
+  // (`&#42;`) stays.
+  // A sentence mark around the closer (`**url**.`, `*url.*`) goes with it.
+  let run = end
+  let marker = false
+  while (run > pos && '*_~.,;:!?'.includes(body[run - 1])) {
+    if ('*_~'.includes(body[run - 1])) marker = true
+    run--
+  }
+  return body.slice(pos, marker ? run : end)
 }
 
 // Whether `pos` starts a reference definition's destination: `]:`, then
@@ -768,14 +796,7 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // render's linkify (Autolinker) ends the URL (#2157).
   const text = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
     .replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
-  let url = text.slice(0, autolinkUrlEnd(text))
-  // Right after an emphasis marker, a closing run at the end is the parser's
-  // (`**url**`, `_**url**_`), not the URL's.
-  if (candidate.pos > 0 && '*_~'.includes(body[candidate.pos - 1])) {
-    let end = url.length
-    while (end > 0 && '*_~'.includes(url[end - 1])) end--
-    url = url.slice(0, end)
-  }
+  const url = text.slice(0, autolinkUrlEnd(text))
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }
 

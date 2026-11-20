@@ -139,14 +139,45 @@ describe('#2156-#2160 second review round', () => {
   })
 
   it('stays linear on long emphasis runs', () => {
+    // Growth, not wall time: four times the body must take well under
+    // sixteen times as long (quadratic).
     const body = (n: number) => '*'.repeat(n) + 'https://e.com/x.png' + ('*'.repeat(n - 1) + 'a').repeat(2)
-    const time = (n: number) => { const t = performance.now(); getEntryCardImageRawUrl(entry(body(n))); return performance.now() - t }
-    time(1000)
-    expect(time(80_000)).toBeLessThan(2000)
+    const time = (n: number) => {
+      const t = performance.now()
+      getEntryCardImageRawUrl(entry(body(n)))
+      return performance.now() - t
+    }
+    time(5_000)
+    const small = Math.min(time(20_000), time(20_000))
+    const large = Math.min(time(80_000), time(80_000))
+    expect(large / Math.max(small, 0.5)).toBeLessThan(10)
   })
 
   it('an invalid numeric reference reads as the web reads it, for linkify', () => {
     const body = 'see www.e.com/it&#146;s now'
     expect(href(render(body))).toBe(href(render(body, false)))
+  })
+})
+
+describe('#2156-#2160 third review round', () => {
+  const renderedImage = (body: string, forApp = false) => {
+    const src = render(body, forApp).match(/<img [^>]*src="([^"]*)"/)?.[1]
+    return src ? src.replace(/&amp;/g, '&') : null
+  }
+  const cardImage = (body: string) => {
+    const url = getEntryCardImageRawUrl(entry(body))
+    return url ? proxifyImageSrc(url, 0, 0, 'match') : null
+  }
+
+  it.each([
+    '**https://e.com/p.png.**', '**https://e.com/p.png)**', '*https://e.com/p.png&#42;', '*Source: https://e.com/p.png*',
+    '_Source: https://e.com/p.png_', '**Source: https://e.com/p.png**', '~~old https://e.com/p.png~~', '*Source: https://e.com/p.png.*',
+    '(https://x.y_z.com/p.jpg)', '(https://a.b_c.com/p.jpg).', 'https://a_b.c_d.com/p.jpg', 'https://a.b_c/p.jpg', 'https://my_bucket.s3.amazonaws.com/a/p.jpg'
+  ])('the card names the image the render shows for %j', (body) => {
+    expect(cardImage(body)).toBe(renderedImage(body))
+  })
+
+  it.each(['https://e.com/p.png)&amp;x', "https://e.com/p.png'&amp;", 'https://e.com/p.png&copy;'])('the app shows the image the web shows for %j', (body) => {
+    expect(renderedImage(body, true)).toBe(renderedImage(body, false))
   })
 })
