@@ -631,11 +631,6 @@ function autolinkUrlEnd(text: string): number {
     pos = end + 1
   }
   if (end === hostStart) return 0
-  // UrlMatchValidator.containsMultipleDots: `..` before the first `/` after
-  // the `//` (a query or fragment with no path included) refuses the match.
-  const slash = text.indexOf('/', hostStart)
-  const head = slash === -1 ? text.slice(hostStart) : text.slice(hostStart, slash)
-  if (head.includes('..')) return 0
   const port = /^:[0-9]+/.exec(text.slice(end))
   if (port) end += port[0].length
   if (end < text.length && '/?#'.includes(text[end])) {
@@ -742,21 +737,6 @@ function firstBodyImageRawUrl(body: string): string | null {
   return bodyImageRawUrl(body, prepareBody(body))
 }
 
-// The emphasis marker characters that open a run before `pos` on its line:
-// a `*`, `_` or `~` with no whitespace after it and whitespace, punctuation or
-// the line start before it.
-function emphasisOpeners(body: string, pos: number): string {
-  let found = ''
-  for (let i = pos - 1; i >= 0 && body[i] !== '\n'; i--) {
-    const c = body[i]
-    if (!'*_~'.includes(c) || found.includes(c)) continue
-    const next = body[i + 1] ?? ''
-    const prev = i > 0 ? body[i - 1] : '\n'
-    if (next && !/\s/.test(next) && (/[\s\p{P}\p{S}]/u.test(prev))) found += c
-  }
-  return found
-}
-
 // The text a bare URL at `pos` sits in, as the inline parser leaves it for
 // linkify: to whitespace or `<`, and before a `[`, which may open a link,
 // image or footnote (develop's reading; the render keeps the `[` only when no
@@ -764,25 +744,7 @@ function emphasisOpeners(body: string, pos: number): string {
 function markdownTextSpan(body: string, pos: number): string {
   let end = pos
   while (end < body.length && !/[\s<[]/.test(body[end])) end++
-  // A trailing run of emphasis markers is the parser's closer (`**url**`,
-  // `*Source: url*`), read on the raw text so one written as a reference
-  // (`&#42;`) stays.
-  // Only a marker an opener before the URL on its line can close (`**url**`,
-  // `*Source: url*`); an unpaired one is the URL's, as the render reads it.
-  // A sentence mark around the closer (`**url**.`, `*url.*`) goes with it; a
-  // `;` never does, as it may end a reference (`&lt;`).
-  const openers = emphasisOpeners(body, pos)
-  let run = end
-  let marker = false
-  while (run > pos && '*_~.,:!?'.includes(body[run - 1])) {
-    const c = body[run - 1]
-    if ('*_~'.includes(c)) {
-      if (!openers.includes(c)) break
-      marker = true
-    }
-    run--
-  }
-  return body.slice(pos, marker ? run : end)
+  return body.slice(pos, end)
 }
 
 // Whether `pos` starts a reference definition's destination: `]:`, then
@@ -813,17 +775,26 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // with code already blanked (a `<div>` inside a fence opens no block); the
   // blanking keeps every offset.
   if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
-  // A raw anchor's text and a reference definition's destination are not
-  // autolinked: the token is read as before.
+  // Develop's reading: the URL token up to a parenthesis, bracket or quote,
+  // without trailing sentence punctuation.
   const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4)
-  if (/^<\/a[\s>]/i.test(after) || definitionDestinationAt(body, candidate.pos)) {
+  const tokenUrl = (): string | null => {
     const url = withoutTrailingPunctuation(candidate.url, after)
     return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
   }
-  // Markdown text: decoded as the parser decodes it, then read to where the
-  // render's linkify (Autolinker) ends the URL (#2157).
-  const text = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
+  // A raw anchor's text and a reference definition's destination are not
+  // autolinked.
+  if (/^<\/a[\s>]/i.test(after) || definitionDestinationAt(body, candidate.pos)) return tokenUrl()
+  // Markdown text with a parenthesis in the URL (`?a=(1)`, `?a=1))`,
+  // `?a=1&#41;`, `(url)text`): the token stops at it, while the render's
+  // linkify (Autolinker) balances it (#2157). Read there as Autolinker does;
+  // emphasis and everything else as before.
+  const span = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
     .replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+  const paren = span.search(/[()]/)
+  const marker = span.search(/[*~]/)
+  if (paren === -1 || (marker !== -1 && marker < paren)) return tokenUrl()
+  const text = marker === -1 ? span : span.slice(0, marker)
   const url = text.slice(0, autolinkUrlEnd(text))
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }

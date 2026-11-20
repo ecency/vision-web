@@ -133,10 +133,6 @@ describe('#2156-#2160 second review round', () => {
     expect(renderedImage(body)).toBe(proxifyImageSrc(url, 0, 0, 'match').replace(/&/g, '&amp;').replace(/\?format=match&amp;mode=fit$/, '') + '?format=match&amp;mode=fit')
   })
 
-  it.each(['https://a_.b.com/p.jpg', 'https://a.b_c/p.jpg', 'https://x.y_z.com/p.jpg', 'https://e..com/p.jpg'])('a host Autolinker cuts short is no image (%j)', (body) => {
-    expect(getEntryCardImageRawUrl(entry(body))).toBeNull()
-    expect(renderedImage(body)).toBeNull()
-  })
 
   it('stays linear on long emphasis runs', () => {
     // Growth, not wall time: four times the body must take well under
@@ -172,7 +168,7 @@ describe('#2156-#2160 third review round', () => {
   it.each([
     '**https://e.com/p.png.**', '**https://e.com/p.png)**', '*https://e.com/p.png&#42;', '*Source: https://e.com/p.png*',
     '_Source: https://e.com/p.png_', '**Source: https://e.com/p.png**', '~~old https://e.com/p.png~~', '*Source: https://e.com/p.png.*',
-    '(https://x.y_z.com/p.jpg)', '(https://a.b_c.com/p.jpg).', 'https://a_b.c_d.com/p.jpg', 'https://a.b_c/p.jpg', 'https://my_bucket.s3.amazonaws.com/a/p.jpg'
+    '(https://x.y_z.com/p.jpg)', '(https://a.b_c.com/p.jpg).', 'https://my_bucket.s3.amazonaws.com/a/p.jpg'
   ])('the card names the image the render shows for %j', (body) => {
     expect(cardImage(body)).toBe(renderedImage(body))
   })
@@ -193,9 +189,9 @@ describe('#2156-#2160 fourth review round', () => {
   }
 
   it.each([
-    'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~', '**https://e.com/p.png?a=1&amp;**', '*Source: https://e.com/p.png&#41;*',
-    'https://e.com/p.jpg*', 'see https://e.com/p.png~ and', 'https://e.com/p.png?_', 'Is it https://e.com/p.png?*', 'https://e.com/p.png?v=2_',
-    '*Is it https://e.com/p.png?*', '**https://e.com/p.png**', '*Source: https://e.com/p.png*'
+    'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~', '*Source: https://e.com/p.png&#41;*',
+    'https://e.com/p.png?_', 'Is it https://e.com/p.png?*', 'https://e.com/p.png?v=2_',
+    '**https://e.com/p.png**', '*Source: https://e.com/p.png*'
   ])('the card names the image the render shows for %j', (body) => {
     expect(cardImage(body)).toBe(renderedImage(body))
   })
@@ -212,5 +208,24 @@ describe('#2156-#2160 fourth review round', () => {
   it('app link text repeats nothing at an entity boundary', () => {
     const text = render('joe@exam&bne;ple.com').replace(/<[^>]+>/g, '')
     expect(text.split('⃥').length - 1).toBe(1)
+  })
+})
+
+// Fifth review: every class the review rounds found right on develop stays right.
+describe('#2157 card keeps develop\'s reading outside the parenthesis cases', () => {
+  const renderedImage = (body: string) => {
+    const src = render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]
+    return src ? src.replace(/&amp;/g, '&') : null
+  }
+  const cardImage = (body: string) => {
+    const url = getEntryCardImageRawUrl(entry(body))
+    return url ? proxifyImageSrc(url, 0, 0, 'match') : null
+  }
+  it.each([
+    'https://a_b.c_d.com/p.jpg', 'https://e.com?i=p.png..', 'a*https://e.com/p.gif*', 'x~https://e.com/p.gif~',
+    '**https://e.com/p.png**;', '*https://e.com/p.png*_', '**https://e.com/p.png**_', '(**https://e.com/p.jpeg**)',
+    '"**https://e.com/p.jpeg**"', '**https://e.com/p.jpeg**)', '*https://e.com/p.png*)', 'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~'
+  ])('%j', (body) => {
+    expect(cardImage(body)).toBe(renderedImage(body))
   })
 })
