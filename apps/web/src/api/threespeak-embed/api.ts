@@ -6,7 +6,8 @@ import {
   parseThreeSpeakUploadLimitText,
   parseThreeSpeakUploadQuota,
   ThreeSpeakUploadLimitError,
-  ThreeSpeakUploadQuota
+  ThreeSpeakUploadQuota,
+  TusRefusalError
 } from "./upload-limits";
 
 function getEmbedEndpoint(): string {
@@ -165,10 +166,10 @@ const TUS_RETRY_DELAYS = [0, 3000, 5000, 10000, 20000];
  * 409/423, so this only turns the refusal into the same error the token
  * request throws.
  */
-function toUploadLimitError(error: Error): Error {
-  const res = (error as any)?.originalResponse;
-  if (res?.getStatus?.() !== 429) return error;
-  const limit = parseThreeSpeakUploadLimitText(res.getBody?.());
+function toUploadLimitError(error: TusRefusalError): Error {
+  const res = error.originalResponse;
+  if (!res || res.getStatus() !== 429) return error;
+  const limit = parseThreeSpeakUploadLimitText(res.getBody());
   return limit ? new ThreeSpeakUploadLimitError(limit) : error;
 }
 

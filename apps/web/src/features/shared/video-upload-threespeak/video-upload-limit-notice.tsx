@@ -25,6 +25,9 @@ export function formatUploadLimitTime(iso: string | null): string | null {
 export function getUploadLimitText(limit: ThreeSpeakUploadLimit): string {
   const parts: string[] = [];
   if (limit.kind && limit.limit != null && limit.limit > 0) {
+    // Always say the allowance is used up: the policy sentence alone reads like
+    // a tip, and the next upload time is not always known.
+    parts.push(i18next.t("video-upload.limit-reached"));
     parts.push(i18next.t(`video-upload.limit-${limit.kind}`, { count: limit.limit }));
   } else {
     parts.push(limit.message ?? i18next.t("video-upload.limit-reached"));

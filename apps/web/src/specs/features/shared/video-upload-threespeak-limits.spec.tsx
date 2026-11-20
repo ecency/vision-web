@@ -52,6 +52,7 @@ vi.mock("@/core/global-store", () => ({
 
 vi.mock("@/features/shared", () => ({ error: mocks.toastError }));
 
+import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { VideoUpload } from "@/features/shared/video-upload-threespeak";
 import { getUploadLimitText } from "@/features/shared/video-upload-threespeak/video-upload-limit-notice";
 
@@ -99,6 +100,7 @@ describe("VideoUpload and the 3Speak daily upload limit", () => {
     pickFile();
 
     const notice = await screen.findByRole("alert");
+    expect(notice.textContent).toContain("video-upload.limit-reached");
     expect(notice.textContent).toContain("video-upload.limit-video:1");
     expect(notice.textContent).toContain("video-upload.limit-next:");
     const link = screen.getByRole("link", { name: "video-upload.limit-upgrade" });
@@ -175,7 +177,66 @@ describe("VideoUpload and the 3Speak daily upload limit", () => {
   });
 });
 
+describe("VideoUpload limit refusals stay with their account and dialog session", () => {
+  beforeEach(() => {
+    setupModalContainers();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    mocks.uploadVideo.mockReset();
+    mocks.getUploadQuota.mockReset();
+    mocks.getUploadQuota.mockResolvedValue(null);
+    mocks.toastError.mockReset();
+  });
+
+  afterEach(() => {
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "alice" }, username: "alice" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    cleanupModalContainers();
+  });
+
+  it("a refusal for one account is not shown after switching to another", async () => {
+    mocks.uploadVideo.mockRejectedValue(new ThreeSpeakUploadLimitError(refusal()));
+    const { rerender } = renderDialog();
+    pickFile();
+    await screen.findByRole("alert");
+
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "bob" }, username: "bob" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("an upload refused after the dialog was closed and reopened leaves the new session alone", async () => {
+    let rejectUpload: (e: unknown) => void = () => {};
+    mocks.uploadVideo.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectUpload = reject; })
+    );
+    const { rerender } = renderDialog();
+    pickFile();
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+
+    rerender(<VideoUpload show={false} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
+    rejectUpload(new ThreeSpeakUploadLimitError(refusal()));
+
+    // Give the rejection a chance to land, then check it did nothing.
+    await new Promise((r) => setTimeout(r, 0));
+    await waitFor(() => expect(mocks.getUploadQuota).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.getElementById("video-input")).not.toBeNull();
+  });
+});
+
 describe("getUploadLimitText", () => {
+  it("says the limit is reached even when no next upload time is known", () => {
+    const text = getUploadLimitText(refusal({ nextAt: null }));
+    expect(text).toContain("video-upload.limit-reached");
+    expect(text).toContain("video-upload.limit-video:1");
+    expect(text).not.toContain("video-upload.limit-next");
+  });
+
   it("builds translated text from the refusal's fields", () => {
     const text = getUploadLimitText(refusal({ kind: "short", limit: 3 }));
     expect(text).toContain("video-upload.limit-short:3");

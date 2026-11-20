@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { extractPermlink, getUploadTuning } from "@/api/threespeak-embed/api";
+import type { TusRefusalError } from "@/api/threespeak-embed/upload-limits";
 
 // The 3Speak proxy now requires a HiveSigner OAuth token resolved from
 // localStorage + user-token. These tests exercise fetch error propagation,
@@ -368,7 +369,7 @@ describe("daily upload limit", () => {
     let attempts = 0;
     tusMock.runUpload = (options) => {
       attempts += 1;
-      const tusError: any = new Error("tus: unexpected response while creating upload");
+      const tusError: TusRefusalError = new Error("tus: unexpected response while creating upload");
       tusError.originalResponse = {
         getStatus: () => 429,
         getBody: () => JSON.stringify({ ...LIMIT_BODY, kind: "short", limit: 3, used: 3 })

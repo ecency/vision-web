@@ -183,3 +183,14 @@ export class ThreeSpeakUploadLimitError extends Error {
 export function isThreeSpeakUploadLimitError(e: unknown): e is ThreeSpeakUploadLimitError {
   return e instanceof ThreeSpeakUploadLimitError;
 }
+
+/**
+ * The part of tus-js-client's `DetailedError` that a refused TUS create
+ * carries. Its `HttpResponse` fits this shape, so a tus error passes as is.
+ */
+export interface TusRefusalError extends Error {
+  originalResponse?: {
+    getStatus(): number;
+    getBody(): string | null | undefined;
+  } | null;
+}
