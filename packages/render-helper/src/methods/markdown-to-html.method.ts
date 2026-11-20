@@ -349,7 +349,43 @@ function entityRuleDecode(entity: string): string {
 type LinkifyToken = { type: string; content?: string; children?: LinkifyToken[] }
 // A text token in the reading linkify gets, and where each of its characters
 // came from in the token as it is.
-type LinkifyView = { text: string; at: number[] }
+type LinkifyView = {
+  text: string
+  at: number[]
+  // For each character of `text`, the placeholder it was decoded from (an
+  // index into `spans`), or -1.
+  spanOf: number[]
+  spans: Array<{ d0: number; d1: number; s0: number; s1: number }>
+}
+
+// `text[from, to)` in the token's own spelling: characters outside a decoded
+// placeholder map one to one; a whole decoded placeholder is its placeholder;
+// part of one (a link boundary inside a multi-character decode) is that part
+// of the decoded text, so nothing is lost or repeated.
+function sourceSlice(view: LinkifyView, source: string, from: number, to: number): string {
+  let out = ''
+  let d = from
+  while (d < to) {
+    const k = view.spanOf[d]
+    if (k !== -1) {
+      const span = view.spans[k]
+      if (d === span.d0 && span.d1 <= to) {
+        out += source.slice(span.s0, span.s1)
+        d = span.d1
+      } else {
+        const stop = Math.min(span.d1, to)
+        out += view.text.slice(d, stop)
+        d = stop
+      }
+      continue
+    }
+    let n = d
+    while (n < to && view.spanOf[n] === -1) n++
+    out += source.slice(view.at[d], view.at[d] + (n - d))
+    d = n
+  }
+  return out
+}
 
 // On the app render, text holds placeholders where the web holds the decoded
 // entity, so linkify ended a URL at one (`https://e.com/a)&amp;x` linked only
@@ -360,7 +396,7 @@ type LinkifyView = { text: string; at: number[] }
 // as written. A link's href keeps linkify's own (web) reading.
 function withDecodedLinkify(rule: (state: { tokens: LinkifyToken[] }) => unknown, view: (text: string) => LinkifyView | null) {
   return (state: { tokens: LinkifyToken[] }): unknown => {
-    const sources = new Map<LinkifyToken, { source: string; at: number[] }>()
+    const sources = new Map<LinkifyToken, { source: string; view: LinkifyView }>()
     const before = new Map<LinkifyToken, LinkifyToken[]>()
     for (const block of state.tokens) {
       if (block.type !== 'inline' || !block.children) continue
@@ -369,7 +405,7 @@ function withDecodedLinkify(rule: (state: { tokens: LinkifyToken[] }) => unknown
         if (token.type !== 'text' || !token.content) continue
         const v = view(token.content)
         if (!v) continue
-        sources.set(token, { source: token.content, at: v.at })
+        sources.set(token, { source: token.content, view: v })
         token.content = v.text
         viewed = true
       }
@@ -405,7 +441,7 @@ function withDecodedLinkify(rule: (state: { tokens: LinkifyToken[] }) => unknown
           else if (piece.type === 'link_close') inLink = false
           if (piece.type !== 'text' || piece.content === undefined) continue
           const length = piece.content.length
-          if (!inLink) piece.content = source.source.slice(source.at[d], source.at[d + length])
+          if (!inLink) piece.content = sourceSlice(source.view, source.source, d, d + length)
           d += length
         }
       }
@@ -832,21 +868,34 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     if (!placeholderRe || !delimiter || !source.includes(delimiter)) return null;
     let text = '';
     const at: number[] = [];
+    const spanOf: number[] = [];
+    const spans: LinkifyView['spans'] = [];
     let last = 0;
     for (const m of regexMatches(source, placeholderRe)) {
       const start = m.index ?? 0;
       const entity = entityPlaceholders[+m[1]];
       if (entity === undefined) continue;
-      for (let i = last; i < start; i++) at.push(i);
+      for (let i = last; i < start; i++) {
+        at.push(i);
+        spanOf.push(-1);
+      }
       text += source.slice(last, start);
       const decoded = entityRuleDecode(entity);
-      for (let i = 0; i < decoded.length; i++) at.push(i === 0 ? start : start + m[0].length);
+      spans.push({ d0: text.length, d1: text.length + decoded.length, s0: start, s1: start + m[0].length });
+      for (let i = 0; i < decoded.length; i++) {
+        at.push(i === 0 ? start : start + m[0].length);
+        spanOf.push(spans.length - 1);
+      }
       text += decoded;
       last = start + m[0].length;
     }
-    for (let i = last; i < source.length; i++) at.push(i);
+    for (let i = last; i < source.length; i++) {
+      at.push(i);
+      spanOf.push(-1);
+    }
     at.push(source.length);
-    return { text: text + source.slice(last), at };
+    spanOf.push(-1);
+    return { text: text + source.slice(last), at, spanOf, spans };
   };
   const unswap = (text: string) =>
     placeholderRe ? text.replace(placeholderRe, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder) : text;

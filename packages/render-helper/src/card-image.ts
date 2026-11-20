@@ -631,6 +631,11 @@ function autolinkUrlEnd(text: string): number {
     pos = end + 1
   }
   if (end === hostStart) return 0
+  // UrlMatchValidator.containsMultipleDots: `..` before the first `/` after
+  // the `//` (a query or fragment with no path included) refuses the match.
+  const slash = text.indexOf('/', hostStart)
+  const head = slash === -1 ? text.slice(hostStart) : text.slice(hostStart, slash)
+  if (head.includes('..')) return 0
   const port = /^:[0-9]+/.exec(text.slice(end))
   if (port) end += port[0].length
   if (end < text.length && '/?#'.includes(text[end])) {
@@ -737,6 +742,21 @@ function firstBodyImageRawUrl(body: string): string | null {
   return bodyImageRawUrl(body, prepareBody(body))
 }
 
+// The emphasis marker characters that open a run before `pos` on its line:
+// a `*`, `_` or `~` with no whitespace after it and whitespace, punctuation or
+// the line start before it.
+function emphasisOpeners(body: string, pos: number): string {
+  let found = ''
+  for (let i = pos - 1; i >= 0 && body[i] !== '\n'; i--) {
+    const c = body[i]
+    if (!'*_~'.includes(c) || found.includes(c)) continue
+    const next = body[i + 1] ?? ''
+    const prev = i > 0 ? body[i - 1] : '\n'
+    if (next && !/\s/.test(next) && (/[\s\p{P}\p{S}]/u.test(prev))) found += c
+  }
+  return found
+}
+
 // The text a bare URL at `pos` sits in, as the inline parser leaves it for
 // linkify: to whitespace or `<`, and before a `[`, which may open a link,
 // image or footnote (develop's reading; the render keeps the `[` only when no
@@ -747,11 +767,19 @@ function markdownTextSpan(body: string, pos: number): string {
   // A trailing run of emphasis markers is the parser's closer (`**url**`,
   // `*Source: url*`), read on the raw text so one written as a reference
   // (`&#42;`) stays.
-  // A sentence mark around the closer (`**url**.`, `*url.*`) goes with it.
+  // Only a marker an opener before the URL on its line can close (`**url**`,
+  // `*Source: url*`); an unpaired one is the URL's, as the render reads it.
+  // A sentence mark around the closer (`**url**.`, `*url.*`) goes with it; a
+  // `;` never does, as it may end a reference (`&lt;`).
+  const openers = emphasisOpeners(body, pos)
   let run = end
   let marker = false
-  while (run > pos && '*_~.,;:!?'.includes(body[run - 1])) {
-    if ('*_~'.includes(body[run - 1])) marker = true
+  while (run > pos && '*_~.,:!?'.includes(body[run - 1])) {
+    const c = body[run - 1]
+    if ('*_~'.includes(c)) {
+      if (!openers.includes(c)) break
+      marker = true
+    }
     run--
   }
   return body.slice(pos, marker ? run : end)

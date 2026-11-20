@@ -181,3 +181,36 @@ describe('#2156-#2160 third review round', () => {
     expect(renderedImage(body, true)).toBe(renderedImage(body, false))
   })
 })
+
+describe('#2156-#2160 fourth review round', () => {
+  const renderedImage = (body: string) => {
+    const src = render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]
+    return src ? src.replace(/&amp;/g, '&') : null
+  }
+  const cardImage = (body: string) => {
+    const url = getEntryCardImageRawUrl(entry(body))
+    return url ? proxifyImageSrc(url, 0, 0, 'match') : null
+  }
+
+  it.each([
+    'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~', '**https://e.com/p.png?a=1&amp;**', '*Source: https://e.com/p.png&#41;*',
+    'https://e.com/p.jpg*', 'see https://e.com/p.png~ and', 'https://e.com/p.png?_', 'Is it https://e.com/p.png?*', 'https://e.com/p.png?v=2_',
+    '*Is it https://e.com/p.png?*', '**https://e.com/p.png**', '*Source: https://e.com/p.png*'
+  ])('the card names the image the render shows for %j', (body) => {
+    expect(cardImage(body)).toBe(renderedImage(body))
+  })
+
+  it.each([
+    ['Visit www.example.com/q?x=1&y; now', '; now'],
+    ['see https://e.com/a)&foo; there', '; there']
+  ])('app link text loses nothing at an entity boundary (%j)', (body, tail) => {
+    const app = render(body)
+    expect(app).toContain(tail)
+    expect(app.replace(/<[^>]+>/g, '')).toBe(render(body, false).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&amp;'))
+  })
+
+  it('app link text repeats nothing at an entity boundary', () => {
+    const text = render('joe@exam&bne;ple.com').replace(/<[^>]+>/g, '')
+    expect(text.split('⃥').length - 1).toBe(1)
+  })
+})
