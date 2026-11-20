@@ -4,6 +4,7 @@ import {
   CUSTOM_COMMUNITY_REGEX,
   INTERNAL_POST_REGEX,
   INTERNAL_POST_TAG_REGEX,
+  PLACEHOLDER_DELIMITER_CHARS,
   D_TUBE_REGEX,
   D_TUBE_REGEX2,
   IMG_REGEX,
@@ -370,12 +371,14 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       // Internal path like /ecency/@user/post. Not `//host/...` nor
       // `/\host/...`, which a browser reads as another site (isInSiteHref).
       // On the app render an entity in the href is still a placeholder
-      // (\u200B…\u200B) here and is restored after this check. In the path
+      // (delimiter, index, delimiter) here and is restored after this check.
+      // The delimiter is chosen per render (markdown-to-html), so every
+      // character it can be counts (PLACEHOLDER_DELIMITER_CHARS). In the path
       // it could spell the host's slashes (`/&#47;host` reads as `//host`), so
       // such a path is not judged in-site; one in the query or fragment cannot
       // move the host. An entity spelling `?` or `#` is itself a placeholder
       // in the path, so it stays rejected.
-      isValidDomain = !href.split(/[?#]/, 1)[0].includes('\u200B') && isInSiteHref(href);
+      isValidDomain = !PLACEHOLDER_DELIMITER_CHARS.test(href.split(/[?#]/, 1)[0]) && isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
       const domain = tpostMatch[1]

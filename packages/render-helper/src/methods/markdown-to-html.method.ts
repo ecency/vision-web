@@ -2,9 +2,9 @@ import { traverse } from './traverse.method'
 import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
-import { decodeCompleteReferences, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeCompleteReferences, decodeEntities, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
 import { regexMatches } from '../regex-matches'
-import { DOMParser, XMLSerializer, ENTITY_REGEX } from '../consts'
+import { DOMParser, XMLSerializer, ENTITY_REGEX, PLACEHOLDER_DELIMITERS, PRIVATE_DELIMITERS_FROM, PRIVATE_DELIMITERS_TO } from '../consts'
 import { Remarkable, utils } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
 import * as htmlparser2 from 'htmlparser2'
@@ -19,11 +19,14 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // parentheses stays inside (`photo_(1).png`, Wikipedia's `X_(Y).jpg`, #2092),
 // and so does an unclosed `(` (`a_(x&amp;y.png`), which no markdown construct
 // closes. Nothing follows the repetition, so the first (greedy) parse is taken
-// without backtracking: linear. An angle-bracket destination or autolink is
-// taken whole to its `>`, as the parser reads it: a `)` or a space inside
-// does not end it (`[x](<https://e.com/a)b?x=1&amp;y=2>)`, #2154). It holds
-// no `<`, so a failed attempt stops at the next one: linear too.
-const URL_RUN = /<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+// without backtracking: linear. An angle-bracket destination is taken whole
+// to its `>`, as the parser reads it, so a `)` or a space inside does not end
+// it (`[x](<https://e.com/a)b?x=1&amp;y=2>)`, #2154): after `(` or `]:` (the
+// opening of a destination), anything but a line break; elsewhere (an
+// autolink) no whitespace, so text like `<https://e.com/a b &copy; c>` keeps
+// its entities protected. A span holds no `<`, so a failed attempt stops at
+// the next one: linear too.
+const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
@@ -316,16 +319,21 @@ function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreS
     }
     const references = state.env.references
     if (!references) return result
+    // A paragraph's definitions are parsed one after another until one
+    // fails, which leaves the rest of the paragraph (its src) as the
+    // paragraph's content. Every other state defined its label.
+    const failed = new Set<string>()
+    for (const token of state.tokens) if (token.type === 'inline' && token.content) failed.add(token.content)
     for (const inline of seen) {
-      if (inline.src.charCodeAt(0) !== 0x5b) continue
+      if (failed.has(inline.src) || inline.src.charCodeAt(0) !== 0x5b) continue
       const labelEnd = linkLabelEnd(inline, 0)
       if (labelEnd < 0 || inline.src.charCodeAt(labelEnd + 1) !== 0x3a) continue
-      const raw = angleDestination(inline.src, skipSpaces(inline.src, labelEnd + 2, inline.posMax), inline.posMax)
-      if (raw === null) continue
       // The first definition of a label wins, as in the parser.
       const key = inline.src.slice(1, labelEnd).trim().replace(/\s+/g, ' ').toUpperCase()
-      if (known.has(key) || !references[key]) continue
+      if (known.has(key)) continue
       known.add(key)
+      const raw = angleDestination(inline.src, skipSpaces(inline.src, labelEnd + 2, inline.posMax), inline.posMax)
+      if (raw === null || !references[key]) continue
       const undecoded = undecodedAngleDestination(references[key].href, raw)
       if (undecoded !== undefined) references[key].href = undecoded
     }
@@ -338,11 +346,9 @@ function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreS
 // read as a placeholder (#2154): a zero-width space as before, or the first
 // free one of a few other invisible characters, then the private use area
 // (past AMP_PAIR). Null when none is free: the body then renders unprotected.
-const PLACEHOLDER_DELIMITERS = ['​', '⁠', '⁡', '⁢', '⁣', '⁤']
-const PRIVATE_DELIMITERS_FROM = 0xe100
-const PRIVATE_DELIMITERS_TO = 0xf8ff
-
 function placeholderDelimiter(input: string): string | null {
+  // Raw or written as a reference (`&#8203;`), which the DOM decodes.
+  if (input.includes('&')) input += decodeEntities(input)
   const free = PLACEHOLDER_DELIMITERS.find((d) => !input.includes(d))
   if (free) return free
   const used = new Uint8Array(PRIVATE_DELIMITERS_TO - PRIVATE_DELIMITERS_FROM + 1)
@@ -352,6 +358,24 @@ function placeholderDelimiter(input: string): string | null {
   }
   const at = used.indexOf(0)
   return at === -1 ? null : String.fromCharCode(PRIVATE_DELIMITERS_FROM + at)
+}
+
+// Remarkable's ParserBlock.parse normalisation, exactly.
+function normalizeLikeRemarkable(src: string): string {
+  src = src.replace(/\u00a0/g, ' ').replace(/\r[\n\u0085]|[\u2424\u2028\u0085]/g, '\n')
+  if (!src.includes('\t')) return src
+  let lineStart = 0
+  let lastTabPos = 0
+  return src.replace(/[\n\t]/g, (match: string, offset: number) => {
+    if (match === '\n') {
+      lineStart = offset + 1
+      lastTabPos = 0
+      return match
+    }
+    const result = '    '.slice((offset - lineStart - lastTabPos) % 4)
+    lastTabPos = offset - lineStart + 1
+    return result
+  })
 }
 
 type CodeToken = { type: string; content?: string; params?: string; children?: CodeToken[] }
@@ -571,6 +595,11 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     placeholderRe ? text.replace(placeholderRe, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder) : text;
 
   if (entities && delimiter) {
+    // The parser first expands tabs to four-column stops (and normalises
+    // line breaks and no-break spaces). A placeholder is shorter than its
+    // entity, so a tab after one would land on another stop: normalise as the
+    // parser does first, which leaves it nothing to change (#2154).
+    input = normalizeLikeRemarkable(input);
     // Deduplicate entities to avoid duplicate placeholders. Each distinct entity
     // gets a markdown-inert placeholder (the delimiter around its index).
     const indexOf = new Map<string, number>();

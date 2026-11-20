@@ -90,3 +90,12 @@ export const ENTITY_REGEX = /&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-fA-F]{1,6});/ig
 export const SECTION_REGEX = /\B(\#[\da-zA-Z-_]+\b)(?!;)/i
 export const ID_WHITELIST = /^[A-Za-z][-A-Za-z0-9_]*$/
 
+
+// The characters the app render's entity placeholders are delimited by
+// (markdown-to-html placeholderDelimiter picks one the body does not hold):
+// a zero-width space, a few other invisibles, then the private use area past
+// AMP_PAIR. a.method treats any of them in a path as a placeholder.
+export const PLACEHOLDER_DELIMITERS = ['\u200B', '\u2060', '\u2061', '\u2062', '\u2063', '\u2064']
+export const PRIVATE_DELIMITERS_FROM = 0xe100
+export const PRIVATE_DELIMITERS_TO = 0xf8ff
+export const PLACEHOLDER_DELIMITER_CHARS = /[\u200B\u2060-\u2064\uE100-\uF8FF]/

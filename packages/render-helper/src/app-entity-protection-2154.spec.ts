@@ -59,3 +59,40 @@ describe('destinations decode once on every form (#2154)', () => {
     expect(render('[x](<https://example.com/a b?q=1&amp;r=2>)', false)).toContain('href="https://example.com/a%20b?q=1&amp;r=2"')
   })
 })
+
+// Review round: each of these broke on the first version of the fix.
+describe('#2154 review edges', () => {
+  it.each(['/&#47;evil.example/@alice/X_y', '/&#47;evil.example/@alice/some-post', '/&#92;evil.example/@alice/posts'])(
+    'a path entity is never in-site, whatever the delimiter (%s)',
+    (path) => {
+      for (const prefix of ['', 'zero​width\n\n', 'a​⁠⁡⁢⁣⁤b\n\n']) {
+        const html = render(`${prefix}[x](${path})`)
+        expect(html).toContain('class="markdown-external-link"')
+        expect(html).not.toMatch(/markdown-(?:post|profile)-link/)
+      }
+    }
+  )
+
+  it('rewrites only the definition that won', () => {
+    const want = 'data-href="https://e.com/?q=&amp;"'
+    expect(render('[a]: https://e.com/?q=&amp;\n[a]: <https://e.com/?q=&amp;amp;>\n\n[x][a]')).toContain(want)
+    const failedFirst = render('[a]: <https://e.com/?q=&amp;amp;> junk\n\n[a]: https://e.com/?q=&amp;\n\n[x][a]')
+    expect(failedFirst).toContain(want)
+    expect(failedFirst).not.toContain('&amp;amp;"')
+  })
+
+  it.each(['```\nx&lt;\ty\n```', '    x&lt;\ty &amp;\tz\n', 'a\tb\n\n```\n&copy;\t|\n```'])('keeps tab stops in code as on the web (%j)', (body) => {
+    const code = (html: string) => html.replace(/<span class="ll-[a-z]+">|<\/span>/g, '').match(/<code>([\s\S]*?)<\/code>/)?.[1]
+    expect(code(render(body))).toBe(code(render(body, false)))
+  })
+
+  it('protects entities in angle text that is no link', () => {
+    expect(render('see <https://e.com/my page &copy; more> end')).toContain('page &copy; more')
+    expect(render('x &copy; <https://e.com/a\\> y &copy; z > w &copy;')).not.toContain('©')
+  })
+
+  it('does not read an encoded delimiter as a placeholder', () => {
+    expect(render('https://e.com/&#8203;0&#8203; and &copy;')).toContain('and &copy;')
+    expect(render('https://e.com/&#8203;0&#8203; and &copy;')).not.toMatch(/<\/a>&#8203; and/)
+  })
+})
