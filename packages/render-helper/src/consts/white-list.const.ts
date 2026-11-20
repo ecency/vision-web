@@ -16,7 +16,10 @@ export const WHITE_LIST = [
   'dapplr.in',
   'liketu.com',
   'bilpcoin.com',
-  'inji.com'
+  'inji.com',
+  // WorldMapPin, the travel map (#2167). Its /p/<permlink> post links carry no
+  // author, so only /@user and /@user/permlink forms become internal.
+  'worldmappin.com'
 ]
 export const OLD_LIST = [
   'busy.org',
