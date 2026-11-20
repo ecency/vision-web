@@ -119,3 +119,34 @@ describe('#2156-#2160 review round', () => {
     expect(href(render('[x](<https://e.com/50% off>)', false))).toBe('https://e.com/50%25%20off')
   })
 })
+
+describe('#2156-#2160 second review round', () => {
+  const renderedImage = (body: string) => render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1] ?? null
+
+  it.each([
+    ['*italic*https://e.com/a*b.png', 'https://e.com/a*b.png'],
+    ['_**https://e.com/a_b.png**_', 'https://e.com/a_b.png'],
+    ['https://e.com/a.png[a[b]](c)', 'https://e.com/a.png'],
+    ['https://e.com/a.png[x]\n\n[x]: /u', 'https://e.com/a.png']
+  ])('the card reads %j as the render does', (body, url) => {
+    expect(getEntryCardImageRawUrl(entry(body))).toBe(url)
+    expect(renderedImage(body)).toBe(proxifyImageSrc(url, 0, 0, 'match').replace(/&/g, '&amp;').replace(/\?format=match&amp;mode=fit$/, '') + '?format=match&amp;mode=fit')
+  })
+
+  it.each(['https://a_.b.com/p.jpg', 'https://a.b_c/p.jpg', 'https://x.y_z.com/p.jpg', 'https://e..com/p.jpg'])('a host Autolinker cuts short is no image (%j)', (body) => {
+    expect(getEntryCardImageRawUrl(entry(body))).toBeNull()
+    expect(renderedImage(body)).toBeNull()
+  })
+
+  it('stays linear on long emphasis runs', () => {
+    const body = (n: number) => '*'.repeat(n) + 'https://e.com/x.png' + ('*'.repeat(n - 1) + 'a').repeat(2)
+    const time = (n: number) => { const t = performance.now(); getEntryCardImageRawUrl(entry(body(n))); return performance.now() - t }
+    time(1000)
+    expect(time(80_000)).toBeLessThan(2000)
+  })
+
+  it('an invalid numeric reference reads as the web reads it, for linkify', () => {
+    const body = 'see www.e.com/it&#146;s now'
+    expect(href(render(body))).toBe(href(render(body, false)))
+  })
+})

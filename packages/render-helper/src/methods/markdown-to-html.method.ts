@@ -336,6 +336,16 @@ function withAutolinkSource(rule: (state: InlineState, silent?: boolean) => bool
   }
 }
 
+// An entity as Remarkable's inline entity rule decodes it in text: a numeric
+// reference it refuses (`&#0;`, `&#146;`, a surrogate) is U+FFFD there, which
+// replaceEntities leaves as written.
+function entityRuleDecode(entity: string): string {
+  const numeric = /^&#(x[\da-f]+|\d+);$/i.exec(entity)
+  if (!numeric) return utils.replaceEntities(entity)
+  const code = numeric[1][0].toLowerCase() === 'x' ? parseInt(numeric[1].slice(1), 16) : parseInt(numeric[1], 10)
+  return utils.isValidEntityCode(code) ? utils.fromCodePoint(code) : '\ufffd'
+}
+
 type LinkifyToken = { type: string; content?: string; children?: LinkifyToken[] }
 // A text token in the reading linkify gets, and where each of its characters
 // came from in the token as it is.
@@ -823,7 +833,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
       if (entity === undefined) continue;
       for (let i = last; i < start; i++) at.push(i);
       text += source.slice(last, start);
-      const decoded = utils.replaceEntities(entity);
+      const decoded = entityRuleDecode(entity);
       for (let i = 0; i < decoded.length; i++) at.push(i === 0 ? start : start + m[0].length);
       text += decoded;
       last = start + m[0].length;

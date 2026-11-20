@@ -614,10 +614,22 @@ function autolinkUrlEnd(text: string): number {
   const scheme = /^https?:\/\//i.exec(text)
   if (!scheme) return 0
   let end = scheme[0].length
-  // Labels of word characters, `-` and `_` (getDomainNameStr), joined by
-  // dots; the host never ends on a separator.
-  while (end < text.length && (autolinkWordChar(text[end]) || '.-_'.includes(text[end]))) end++
-  while (end > scheme[0].length && '.-_'.includes(text[end - 1])) end--
+  // Labels as Autolinker 3.16 reads them (checked against it): a word
+  // character, then word characters and `-` (and `_` in the first label
+  // only), ending on a word character; joined by dots. A label ending on a
+  // separator ends the host at its last word character.
+  let pos = end
+  for (let first = true; pos < text.length && autolinkWordChar(text[pos]); first = false) {
+    let k = pos
+    let lastWord = pos
+    while (k < text.length && (autolinkWordChar(text[k]) || text[k] === '-' || (first && text[k] === '_'))) {
+      if (autolinkWordChar(text[k])) lastWord = k
+      k++
+    }
+    end = lastWord + 1
+    if (end !== k || text[k] !== '.' || !autolinkWordChar(text[k + 1] ?? '')) break
+    pos = k + 1
+  }
   const port = /^:\d+/.exec(text.slice(end, end + 8))
   if (port) end += port[0].length
   if ('/?#'.includes(text[end] ?? ' ') && end < text.length) {
@@ -708,32 +720,13 @@ function firstBodyImageRawUrl(body: string): string | null {
 }
 
 // The text a bare URL at `pos` sits in, as the inline parser leaves it for
-// linkify: to whitespace or `<`, and before what the parser takes itself, the
-// emphasis run that opened just before the URL closing again (`**url**`,
-// `~~url~~`), or a link, image or footnote reference starting right after.
+// linkify: to whitespace or `<`, and before a `[`, which may open a link,
+// image or footnote (develop's reading; the render keeps the `[` only when no
+// such construct parses, which is rare in a URL).
 function markdownTextSpan(body: string, pos: number): string {
   let end = pos
-  while (end < body.length && !/[\s<]/.test(body[end])) end++
-  let span = body.slice(pos, end)
-  let open = pos
-  while (open > 0 && '*_~'.includes(body[open - 1])) open--
-  const marker = body.slice(open, pos)
-  if (marker) {
-    const close = span.indexOf(marker)
-    if (close > 0) span = span.slice(0, close)
-  }
-  // One pass: the latest `[` opens the label a `]` followed by `(` or `[`
-  // closes; `[^` opens a footnote reference.
-  let label = -1
-  for (let i = 0; i < span.length; i++) {
-    if (span[i] === '[') {
-      if (span[i + 1] === '^') return span.slice(0, i)
-      label = i
-    } else if (span[i] === ']' && label !== -1 && (span[i + 1] === '(' || span[i + 1] === '[')) {
-      return span.slice(0, label > 0 && span[label - 1] === '!' ? label - 1 : label)
-    }
-  }
-  return span
+  while (end < body.length && !/[\s<[]/.test(body[end])) end++
+  return body.slice(pos, end)
 }
 
 // Whether `pos` starts a reference definition's destination: `]:`, then
@@ -775,7 +768,14 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // render's linkify (Autolinker) ends the URL (#2157).
   const text = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
     .replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
-  const url = text.slice(0, autolinkUrlEnd(text))
+  let url = text.slice(0, autolinkUrlEnd(text))
+  // Right after an emphasis marker, a closing run at the end is the parser's
+  // (`**url**`, `_**url**_`), not the URL's.
+  if (candidate.pos > 0 && '*_~'.includes(body[candidate.pos - 1])) {
+    let end = url.length
+    while (end > 0 && '*_~'.includes(url[end - 1])) end--
+    url = url.slice(0, end)
+  }
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }
 
