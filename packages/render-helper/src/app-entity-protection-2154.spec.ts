@@ -213,3 +213,10 @@ describe('#2154 definitions walked as the parser consumes them (PR review)', () 
     for (const forApp of [true, false]) expect(render(body, forApp)).toContain('https://e.com/a%20b?q=&amp;amp;"')
   })
 })
+
+describe('#2154 CodeRabbit title case (PR review)', () => {
+  it.each([true, false])('a []: line in a title reserves no label (forApp %s)', (forApp) => {
+    const body = '[a]: <https://e.com/u> "t\n[]: not-a-definition"\n[]: <https://e.com/?q=&amp;amp;>\n\n[][]'
+    expect(render(body, forApp)).toContain('https://e.com/?q=&amp;amp;"')
+  })
+})
