@@ -15,8 +15,23 @@ const untransformed = (html: string) => sanitizeHtml(html, { untransformed: true
 describe('a refused iframe leaves nothing behind (#2155)', () => {
   it('drops the fallback text with the tags, as a browser never shows it', () => {
     expect(untransformed('<iframe src="https://evil.example.com/x">Unavailable</iframe>')).toBe('')
-    expect(untransformed('a<iframe src="https://evil.example.com/x">Unavailable <b>x</b></iframe>b')).toBe('ab')
     expect(untransformed('<iframe src="https://evil.example.com/x">\n</iframe >after')).toBe('after')
+    expect(untransformed('<IFRAME SRC="https://evil.example.com/x">Unavailable</IFRAME>')).toBe('')
+  })
+
+  it('keeps markup inside it, so the tags around it stay balanced', () => {
+    expect(untransformed('a<iframe src="https://evil.example.com/x">Unavailable <b>x</b></iframe>b')).toBe('aUnavailable <b>x</b>b')
+    expect(untransformed('<div><iframe src="https://evil.example.com/x">x</div><p>important</p><div></iframe></div>z')).toBe(
+      '<div>x</div><p>important</p><div></div>z'
+    )
+    expect(untransformed('<table><tr><td><iframe src="https://evil.example.com/x">x</td></tr></table>after</iframe>z')).toBe(
+      '<table><tr><td>x</td></tr></table>afterz'
+    )
+  })
+
+  it('leaves no close tag that closes no kept iframe', () => {
+    expect(untransformed('<iframe/src="https://evil.example.com/x">Unavailable</iframe>')).not.toContain('iframe')
+    expect(untransformed('<iframe>a<iframe>b<iframe>c</iframe>d</iframe>e</iframe>f')).toBe('abdef')
   })
 
   it('keeps what follows an unclosed one', () => {
@@ -72,9 +87,18 @@ describe('Dapplr hosts: the allow list and the transform agree (#2155)', () => {
     expect(html).not.toContain('unsupported-iframe')
   })
 
-  it('refuses a host with an empty label on both', () => {
-    const src = 'https://.dapplr.in/file/dapplr-videos/x.mp4'
+  it.each([
+    'https://.dapplr.in/file/dapplr-videos/x.mp4',
+    'https://a..dapplr.in/file/dapplr-videos/x.mp4',
+    'https://a_b.dapplr.in/file/dapplr-videos/x.mp4',
+    'https://a.dapplr.in:8443/file/dapplr-videos/x.mp4',
+    'https://u:p@a.b.dapplr.in/file/dapplr-videos/x.mp4',
+    'https://a.dapplr.in\\file\\dapplr-videos\\x',
+    'https:///a.b.dapplr.in/file/dapplr-videos/x.mp4',
+    'https://a%2eb.dapplr.in/file/dapplr-videos/x.mp4'
+  ])('%s is refused by both', (src) => {
     expect(isAllowedEmbedSrc(src)).toBe(false)
     expect(markdown2Html(entry(`<iframe src="${src}"></iframe>`), false)).not.toContain('<iframe')
+    expect(untransformed(`<iframe src="${src}"></iframe>`)).not.toContain('<iframe')
   })
 })
