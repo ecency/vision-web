@@ -472,8 +472,12 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // out as a bare href). Any other passes xss's own link rule too (it refuses
       // `java script:`, `%6a...:` and other non-links).
       if (isWhiteAttr && name === 'href') {
-        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, undefined as never)
-          ? `href="${escapeAttr(decoded)}"`
+        // xss's rule is case-sensitive about http(s) too: `HTTPS://A.com/p` came
+        // out as a bare href (#2159). The scheme is case-insensitive, so it is
+        // checked and written lower-cased.
+        const href = decoded.replace(/^https?:/i, (scheme) => scheme.toLowerCase());
+        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, href, undefined as never)
+          ? `href="${escapeAttr(href)}"`
           : 'href';
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {

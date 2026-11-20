@@ -23,7 +23,25 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // without backtracking: linear. Entities in a markdown destination are left
 // to the parser's own reading of it (undecodedAngleDestination), not guessed
 // here (#2154).
-const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+// A `)` followed by more of the URL stays in it too (`https://e.com/a)&amp;x`),
+// as linkify reads it (#2160); one after a `(` that opens a destination or a
+// parenthesis is cut back to its first unbalanced `)` (urlRunEnd).
+const URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\(|\)(?=[^\s<>"'`()]))+/gi
+
+// The end of a URL run at `at`: after `(` (a markdown destination, or prose in
+// parentheses), the run ends at its first unbalanced `)`.
+function urlRunEnd(input: string, at: number, run: string): number {
+  let k = at - 1
+  while (k >= 0 && (input.charCodeAt(k) === 0x20 || input.charCodeAt(k) === 0x0a)) k--
+  if (k < 0 || input.charCodeAt(k) !== 0x28) return at + run.length
+  let depth = 0
+  for (let i = 0; i < run.length; i++) {
+    const c = run.charCodeAt(i)
+    if (c === 0x28) depth++
+    else if (c === 0x29 && depth-- === 0) return at + i
+  }
+  return at + run.length
+}
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
@@ -215,10 +233,18 @@ type Unswap = (text: string) => string
 // placeholders (which Remarkable percent-encoded, so the final restore could
 // never find them, #2154): those go back to their entities first, so the
 // destination reads exactly as written, whatever its scheme.
+// A destination as Remarkable normalises it (encodeURI) but for `%` and
+// non-ASCII, which stay as written: those are what the plain form keeps, so
+// the two forms of one URL name it alike (#2158: `<https://e.com/é>` is
+// `https://e.com/é`, as `https://e.com/é` is). The ASCII characters encodeURI
+// encodes (whitespace, controls, `\`, quotes, brackets) are still encoded: a
+// browser reads a raw `\` as `/`.
+const plainForm = (url: string): string => url.replace(/[\s\u0000-\u001f\u007f"<>\\^`{|}]/g, (c) => encodeURIComponent(c))
+
 function undecodedAngleDestination(value: string | undefined, raw: string, unswap: Unswap): string | undefined {
   try {
     if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return undefined
-    return uriNormalized(utils.unescapeMd(unswap(raw)))
+    return plainForm(utils.unescapeMd(unswap(raw)))
   } catch {
     return undefined
   }
@@ -292,6 +318,31 @@ function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => b
     const field = token.type === 'image' ? 'src' : 'href'
     const undecoded = undecodedAngleDestination(token[field], raw, unswap)
     if (undecoded !== undefined) token[field] = undecoded
+    return ok
+  }
+}
+
+// The same for an autolink (`<https://...>`, `<a@b.c>`): Remarkable decodes it
+// (normalizeLink) and decode_destinations decoded it again, and on the app
+// render a placeholder in it was percent-encoded (#2158). No escapes apply.
+function withAutolinkSource(rule: (state: InlineState, silent?: boolean) => boolean, unswap: Unswap) {
+  return (state: InlineState, silent?: boolean): boolean => {
+    const start = state.pos
+    const before = state.tokens.length
+    const ok = rule(state, silent)
+    if (!ok || silent) return ok
+    const raw = state.src.slice(start + 1, state.pos - 1)
+    const token = state.tokens.slice(before).find((t) => t.type === 'link_open')
+    if (!token) return ok
+    for (const prefix of ['', 'mailto:']) {
+      try {
+        if (token.href !== uriNormalized(utils.replaceEntities(prefix + raw))) continue
+      } catch {
+        continue
+      }
+      token.href = plainForm(unswap(prefix + raw))
+      break
+    }
     return ok
   }
 }
@@ -626,6 +677,9 @@ export function stripDocumentWrapper(html: string): string {
 }
 
 export function markdownToHTML(input: string, forApp: boolean, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): string {
+  // A lone surrogate becomes U+FFFD, as a browser reads it: the parser's
+  // encodeURI throws on one, and the whole body rendered empty (#2158).
+  input = input.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
   // Internalize leofinance.io links
   input = input.replace(new RegExp("https://leofinance.io/threads/view/","g"), "/@");
   input = input.replace(new RegExp("https://leofinance.io/posts/","g"), "/@");
@@ -671,6 +725,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // wrappers hand the rule.
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', (rule) => withAngleDestinations(rule, (text) => unswap(text)))
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
+  wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', (rule) => withAutolinkSource(rule, (text) => unswap(text)))
   wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', withOriginalSource)
   wrapRule(md.core.ruler as unknown as RuleList, 'references', (rule) => withAngleReferences(rule, (text) => unswap(text)))
   wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
@@ -746,8 +801,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     let last = 0;
     for (const m of regexMatches(input, URL_RUN)) {
       const at = m.index ?? 0;
-      protectedInput += swap(input.slice(last, at)) + m[0];
-      last = at + m[0].length;
+      if (at < last) continue;
+      const end = urlRunEnd(input, at, m[0]);
+      protectedInput += swap(input.slice(last, at)) + input.slice(at, end);
+      last = end;
     }
     input = protectedInput + swap(input.slice(last));
     md.core.ruler.before('linkify', 'restore_code_entities', restoreCodeEntities(unswap), {})
