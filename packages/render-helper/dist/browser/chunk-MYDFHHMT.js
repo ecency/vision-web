@@ -1,4 +1,4 @@
-import { DAPPLR_REGEX, BITCHUTE_REGEX, BRIGHTEON_REGEX } from './chunk-AS65CVY3.js';
+import { DAPPLR_REGEX, BITCHUTE_REGEX, BRIGHTEON_REGEX } from './chunk-5HL7IVFO.js';
 
 // src/consts/embed-hosts.const.ts
 var ALLOWED_EMBED_HOSTS = /* @__PURE__ */ new Set([
@@ -147,5 +147,5 @@ function canonicalEmbedSrc(src) {
 }
 
 export { ALLOWED_EMBED_HOSTS, canonicalEmbedSrc, isAllowedEmbedSrc };
-//# sourceMappingURL=chunk-PU6X7VDH.js.map
-//# sourceMappingURL=chunk-PU6X7VDH.js.map
+//# sourceMappingURL=chunk-MYDFHHMT.js.map
+//# sourceMappingURL=chunk-MYDFHHMT.js.map

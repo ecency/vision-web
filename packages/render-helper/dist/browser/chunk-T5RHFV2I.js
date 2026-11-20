@@ -1,7 +1,7 @@
 import { linkify } from './chunk-CQKBUXBU.js';
 import { markInternalThumbnail } from './chunk-NQZM6AV2.js';
 import { WHITE_LIST } from './chunk-4J745Z46.js';
-import { YOUTUBE_REGEX, POST_REGEX } from './chunk-AS65CVY3.js';
+import { YOUTUBE_REGEX, POST_REGEX } from './chunk-5HL7IVFO.js';
 import { proxifyImageSrc } from './chunk-LT2KELO7.js';
 import { DOMParser } from './chunk-DBKALPTB.js';
 import { extractYtStartTime, youtubeVideoLinkClass, sanitizePermlink, isValidUsername, isValidPermlink } from './chunk-QVFPA3RG.js';
@@ -115,5 +115,5 @@ function text(node, forApp, renderOptions) {
 }
 
 export { text };
-//# sourceMappingURL=chunk-2E4P5LYV.js.map
-//# sourceMappingURL=chunk-2E4P5LYV.js.map
+//# sourceMappingURL=chunk-T5RHFV2I.js.map
+//# sourceMappingURL=chunk-T5RHFV2I.js.map

@@ -1,8 +1,8 @@
 import { isStrictTag } from './chunk-YYHKRTAC.js';
 import { parsePixelDimension, authorPixelSize } from './chunk-LUI6MD5L.js';
 import { ALLOWED_ATTRIBUTES, authorClasses, IFRAME_SANDBOX_GRANTS, RENDER_HELPER_DATA_ATTRIBUTES, stripMarkdownClasses, namespacedId } from './chunk-GPH6URMW.js';
-import { isAllowedEmbedSrc, canonicalEmbedSrc } from './chunk-PU6X7VDH.js';
-import { ID_WHITELIST } from './chunk-AS65CVY3.js';
+import { isAllowedEmbedSrc, canonicalEmbedSrc } from './chunk-MYDFHHMT.js';
+import { ID_WHITELIST } from './chunk-5HL7IVFO.js';
 import { getProxyBase, proxifyImageSrc } from './chunk-LT2KELO7.js';
 import { regexMatches } from './chunk-SH6RGNOF.js';
 import { trimTrailingSlash, decodeAttributeEntities } from './chunk-QVFPA3RG.js';
@@ -257,5 +257,5 @@ function sanitizeHtml(html, options) {
 }
 
 export { sanitizeHtml };
-//# sourceMappingURL=chunk-CUJE3JDO.js.map
-//# sourceMappingURL=chunk-CUJE3JDO.js.map
+//# sourceMappingURL=chunk-RSO7K4ZG.js.map
+//# sourceMappingURL=chunk-RSO7K4ZG.js.map
