@@ -36,3 +36,11 @@ describe('app render in-site path guard (#2165)', () => {
     expect(html).not.toMatch(/markdown-(?:post|profile)-link/)
   })
 })
+
+describe('an authored zero-width space in a path (#2165 review)', () => {
+  it.each(['', 'a &amp; b\n\n'])('stays external whatever else the body holds (%j)', (prefix) => {
+    for (const path of ['/topic​/@alice/some-post', '/​/evil.example/@alice/some-post']) {
+      expect(render(`${prefix}[x](${path})`)).toContain('class="markdown-external-link"')
+    }
+  })
+})

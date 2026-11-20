@@ -375,11 +375,12 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
       // In the path it could spell the host's slashes (`/&#47;host` reads as
       // `//host`), so such a path is not judged in-site; one in the query or
       // fragment cannot move the host. An entity spelling `?` or `#` is itself
-      // a placeholder in the path, so it stays rejected. Only the delimiter
-      // this render chose marks one (#2165); with none (the web render, or a
-      // body without entities) the old zero-width space check stays.
+      // a placeholder in the path, so it stays rejected. A zero-width space is
+      // rejected as it always was; beyond it, only the delimiter this render
+      // chose marks a placeholder, never an author's look-alike (#2165).
       const path = href.split(/[?#]/, 1)[0];
-      const placeholder = path.includes(activePlaceholderDelimiter() ?? '\u200B');
+      const delimiter = activePlaceholderDelimiter();
+      const placeholder = path.includes('\u200B') || (delimiter !== null && path.includes(delimiter));
       isValidDomain = !placeholder && isInSiteHref(href);
     } else if (tpostMatch[1].includes('.')) {
       // Extract domain from URL (strip protocol and www.)
