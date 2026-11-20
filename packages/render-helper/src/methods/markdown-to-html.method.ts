@@ -25,8 +25,9 @@ const domSerializer = (domSerializerModule as any).default || domSerializerModul
 // opening of a destination), anything but a line break; elsewhere (an
 // autolink) no whitespace, so text like `<https://e.com/a b &copy; c>` keeps
 // its entities protected. A span holds no `<`, so a failed attempt stops at
-// the next one: linear too.
-const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi
+// the next one: linear too. A bare URL stops before such an opening, so one
+// ending a label (`[https://a.com](<...>)`) leaves the destination whole.
+const URL_RUN = /(?:\(|\]:)\s*<https?:\/\/(?:[^\n<>\\]|\\[^\n])*>|<https?:\/\/(?:[^\s<>\\]|\\\S)*>|https?:\/\/(?:[^\s<>"'`()\]]|\](?!:\s*<)|\([^\s<>"'`()]*\)|\((?!\s*<))+/gi
 
 // A backslash-escaped `&` in a link or image destination is a literal
 // ampersand (CommonMark), so `[x](https://e.com/?q=\\&copy;)` names
@@ -323,7 +324,12 @@ function withAngleReferences(rule: (state: CoreState) => unknown): (state: CoreS
     // fails, which leaves the rest of the paragraph (its src) as the
     // paragraph's content. Every other state defined its label.
     const failed = new Set<string>()
-    for (const token of state.tokens) if (token.type === 'inline' && token.content) failed.add(token.content)
+    const tokens = state.tokens
+    for (let i = 1; i < tokens.length - 1; i++) {
+      if (tokens[i].type === 'inline' && tokens[i - 1].type === 'paragraph_open' && tokens[i + 1].type === 'paragraph_close') {
+        failed.add(tokens[i].content ?? '')
+      }
+    }
     for (const inline of seen) {
       if (failed.has(inline.src) || inline.src.charCodeAt(0) !== 0x5b) continue
       const labelEnd = linkLabelEnd(inline, 0)
@@ -360,22 +366,30 @@ function placeholderDelimiter(input: string): string | null {
   return at === -1 ? null : String.fromCharCode(PRIVATE_DELIMITERS_FROM + at)
 }
 
-// Remarkable's ParserBlock.parse normalisation, exactly.
-function normalizeLikeRemarkable(src: string): string {
-  src = src.replace(/\u00a0/g, ' ').replace(/\r[\n\u0085]|[\u2424\u2028\u0085]/g, '\n')
+// Expands each tab as Remarkable's ParserBlock.parse will: to the next
+// four-column stop of its line, read after the parser's line-break and
+// no-break-space normalisation (which leaves tabs where they are). Only the
+// tabs change, so the parser's own pass sees the same lines and has no tab
+// left to expand; normalising line breaks here too would not be a fixed point
+// (`\r\r\n` collapses one step further on a second pass).
+function expandTabsLikeRemarkable(src: string): string {
   if (!src.includes('\t')) return src
+  const normalized = src.replace(/\u00a0/g, ' ').replace(/\r[\n\u0085]|[\u2424\u2028\u0085]/g, '\n')
+  const widths: string[] = []
   let lineStart = 0
   let lastTabPos = 0
-  return src.replace(/[\n\t]/g, (match: string, offset: number) => {
-    if (match === '\n') {
+  for (let offset = 0; offset < normalized.length; offset++) {
+    const code = normalized.charCodeAt(offset)
+    if (code === 0x0a) {
       lineStart = offset + 1
       lastTabPos = 0
-      return match
+    } else if (code === 0x09) {
+      widths.push('    '.slice((offset - lineStart - lastTabPos) % 4))
+      lastTabPos = offset - lineStart + 1
     }
-    const result = '    '.slice((offset - lineStart - lastTabPos) % 4)
-    lastTabPos = offset - lineStart + 1
-    return result
-  })
+  }
+  let k = 0
+  return src.replace(/\t/g, () => widths[k++])
 }
 
 type CodeToken = { type: string; content?: string; params?: string; children?: CodeToken[] }
@@ -595,11 +609,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
     placeholderRe ? text.replace(placeholderRe, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder) : text;
 
   if (entities && delimiter) {
-    // The parser first expands tabs to four-column stops (and normalises
-    // line breaks and no-break spaces). A placeholder is shorter than its
-    // entity, so a tab after one would land on another stop: normalise as the
-    // parser does first, which leaves it nothing to change (#2154).
-    input = normalizeLikeRemarkable(input);
+    // The parser expands tabs to four-column stops. A placeholder is shorter
+    // than its entity, so a tab after one would land on another stop: expand
+    // them first, exactly as the parser would (#2154).
+    input = expandTabsLikeRemarkable(input);
     // Deduplicate entities to avoid duplicate placeholders. Each distinct entity
     // gets a markdown-inert placeholder (the delimiter around its index).
     const indexOf = new Map<string, number>();

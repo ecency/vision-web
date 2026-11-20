@@ -96,3 +96,24 @@ describe('#2154 review edges', () => {
     expect(render('https://e.com/&#8203;0&#8203; and &copy;')).not.toMatch(/<\/a>&#8203; and/)
   })
 })
+
+describe('#2154 second review edges', () => {
+  it.each([
+    ['[https://a.com](<https://e.com/a b?x=1&amp;y=2>)', 'data-href="https://e.com/a%20b?x=1&amp;y=2"'],
+    ['[see https://a.com](<https://e.com/a b?x=1&amp;y=2>)', 'data-href="https://e.com/a%20b?x=1&amp;y=2"'],
+    ['[https://a.com]: <https://e.com/a b?x=1&amp;y=2>\n\n[x][https://a.com]', 'data-href="https://e.com/a%20b?x=1&amp;y=2"']
+  ])('keeps an angle destination whole after a bare URL in the label (%j)', (body, want) => {
+    expect(render(body)).toContain(want)
+  })
+
+  it.each(['a\r\r\n\r\r\nb &amp;', '&amp;\r\r\nx', 'a \tb &amp;\r\n\tc'])('keeps line breaks as the web reads them (%j)', (body) => {
+    expect(render(body).replace(/&amp;/g, '&')).toBe(render(body, false).replace(/&amp;/g, '&'))
+  })
+
+  it('reads a heading with a definition text as no failed definition', () => {
+    for (const forApp of [true, false]) {
+      const html = render('[a]: <https://e.com/?q=&amp;amp;amp;>\n\n# [a]: <https://e.com/?q=&amp;amp;amp;>\n\n[x][a]', forApp)
+      expect(html).toMatch(/href="https:\/\/e\.com\/\?q=&amp;amp;amp;"[^>]*>x</)
+    }
+  })
+})

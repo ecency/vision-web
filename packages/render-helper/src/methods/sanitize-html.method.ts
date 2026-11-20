@@ -96,12 +96,15 @@ function dropRefusedIframes(html: string): string {
   }
   let out = ''
   let last = 0
-  let kept = 0 // kept iframes open at the scan position
+  let kept = 0 // 1 while a kept iframe is open at the scan position
   let close: [number, number] = [-2, 0] // -2: not looked up yet, -1: none left
   let next: [number, number] = [-2, 0]
   IFRAME_TAG.lastIndex = 0
   let tag: RegExpExecArray | null
   while ((tag = IFRAME_TAG.exec(html)) !== null) {
+    // A kept iframe's content runs to the next close, as a browser reads it
+    // (raw text): an iframe tag inside is left as it is.
+    if (kept > 0 && tag[1] !== undefined) continue
     if (tag[1] === undefined) {
       // A close tag.
       if (kept > 0) {

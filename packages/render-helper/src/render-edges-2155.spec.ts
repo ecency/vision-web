@@ -102,3 +102,10 @@ describe('Dapplr hosts: the allow list and the transform agree (#2155)', () => {
     expect(untransformed(`<iframe src="${src}"></iframe>`)).not.toContain('<iframe')
   })
 })
+
+describe('a kept iframe keeps its close (#2155 review)', () => {
+  it('leaves an iframe tag inside a kept one to it', () => {
+    const ok = '<iframe src="https://www.youtube.com/embed/abcdefghijk">'
+    expect(untransformed(`${ok}<iframe src="https://evil.example.com/x">text</iframe> rest of post`)).toContain('</iframe> rest of post')
+  })
+})
