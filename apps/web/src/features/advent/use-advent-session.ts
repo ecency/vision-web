@@ -136,9 +136,18 @@ export function useAdventSession(username: string | null) {
   }, []);
 
   /// The server refused the session `token` (a 401): drop it, only if it is
-  /// still the stored one, and sign in again.
+  /// still the stored one, and sign in again (once by itself). With no token
+  /// the session changed hands: nothing is dropped, the page looks again.
   const lost = useCallback((token: string | null | undefined) => {
-    if (token && loadSession()?.token === token) clearSession();
+    // no token: the session changed hands (another tab); just look again
+    if (!token) {
+      setBoot((n) => n + 1);
+      return;
+    }
+    // a refusal of a session already replaced says nothing about the new one
+    const now = loadSession();
+    if (now && now.token !== token) return;
+    if (now) clearSession();
     refusals.current += 1;
     // once by itself; after that the reader asks (the "try again" button)
     if (refusals.current > 1) {

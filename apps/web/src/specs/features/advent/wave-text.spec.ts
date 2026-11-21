@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { waveText } from "@/features/advent/wave-text";
+
+// the real English copy, so the text can be read
+vi.mock("i18next", () => ({
+  default: { t: (k: string, o?: { day?: number }) => (k === "advent.wave-head" ? `I opened door ${o?.day} of the Ecency Advent Calendar` : k) }
+}));
 
 describe("advent Wave text", () => {
   it("shares a written answer with the tag and a link back", () => {

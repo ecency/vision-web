@@ -10,6 +10,7 @@ import { markAnsweredToday } from "@/features/advent/advent-banner";
 import { useAdventWave } from "@/features/advent/use-advent-wave";
 import { sessionIsFor } from "@/features/advent/use-advent-session";
 import { loadSession } from "@/features/raidstead/client";
+import { clearPendingWave, keepPendingWave, pendingWave } from "@/features/advent/pending-wave";
 import { waveText } from "@/features/advent/wave-text";
 import { ADVENT_SEASON, todayDoor } from "@/features/advent/season";
 import { Sky } from "@/features/advent/sky";
@@ -27,13 +28,17 @@ const fmt = (n: number) => n.toLocaleString();
 const when = (t: number) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /// Tells the games API which Wave belongs to the answer, trying a few times.
-async function linkWave(day: number, permlink: string): Promise<boolean> {
+/// Until that works the Wave is kept in this browser (pending-wave.ts), so it
+/// is linked again later and never published twice.
+async function linkWave(account: string, day: number, permlink: string): Promise<boolean> {
+  keepPendingWave(account, day, permlink);
   for (let i = 0; i < 3; i++) {
     try {
       await adventApi.wave(ADVENT_SEASON, day, permlink);
+      clearPendingWave(account, day);
       return true;
     } catch {
-      await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+      if (i < 2) await new Promise((r) => setTimeout(r, 800 * (i + 1)));
     }
   }
   return false;
@@ -106,7 +111,8 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
     if (!ready || busy) return;
     // the shared session may have been swapped for another account in another tab
     const token = loadSession()?.token;
-    if (!sessionIsFor(account)) return onSessionLost(token);
+    // the shared session now belongs to someone else: close, and leave that session alone
+    if (!sessionIsFor(account)) return onSessionLost(null);
     setBusy(true);
     setError(null);
     let late = false;
@@ -124,7 +130,7 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
     // the answer counts already; the Wave is extra, and may be posted again later
     try {
       const permlink = await postWave(waveText(door, open ? text : undefined));
-      onDone(open ? text.trim() : null, permlink, late, await linkWave(door.day, permlink));
+      onDone(open ? text.trim() : null, permlink, late, await linkWave(account, door.day, permlink));
     } catch {
       onDone(open ? text.trim() : null, null, late, true);
     }
@@ -203,7 +209,7 @@ function Answered({ door, account, answer, wave, linked, late, onWave, onClose }
     try {
       // a Wave already posted is only linked again, never posted twice
       const permlink = wave ?? (await postWave(waveText(door, answer ?? undefined)));
-      onWave(permlink, await linkWave(door.day, permlink));
+      onWave(permlink, await linkWave(account, door.day, permlink));
     } catch {
       // the Waves composer already said why; the button stays
     } finally {
@@ -453,7 +459,12 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
       .then((d) =>
         setMode(
           d.entry.answered
-            ? { m: "done", answer: d.entry.answer, wave: d.entry.wave, linked: true, late: d.entry.late }
+            ? (() => {
+                // a Wave published earlier but never linked: offer to link that one
+                const pending = d.entry.wave ? null : account ? pendingWave(account, door.day) : null;
+                if (d.entry.wave && account) clearPendingWave(account, door.day);
+                return { m: "done" as const, answer: d.entry.answer, wave: d.entry.wave ?? pending, linked: !pending, late: d.entry.late };
+              })()
             : { m: "answer", door: d }
         )
       )

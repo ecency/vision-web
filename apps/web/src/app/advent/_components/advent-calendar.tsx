@@ -246,7 +246,8 @@ function MyPrizes({ me }: { me: NonNullable<SeasonState["me"]> }) {
   if (!rows.length && !grand) return null;
   const points =
     rows.reduce(
-      (s, [, d]) => s + (d.prize?.kind === "points" ? d.prize.amount : 0) + (d.participation?.amount ?? 0),
+      (s, [, d]) =>
+        s + (d.prize?.kind === "points" && d.prize.status !== "cancelled" ? d.prize.amount : 0) + (d.participation?.amount ?? 0),
       0
     ) + (grand?.amount ?? 0);
   const status = (s: string) => (
@@ -427,6 +428,22 @@ export function AdventCalendar() {
             <div>
               <div className="adv-kicker">{i18next.t("advent.kicker", { year: ADVENT_SEASON })}</div>
               <h1 className="adv-title">{i18next.t("advent.title")}</h1>
+            </div>
+          </div>
+        </Sky>
+      </div>
+    );
+  }
+
+  // the season ended while the page was open: no doors, no sheet
+  if (phase === "hidden") {
+    return (
+      <div className="advent advent-page">
+        <Sky className="adv-hero" scene snow={snow}>
+          <div className="adv-hero-row">
+            <div>
+              <div className="adv-kicker">{i18next.t("advent.kicker", { year: ADVENT_SEASON })}</div>
+              <h1 className="adv-title">{i18next.t("advent.season-over")}</h1>
             </div>
           </div>
         </Sky>

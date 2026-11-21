@@ -1,3 +1,5 @@
+import i18next from "i18next";
+
 export const ADVENT_TAG = "ecencyadvent";
 export const ADVENT_URL = "https://ecency.com/advent";
 
@@ -6,7 +8,7 @@ export const ADVENT_URL = "https://ecency.com/advent";
 /// private, so nobody can copy a quiz answer from the feed. The advent tag
 /// comes first, since a Wave's tags are its hashtags in order.
 export function waveText(door: { day: number; kind: "open" | "quiz" | "poll" }, answer?: string): string {
-  const head = `#${ADVENT_TAG} I opened door ${door.day} of the Ecency Advent Calendar 🎄`;
+  const head = `#${ADVENT_TAG} ${i18next.t("advent.wave-head", { day: door.day })}`;
   if (door.kind !== "open") return `${head}\n\n${ADVENT_URL}`;
   return `${head}\n\n${(answer ?? "").trim()}\n\n${ADVENT_URL}`;
 }

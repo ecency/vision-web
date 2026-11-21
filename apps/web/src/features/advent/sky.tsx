@@ -27,6 +27,15 @@ const prefersReducedMotion = () =>
 /// reader's settings the flakes stand still.
 function Snow({ on }: { on: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // follows the reader's motion setting while the page is open
+  const [still, setStill] = useState(prefersReducedMotion);
+  useEffect(() => {
+    const mq = typeof window !== "undefined" ? window.matchMedia?.("(prefers-reduced-motion: reduce)") : undefined;
+    if (!mq) return;
+    const change = () => setStill(mq.matches);
+    mq.addEventListener?.("change", change);
+    return () => mq.removeEventListener?.("change", change);
+  }, []);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -34,7 +43,6 @@ function Snow({ on }: { on: boolean }) {
     if (!canvas || !on || canvas.clientWidth === 0) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const still = prefersReducedMotion();
     let w = 0;
     let h = 0;
     let flakes: { x: number; y: number; r: number; v: number; p: number; s: number }[] = [];
@@ -105,7 +113,7 @@ function Snow({ on }: { on: boolean }) {
       ro.disconnect();
       ctx.clearRect(0, 0, w, h);
     };
-  }, [on]);
+  }, [on, still]);
 
   return <canvas ref={ref} className="adv-snow" aria-hidden="true" />;
 }

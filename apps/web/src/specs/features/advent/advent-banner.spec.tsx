@@ -49,4 +49,10 @@ describe("Advent feed banner", () => {
     r.unmount();
     expect(render(<AdventBanner />).container).toBeEmptyDOMElement();
   });
+
+  it("invites to the results from 25 to 31 December", () => {
+    vi.setSystemTime(Date.UTC(2026, 11, 27, 8));
+    render(<AdventBanner />);
+    expect(screen.getByText("advent.banner-results-cta")).toBeInTheDocument();
+  });
 });

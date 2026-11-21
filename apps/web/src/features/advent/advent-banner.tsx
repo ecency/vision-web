@@ -24,7 +24,7 @@ export function markAnsweredToday() {
 /// shows once a day until the reader closes it or answers that day's door.
 export function AdventBanner() {
   // decided in the browser: the date is the reader's now, never a cached page's
-  const [show, setShow] = useState<"teaser" | number | null>(null);
+  const [show, setShow] = useState<"teaser" | "results" | number | null>(null);
   const [snow] = useSnowSwitch();
 
   useEffect(() => {
@@ -33,17 +33,12 @@ export function AdventBanner() {
       const phase = adventPhase(now);
       const day = utcDay(now);
       const door = todayDoor(now);
-      // after door 24 the calendar stays up for results, but there is nothing new to invite to
-      if (
-        phase === "hidden" ||
-        ls.get(DISMISSED_KEY) === day ||
-        ls.get(ANSWERED_KEY) === day ||
-        (phase === "season" && door === null)
-      ) {
+      if (phase === "hidden" || ls.get(DISMISSED_KEY) === day || ls.get(ANSWERED_KEY) === day) {
         setShow(null);
         return;
       }
-      setShow(phase === "teaser" ? "teaser" : door);
+      // after door 24, to 31 December: an invitation to the results and the grand draw
+      setShow(phase === "teaser" ? "teaser" : door ?? "results");
     };
     check();
     // a feed left open over midnight (UTC), or a door answered in another tab
@@ -73,10 +68,16 @@ export function AdventBanner() {
             <b className="adv-banner-title">{i18next.t("advent.title")}</b>
             {show === "teaser"
               ? i18next.t("advent.banner-teaser")
-              : i18next.t("advent.banner-door", { day: show })}
+              : show === "results"
+                ? i18next.t("advent.banner-results")
+                : i18next.t("advent.banner-door", { day: show })}
           </span>
           <Link href="/advent" className="adv-btn gold">
-            {show === "teaser" ? i18next.t("advent.banner-teaser-cta") : i18next.t("advent.banner-door-cta", { day: show })}
+            {show === "teaser"
+              ? i18next.t("advent.banner-teaser-cta")
+              : show === "results"
+                ? i18next.t("advent.banner-results-cta")
+                : i18next.t("advent.banner-door-cta", { day: show })}
           </Link>
         </div>
       </Sky>

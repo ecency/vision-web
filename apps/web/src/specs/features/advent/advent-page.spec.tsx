@@ -214,4 +214,27 @@ describe("Advent Calendar page", () => {
     renderWithQueryClient(<AdventCalendar />);
     expect(await screen.findByText("advent.calendar-failed", {}, { timeout: 5000 })).toBeInTheDocument();
   });
+
+  it("keeps a published Wave that could not be linked, and links that one when the door is opened again", async () => {
+    localStorage.clear();
+    const { container } = await openToday(7);
+    api.answer.mockResolvedValue({ ok: true, late: false });
+    api.wave.mockRejectedValue(new Error("offline"));
+    postWave.mockResolvedValue("wave-once");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Curation trails taught me a lot." } });
+    fireEvent.click(screen.getByRole("button", { name: "advent.submit-wave" }));
+    await screen.findByText("advent.answered-title", {}, { timeout: 8000 });
+    expect(postWave).toHaveBeenCalledTimes(1);
+    // close and open the door again: the server has no Wave for it yet
+    fireEvent.click(screen.getByRole("button", { name: "advent.back" }));
+    await waitFor(() => expect(screen.queryByText("advent.answered-title")).not.toBeInTheDocument());
+    api.open.mockResolvedValue({ ...doors(7)[6], entry: { answered: true, answer: "Curation trails taught me a lot.", choice: null, late: false, wave: null } });
+    api.wave.mockReset();
+    api.wave.mockResolvedValue({ ok: true });
+    fireEvent.click(look(container, "today")[0] ?? container.querySelector('[data-look="waiting"]')!);
+    fireEvent.click(await screen.findByRole("button", { name: "advent.link-wave" }, { timeout: 3000 }));
+    await waitFor(() => expect(api.wave).toHaveBeenCalledWith(2026, 7, "wave-once"));
+    expect(postWave).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "advent.post-wave" })).not.toBeInTheDocument();
+  }, 20_000);
 });
