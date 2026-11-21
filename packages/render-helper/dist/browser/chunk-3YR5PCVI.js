@@ -1,4 +1,5 @@
 import { sanitizeHtml } from './chunk-G7VRZ5W6.js';
+import { withoutLoneSurrogates } from './chunk-6SZO54KO.js';
 import { Remarkable } from 'remarkable';
 import { linkify } from 'remarkable/linkify';
 
@@ -15,10 +16,10 @@ function getMd() {
 }
 function simpleMarkdownToHTML(input) {
   if (!input) return "";
-  const html = getMd().render(input);
+  const html = getMd().render(withoutLoneSurrogates(input));
   return sanitizeHtml(html);
 }
 
 export { simpleMarkdownToHTML };
-//# sourceMappingURL=chunk-GFZ4LXZ4.js.map
-//# sourceMappingURL=chunk-GFZ4LXZ4.js.map
+//# sourceMappingURL=chunk-3YR5PCVI.js.map
+//# sourceMappingURL=chunk-3YR5PCVI.js.map

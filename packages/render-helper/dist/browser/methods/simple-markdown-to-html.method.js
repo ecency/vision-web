@@ -1,4 +1,4 @@
-export { simpleMarkdownToHTML } from '../chunk-GFZ4LXZ4.js';
+export { simpleMarkdownToHTML } from '../chunk-3YR5PCVI.js';
 import '../chunk-G7VRZ5W6.js';
 import '../chunk-YYHKRTAC.js';
 import '../chunk-LUI6MD5L.js';
