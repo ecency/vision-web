@@ -243,8 +243,11 @@ export async function uploadImage(
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetchApi(`${UPLOAD_HOST}/hs/${token}`, {
+  // The token goes in a header, not the URL path (`/hs/<token>`), so it never
+  // lands in Sentry breadcrumbs or proxy and access logs (issue #1651).
+  const response = await fetchApi(`${UPLOAD_HOST}/hs`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
     signal,
   });

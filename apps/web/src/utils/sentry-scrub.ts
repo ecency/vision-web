@@ -9,10 +9,11 @@
 const FILTERED = "[Filtered]";
 
 // Path routes whose remainder IS the credential, matched on any host:
-//   - `/hs/<token>`: imagehoster upload (SDK `uploadImage` on i.ecency.com and
-//     the app's own `api/misc.ts` on `defaults.imageServer`). The token is the
-//     user's access token. `/hs/@author/permlink` is also an ordinary Ecency
-//     tag route, so a remainder starting with `@` is left alone.
+//   - `/hs/<token>`: the imagehoster's older upload form, where the remainder
+//     is the user's access token. The SDK now sends the token in an
+//     Authorization header to a bare `/hs`, but older clients and third-party
+//     tools still use the path form. `/hs/@author/permlink` is also an
+//     ordinary Ecency tag route, so a remainder starting with `@` is left alone.
 //   - `/newsletter/confirm/<token>`, `/newsletter/unsubscribe/<token>`: the
 //     emailed newsletter links, as a page and under `/api/newsletter/`.
 // Everything up to the query, hash, whitespace or a quote is redacted, so a

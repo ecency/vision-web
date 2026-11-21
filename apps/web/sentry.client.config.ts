@@ -37,8 +37,9 @@ const SENTRY_CONFIG: Sentry.BrowserOptions = {
   tracesSampleRate: 0,
   // Default integrations only. Do NOT add extraErrorDataIntegration without
   // extending src/utils/sentry-scrub first: it serializes an error's own
-  // properties, so an Axios error would ship `config.url`, which for an image
-  // upload is `/hs/<access token>` (issue #1651).
+  // properties, so an Axios error would ship `config.url` and `config.headers`,
+  // which can carry an access token in a `/hs/<token>` path or an
+  // Authorization header (issue #1651).
   integrations: (defaults) => defaults.filter((i) => i.name !== "BrowserTracing"),
 
   debug: false,
