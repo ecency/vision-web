@@ -375,6 +375,35 @@ function isValidUsername(username) {
     !label.includes("..");
   });
 }
+function withoutLoneSurrogates(text3) {
+  return text3.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => c.length === 2 ? c : "\uFFFD");
+}
+function uriNormalized(url) {
+  try {
+    url = decodeURI(url);
+  } catch {
+  }
+  return encodeURI(url);
+}
+var PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/;
+var PLAIN_UNSAFE_ALL = new RegExp(PLAIN_UNSAFE.source, "g");
+function plainDestination(url) {
+  if (!PLAIN_UNSAFE.test(url)) return url;
+  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url);
+  return url.replace(PLAIN_UNSAFE_ALL, (c) => encodeURIComponent(c));
+}
+var LEO_LINK_PREFIXES = [
+  "https://leofinance.io/threads/view/",
+  "https://leofinance.io/posts/",
+  "https://leofinance.io/threads/",
+  "https://inleo.io/threads/view/",
+  "https://inleo.io/posts/",
+  "https://inleo.io/threads/"
+];
+function internalizeLeoLinks(input) {
+  for (const prefix of LEO_LINK_PREFIXES) input = input.split(prefix).join("/@");
+  return input;
+}
 
 // src/consts/white-list.const.ts
 var WHITE_LIST = [
@@ -10988,23 +11017,10 @@ function decodeDestinations(state) {
   }
   return true;
 }
-var uriNormalized = (url) => {
-  try {
-    url = decodeURI(url);
-  } catch {
-  }
-  return encodeURI(url);
-};
-var PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/;
-var plainForm = (url) => {
-  if (!PLAIN_UNSAFE.test(url)) return url;
-  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url);
-  return url.replace(new RegExp(PLAIN_UNSAFE.source, "g"), (c) => encodeURIComponent(c));
-};
 function undecodedAngleDestination(value, raw, unswap) {
   try {
     if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return void 0;
-    return plainForm(utils.unescapeMd(unswap(raw)));
+    return plainDestination(utils.unescapeMd(unswap(raw)));
   } catch {
     return void 0;
   }
@@ -11077,7 +11093,7 @@ function withAutolinkSource(rule, unswap) {
       } catch {
         continue;
       }
-      token.href = plainForm(unswap(prefix + raw));
+      token.href = plainDestination(unswap(prefix + raw));
       break;
     }
     return ok;
@@ -11363,13 +11379,8 @@ function stripDocumentWrapper(html) {
   return html.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "").replace(/^<\?xml[^?]*\?>/, "").replace(/^<!DOCTYPE[^>]*>/i, "").replace(/<\/?html(?=[\s/>])[^>]*>/g, "").replace(/<head(?=[\s/>])[^>]*>[\s\S]*?<\/head>/g, "").replace('<body id="root">', "").replace("</body>", "").trim();
 }
 function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
-  input = input.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => c.length === 2 ? c : "\uFFFD");
-  input = input.replace(new RegExp("https://leofinance.io/threads/view/", "g"), "/@");
-  input = input.replace(new RegExp("https://leofinance.io/posts/", "g"), "/@");
-  input = input.replace(new RegExp("https://leofinance.io/threads/", "g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/threads/view/", "g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/posts/", "g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/threads/", "g"), "/@");
+  input = withoutLoneSurrogates(input);
+  input = internalizeLeoLinks(input);
   const md = new Remarkable({
     html: true,
     breaks: true,
@@ -11845,23 +11856,41 @@ function stripHiddenRegions(text3) {
   spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
   return spellings.text;
 }
-function withoutLoneSurrogates(text3) {
-  return text3.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => c.length === 2 ? c : "\uFFFD");
-}
-var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\s]{1,2048}))(?:\s+["'][^"']*["'])?\s*\)/;
-var ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/;
+var MD_IMAGE_RE = /!\[(?:[^[\]\n]|\n(?! *\n))*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/;
 function angleAsPlain(raw, ampEscapes2) {
-  const url = withoutLoneSurrogates(unescapeDestination(raw, ampEscapes2));
-  if (!ANGLE_UNSAFE.test(url)) return url;
-  if (/%(?![\da-f]{2})/i.test(url)) {
-    let normalized = url;
-    try {
-      normalized = decodeURI(normalized);
-    } catch {
-    }
-    return encodeURI(normalized);
+  return plainDestination(withoutLoneSurrogates(unescapeDestination(raw, ampEscapes2)));
+}
+var PARSER_REWRITTEN_RE = /[\u00a0\t\r\u2424\u2028\u0085]/;
+var PARSER_NEWLINES_RE = /\r[\n\u0085]|[\u2424\u2028\u0085]/g;
+function parserInput(raw) {
+  const body = internalizeLeoLinks(cleanReply(raw));
+  if (!PARSER_REWRITTEN_RE.test(body)) return body;
+  let str = body.replace(/\u00a0/g, " ").replace(PARSER_NEWLINES_RE, "\n");
+  if (str.indexOf("	") >= 0) {
+    let lineStart = 0;
+    let lastTabPos = 0;
+    const source = str;
+    str = source.replace(/[\n\t]/g, (match, offset) => {
+      if (source.charCodeAt(offset) === 10) {
+        lineStart = offset + 1;
+        lastTabPos = 0;
+        return match;
+      }
+      const spaces = "    ".slice((offset - lineStart - lastTabPos) % 4);
+      lastTabPos = offset - lineStart + 1;
+      return spaces;
+    });
   }
-  return url.replace(new RegExp(ANGLE_UNSAFE.source, "g"), (c) => encodeURIComponent(c));
+  return str;
+}
+var BLOCK_START_LINE_RE = /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\|)/;
+var HTML_LINE_TAG_RE = /\n {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/g;
+function opensBlockInside(text3) {
+  if (BLOCK_START_LINE_RE.test(text3)) return true;
+  for (const m of regexMatches(text3, HTML_LINE_TAG_RE)) {
+    if (HTML_BLOCK_TAGS.has(m[1].toLowerCase())) return true;
+  }
+  return false;
 }
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
@@ -11977,7 +12006,7 @@ var SAFE_URL_RE = /^https?:\/\//i;
 var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
 var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1;
 function findFirstImageUrl(body, includeBareUrls = false) {
-  return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null;
+  return findFirstImageCandidate(prepareBody(parserInput(body)), includeBareUrls).candidate?.url ?? null;
 }
 function promotesToImage(label, href) {
   const deAmp = (value) => value.replace(/&amp;/g, "&");
@@ -12074,7 +12103,8 @@ function htmlTextImageUrl(body, pos) {
   const urlEnd = imageUrlEnd(token);
   return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd));
 }
-function firstBodyImageRawUrl(body) {
+function firstBodyImageRawUrl(raw) {
+  const body = parserInput(raw);
   return bodyImageRawUrl(body, prepareBody(body));
 }
 function markdownTextSpan(body, pos) {
@@ -12240,10 +12270,11 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
   if (!cleaned) return NONE;
   const mdMatch = cleaned.match(MD_IMAGE_RE);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
-  const mdUrl = mdMatch ? mdMatch[1] !== void 0 ? angleAsPlain(mdMatch[1], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
+  const mdUrl = mdMatch ? mdMatch[1] !== void 0 || mdMatch[2].includes("\\") ? angleAsPlain(mdMatch[1] ?? mdMatch[2], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
   if (mdMatch) {
     const url = mdUrl;
-    if (!url || !SAFE_URL_RE.test(url) || mdMatch[1] === void 0 && url.includes("(")) {
+    if (!url || !SAFE_URL_RE.test(url) || mdMatch[1] === void 0 && url.includes("(") || opensBlockInside(mdMatch[0]) || // A backslash before whitespace escapes nothing in a plain destination.
+    mdMatch[2] !== void 0 && /\\[\u0000-\u0020]/.test(mdMatch[2])) {
       return AMBIGUOUS;
     }
   }
@@ -12275,7 +12306,8 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
   candidates.sort((a2, b) => a2.pos - b.pos);
   return { candidate: candidates[0], ambiguous: false };
 }
-function fastBodyImage(body, width, height, format) {
+function fastBodyImage(raw, width, height, format) {
+  const body = parserInput(raw);
   const prepared = prepareBody(body);
   const strict = findFirstImageCandidate(prepared, false);
   if (strict.candidate) {
@@ -12403,7 +12435,8 @@ function getEntryLcpImage(obj) {
   if (cover) {
     return { url: cover, poster: false };
   }
-  const prepared = prepareBody(obj.body);
+  const body = parserInput(obj.body);
+  const prepared = prepareBody(body);
   const found = findFirstImageCandidate(prepared, true);
   if (found.ambiguous) {
     return null;
@@ -12412,7 +12445,7 @@ function getEntryLcpImage(obj) {
   if (poster && (!found.candidate || poster.pos < found.candidate.pos)) {
     return { url: poster.url, poster: true };
   }
-  const url = bodyImageRawUrl(obj.body, prepared);
+  const url = bodyImageRawUrl(body, prepared);
   return url ? { url, poster: false } : null;
 }
 function getEntryImageRawUrl(obj) {

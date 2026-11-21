@@ -1,5 +1,5 @@
-export { video } from '../chunk-HDLK5II7.js';
+export { video } from '../chunk-KOVWP2UU.js';
 import '../chunk-LT2KELO7.js';
-import '../chunk-HMTAYKJC.js';
+import '../chunk-6SZO54KO.js';
 //# sourceMappingURL=video.method.js.map
 //# sourceMappingURL=video.method.js.map
