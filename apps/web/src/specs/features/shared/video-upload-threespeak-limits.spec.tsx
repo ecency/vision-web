@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithQueryClient, setupModalContainers, cleanupModalContainers } from "@/specs/test-utils";
 import {
   ThreeSpeakUploadLimit,
@@ -23,6 +23,7 @@ vi.mock("@/core/hooks/use-active-account", () => ({
 
 const mocks = vi.hoisted(() => ({
   uploadVideo: vi.fn(),
+  uploadThumbnailImage: vi.fn(),
   getUploadQuota: vi.fn(),
   toastError: vi.fn()
 }));
@@ -43,7 +44,7 @@ vi.mock("@/api/threespeak-embed/api", () => ({
 }));
 
 vi.mock("@/api/sdk-mutations", () => ({
-  useUploadImageMutation: () => ({ mutateAsync: vi.fn(), isPending: false })
+  useUploadImageMutation: () => ({ mutateAsync: mocks.uploadThumbnailImage, isPending: false })
 }));
 
 vi.mock("@/core/global-store", () => ({
@@ -84,6 +85,7 @@ describe("VideoUpload and the 3Speak daily upload limit", () => {
     setupModalContainers();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
     mocks.uploadVideo.mockReset();
+    mocks.uploadThumbnailImage.mockReset();
     mocks.getUploadQuota.mockReset();
     mocks.toastError.mockReset();
   });
@@ -182,6 +184,7 @@ describe("VideoUpload limit refusals stay with their account and dialog session"
     setupModalContainers();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
     mocks.uploadVideo.mockReset();
+    mocks.uploadThumbnailImage.mockReset();
     mocks.getUploadQuota.mockReset();
     mocks.getUploadQuota.mockResolvedValue(null);
     mocks.toastError.mockReset();
@@ -206,6 +209,78 @@ describe("VideoUpload limit refusals stay with their account and dialog session"
     rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("revokes the preview when the dialog unmounts while open", async () => {
+    mocks.uploadVideo.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = renderDialog();
+    pickFile();
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    vi.mocked(URL.revokeObjectURL).mockClear();
+    unmount();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
+  });
+
+  it("a successful upload for the old account cannot enter the new account's dialog", async () => {
+    let resolveUpload: (result: { embedUrl: string; permlink: string }) => void = () => {};
+    mocks.uploadVideo.mockImplementation(
+      () => new Promise((resolve) => { resolveUpload = resolve; })
+    );
+    const onVideoUploaded = vi.fn();
+    const { rerender } = renderDialog({ onVideoUploaded });
+    pickFile();
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: "alice" })
+    ));
+
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "bob" }, username: "bob" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={onVideoUploaded} />);
+
+    await act(async () => {
+      resolveUpload({ embedUrl: "https://play.3speak.tv/embed?v=alice/abc", permlink: "abc" });
+    });
+
+    expect((screen.getByRole("button", { name: "video-upload.insert-video" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(document.getElementById("video-input")).not.toBeNull();
+    expect(onVideoUploaded).not.toHaveBeenCalled();
+  });
+
+  it("does not attach an old account's thumbnail to the new account's video", async () => {
+    let resolveThumbnail: (result: { url: string }) => void = () => {};
+    mocks.uploadThumbnailImage.mockImplementation(
+      () => new Promise((resolve) => { resolveThumbnail = resolve; })
+    );
+    mocks.uploadVideo
+      .mockResolvedValueOnce({ embedUrl: "https://play.3speak.tv/embed?v=alice/old", permlink: "old" })
+      .mockResolvedValueOnce({ embedUrl: "https://play.3speak.tv/embed?v=bob/new", permlink: "new" });
+    const onVideoUploaded = vi.fn();
+    const { rerender } = renderDialog({ onVideoUploaded });
+    pickFile();
+    const thumbnailInput = await waitFor(() => {
+      const input = document.querySelector('input[accept="image/*"]');
+      expect(input).not.toBeNull();
+      return input as HTMLInputElement;
+    });
+    fireEvent.change(thumbnailInput, {
+      target: { files: [new File(["x"], "thumb.jpg", { type: "image/jpeg" })] }
+    });
+    await waitFor(() => expect(mocks.uploadThumbnailImage).toHaveBeenCalledTimes(1));
+
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "bob" }, username: "bob" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={onVideoUploaded} />);
+    await act(async () => resolveThumbnail({ url: "https://images.ecency.com/alice-thumb.jpg" }));
+    pickFile();
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "video-upload.insert-video" }) as HTMLButtonElement).disabled).toBe(false)
+    );
+    fireEvent.click(screen.getByRole("button", { name: "video-upload.insert-video" }));
+
+    expect(onVideoUploaded).toHaveBeenCalledWith("https://play.3speak.tv/embed?v=bob/new", undefined);
   });
 
   it("an upload refused after the dialog was closed and reopened leaves the new session alone", async () => {

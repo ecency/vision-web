@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import useMount from "react-use/lib/useMount";
 import useMountedState from "react-use/lib/useMountedState";
 import { VideoUploadRecorderActions } from "./video-upload-recorder-actions";
 import { VideoUploadRecorderNoPermission } from "./video-upload-recorder-no-permission";
@@ -17,9 +16,11 @@ import {
 } from "@/api/threespeak-embed/upload-limits";
 
 interface Props {
-  onEmbedUrlReady: (embedUrl: string, permlink: string) => void;
+  /** Returns false when the dialog no longer belongs to the uploading account. */
+  onEmbedUrlReady: (embedUrl: string, permlink: string, owner: string) => boolean;
   setSelectedFile: (v: string, mime: string) => void;
   onReset: () => void;
+  isCurrentSession?: (owner: string) => boolean;
   /**
    * 3Speak refused the upload over the free daily limit; the recording is kept.
    * `owner` is the account that uploaded, which may no longer be the active one.
@@ -33,6 +34,7 @@ export function VideoUploadRecorder({
   onReset,
   setSelectedFile,
   onLimitReached,
+  isCurrentSession,
   isShort
 }: Props) {
   const { activeUser } = useActiveAccount();
@@ -46,9 +48,12 @@ export function VideoUploadRecorder({
 
   const ref = useRef<HTMLVideoElement | null>(null);
   const recordedVideoUrlRef = useRef<string | undefined>(undefined);
-  const selectedFileUrlRef = useRef<string | undefined>(undefined);
   const dataAvailableHandlerRef = useRef<((event: BlobEvent) => void) | null>(null);
   const previousMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // The live camera stream, stopped on camera switch and on unmount.
+  const streamRef = useRef<MediaStream | undefined>(undefined);
+  // Bumped per camera request, so only the newest one may become the live stream.
+  const streamRequestRef = useRef(0);
 
   const {
     mutateAsync: uploadVideo,
@@ -57,15 +62,13 @@ export function VideoUploadRecorder({
     isSuccess
   } = useThreeSpeakEmbedUpload();
 
-  useMount(() => initStreamSafe());
-
   useUnmount(() => {
-    stream?.getTracks().forEach((track) => track.stop());
+    // Invalidate any camera request still in flight, so it neither retries nor goes live.
+    streamRequestRef.current += 1;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = undefined;
     if (recordedVideoUrlRef.current) {
       URL.revokeObjectURL(recordedVideoUrlRef.current);
-    }
-    if (selectedFileUrlRef.current) {
-      URL.revokeObjectURL(selectedFileUrlRef.current);
     }
     if (mediaRecorder && dataAvailableHandlerRef.current) {
       mediaRecorder.removeEventListener("dataavailable", dataAvailableHandlerRef.current);
@@ -79,7 +82,7 @@ export function VideoUploadRecorder({
   }, [stream, ref]);
 
   const initStream = useCallback(
-    async (mimeType: string) => {
+    async (mimeType: string, request: number) => {
       setNoPermission(false);
 
       try {
@@ -92,7 +95,20 @@ export function VideoUploadRecorder({
           video: currentCamera ? { deviceId: currentCamera.deviceId } : true,
           audio: true
         });
-        const mediaRecorder = new MediaRecorder(stream, { mimeType });
+        // The recorder closed, or a newer camera was chosen, while the browser
+        // was asking for this one.
+        if (!isMounted() || request !== streamRequestRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        let mediaRecorder: MediaRecorder;
+        try {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+        } catch (e) {
+          // Unsupported mime type: release this stream before the fallback opens another.
+          stream.getTracks().forEach((track) => track.stop());
+          throw e;
+        }
 
         if (previousMediaRecorderRef.current && dataAvailableHandlerRef.current) {
           previousMediaRecorderRef.current.removeEventListener(
@@ -118,21 +134,29 @@ export function VideoUploadRecorder({
         mediaRecorder.addEventListener("dataavailable", dataAvailableHandler);
 
         previousMediaRecorderRef.current = mediaRecorder;
+        streamRef.current = stream;
         setMediaRecorder(mediaRecorder);
         setStream(stream);
       } catch (e) {
-        setNoPermission(true);
+        if (request === streamRequestRef.current) setNoPermission(true);
         throw e;
       }
     },
-    [currentCamera]
+    [currentCamera, isMounted]
   );
 
   const initStreamSafe = useCallback(async () => {
+    const request = ++streamRequestRef.current;
     try {
-      await initStream("video/webm");
-    } catch (e) {
-      await initStream("video/mp4");
+      await initStream("video/webm", request);
+    } catch {
+      // Superseded by a newer camera request, or the recorder closed.
+      if (request !== streamRequestRef.current) return;
+      try {
+        await initStream("video/mp4", request);
+      } catch {
+        // Denied or no camera: initStream already shows the no-permission state.
+      }
     }
   }, [initStream]);
 
@@ -155,10 +179,8 @@ export function VideoUploadRecorder({
         mediaRecorder={mediaRecorder}
         recordButtonShow={!noPermission && !recordedVideoSrc}
         onCameraSelect={(camera) => {
-          stream
-            ?.getTracks()
-            .filter(({ kind }) => kind === "video")
-            .forEach((track) => track.stop());
+          // Release camera and mic; the new request opens both again.
+          streamRef.current?.getTracks().forEach((track) => track.stop());
           setCurrentCamera(camera);
         }}
       />
@@ -202,6 +224,8 @@ export function VideoUploadRecorder({
                     }
 
                     const owner = activeUser.username;
+                    const isCurrent = () =>
+                      isMounted() && (isCurrentSession?.(owner) ?? true);
                     try {
                       const mime = recordedBlob.type || "video/webm";
                       const ext = mime.includes("mp4") ? "mp4" : "webm";
@@ -211,25 +235,25 @@ export function VideoUploadRecorder({
                       const result = await uploadVideo({
                         file,
                         owner,
-                        isShort
+                        isShort,
+                        isCurrent
                       });
-                      if (result) {
-                        onEmbedUrlReady(result.embedUrl, result.permlink);
-                        if (selectedFileUrlRef.current) {
-                          URL.revokeObjectURL(selectedFileUrlRef.current);
-                        }
-                        const fileUrl = URL.createObjectURL(file);
-                        selectedFileUrlRef.current = fileUrl;
-                        setSelectedFile(fileUrl, mime);
+                      if (
+                        result &&
+                        isCurrent() &&
+                        onEmbedUrlReady(result.embedUrl, result.permlink, owner)
+                      ) {
+                        // The dialog owns this preview URL from here and revokes it.
+                        setSelectedFile(URL.createObjectURL(file), mime);
                       }
                     } catch (e) {
                       if (isThreeSpeakUploadLimitError(e)) {
                         // The recorder unmounts when the dialog closes, so a
                         // refusal that lands later belongs to no open dialog.
-                        if (isMounted()) onLimitReached?.(e.limit, owner);
+                        if (isCurrent()) onLimitReached?.(e.limit, owner);
                         return;
                       }
-                      error(...formatError(e));
+                      if (isCurrent()) error(...formatError(e));
                     }
                   }}
                 >
