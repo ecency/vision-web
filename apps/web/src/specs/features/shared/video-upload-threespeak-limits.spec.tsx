@@ -211,6 +211,17 @@ describe("VideoUpload limit refusals stay with their account and dialog session"
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
+  it("revokes the preview when the dialog unmounts while open", async () => {
+    mocks.uploadVideo.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = renderDialog();
+    pickFile();
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    vi.mocked(URL.revokeObjectURL).mockClear();
+    unmount();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
+  });
+
   it("a successful upload for the old account cannot enter the new account's dialog", async () => {
     let resolveUpload: (result: { embedUrl: string; permlink: string }) => void = () => {};
     mocks.uploadVideo.mockImplementation(

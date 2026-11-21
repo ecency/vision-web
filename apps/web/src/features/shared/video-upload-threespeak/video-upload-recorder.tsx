@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import useMount from "react-use/lib/useMount";
 import useMountedState from "react-use/lib/useMountedState";
 import { VideoUploadRecorderActions } from "./video-upload-recorder-actions";
 import { VideoUploadRecorderNoPermission } from "./video-upload-recorder-no-permission";
@@ -49,9 +48,12 @@ export function VideoUploadRecorder({
 
   const ref = useRef<HTMLVideoElement | null>(null);
   const recordedVideoUrlRef = useRef<string | undefined>(undefined);
-  const selectedFileUrlRef = useRef<string | undefined>(undefined);
   const dataAvailableHandlerRef = useRef<((event: BlobEvent) => void) | null>(null);
   const previousMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // The live camera stream, stopped on camera switch and on unmount.
+  const streamRef = useRef<MediaStream | undefined>(undefined);
+  // Bumped per camera request, so only the newest one may become the live stream.
+  const streamRequestRef = useRef(0);
 
   const {
     mutateAsync: uploadVideo,
@@ -60,15 +62,11 @@ export function VideoUploadRecorder({
     isSuccess
   } = useThreeSpeakEmbedUpload();
 
-  useMount(() => initStreamSafe());
-
   useUnmount(() => {
-    stream?.getTracks().forEach((track) => track.stop());
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = undefined;
     if (recordedVideoUrlRef.current) {
       URL.revokeObjectURL(recordedVideoUrlRef.current);
-    }
-    if (selectedFileUrlRef.current) {
-      URL.revokeObjectURL(selectedFileUrlRef.current);
     }
     if (mediaRecorder && dataAvailableHandlerRef.current) {
       mediaRecorder.removeEventListener("dataavailable", dataAvailableHandlerRef.current);
@@ -82,7 +80,7 @@ export function VideoUploadRecorder({
   }, [stream, ref]);
 
   const initStream = useCallback(
-    async (mimeType: string) => {
+    async (mimeType: string, request: number) => {
       setNoPermission(false);
 
       try {
@@ -95,7 +93,20 @@ export function VideoUploadRecorder({
           video: currentCamera ? { deviceId: currentCamera.deviceId } : true,
           audio: true
         });
-        const mediaRecorder = new MediaRecorder(stream, { mimeType });
+        // The recorder closed, or a newer camera was chosen, while the browser
+        // was asking for this one.
+        if (!isMounted() || request !== streamRequestRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        let mediaRecorder: MediaRecorder;
+        try {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+        } catch (e) {
+          // Unsupported mime type: release this stream before the fallback opens another.
+          stream.getTracks().forEach((track) => track.stop());
+          throw e;
+        }
 
         if (previousMediaRecorderRef.current && dataAvailableHandlerRef.current) {
           previousMediaRecorderRef.current.removeEventListener(
@@ -121,21 +132,29 @@ export function VideoUploadRecorder({
         mediaRecorder.addEventListener("dataavailable", dataAvailableHandler);
 
         previousMediaRecorderRef.current = mediaRecorder;
+        streamRef.current = stream;
         setMediaRecorder(mediaRecorder);
         setStream(stream);
       } catch (e) {
-        setNoPermission(true);
+        if (request === streamRequestRef.current) setNoPermission(true);
         throw e;
       }
     },
-    [currentCamera]
+    [currentCamera, isMounted]
   );
 
   const initStreamSafe = useCallback(async () => {
+    const request = ++streamRequestRef.current;
     try {
-      await initStream("video/webm");
-    } catch (e) {
-      await initStream("video/mp4");
+      await initStream("video/webm", request);
+    } catch {
+      // A newer camera request superseded this one; it handles its own fallback.
+      if (request !== streamRequestRef.current) return;
+      try {
+        await initStream("video/mp4", request);
+      } catch {
+        // Denied or no camera: initStream already shows the no-permission state.
+      }
     }
   }, [initStream]);
 
@@ -158,10 +177,8 @@ export function VideoUploadRecorder({
         mediaRecorder={mediaRecorder}
         recordButtonShow={!noPermission && !recordedVideoSrc}
         onCameraSelect={(camera) => {
-          stream
-            ?.getTracks()
-            .filter(({ kind }) => kind === "video")
-            .forEach((track) => track.stop());
+          // Release camera and mic; the new request opens both again.
+          streamRef.current?.getTracks().forEach((track) => track.stop());
           setCurrentCamera(camera);
         }}
       />
@@ -224,12 +241,8 @@ export function VideoUploadRecorder({
                         isCurrent() &&
                         onEmbedUrlReady(result.embedUrl, result.permlink, owner)
                       ) {
-                        if (selectedFileUrlRef.current) {
-                          URL.revokeObjectURL(selectedFileUrlRef.current);
-                        }
-                        const fileUrl = URL.createObjectURL(file);
-                        selectedFileUrlRef.current = fileUrl;
-                        setSelectedFile(fileUrl, mime);
+                        // The dialog owns this preview URL from here and revokes it.
+                        setSelectedFile(URL.createObjectURL(file), mime);
                       }
                     } catch (e) {
                       if (isThreeSpeakUploadLimitError(e)) {

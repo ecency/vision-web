@@ -107,6 +107,14 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
 
   const isMounted = useMountedState();
 
+  // Revoke the preview if the dialog goes away while still holding one.
+  useEffect(
+    () => () => {
+      if (selectedFileUrlRef.current) URL.revokeObjectURL(selectedFileUrlRef.current);
+    },
+    []
+  );
+
   // A new session whenever the dialog or its active account changes.
   useEffect(() => {
     dialogSessionRef.current += 1;
@@ -367,6 +375,11 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
           isCurrentSession={(owner) => dialogOpenRef.current && activeUsernameRef.current === owner}
           onLimitReached={(limit, owner) => setLimitRefusal({ owner, limit })}
           setSelectedFile={(url, mime) => {
+            // Take ownership of the recording's preview URL so the reset revokes it.
+            if (selectedFileUrlRef.current && selectedFileUrlRef.current !== url) {
+              URL.revokeObjectURL(selectedFileUrlRef.current);
+            }
+            selectedFileUrlRef.current = url;
             setSelectedFile(url);
             setSelectedFileType(mime);
           }}

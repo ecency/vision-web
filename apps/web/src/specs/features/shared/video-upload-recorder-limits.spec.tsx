@@ -44,8 +44,12 @@ vi.mock("@/api/format-error", () => ({ formatError: (e: unknown) => [String(e)] 
 // The record and camera buttons are not under test; the recording is delivered
 // straight through the MediaRecorder's dataavailable event below.
 vi.mock("@/features/shared/video-upload-threespeak/video-upload-recorder-actions", () => ({
-  VideoUploadRecorderActions: () => null
+  VideoUploadRecorderActions: (props: { onCameraSelect: (camera: MediaDeviceInfo) => void }) => {
+    actionsProps.onCameraSelect = props.onCameraSelect;
+    return null;
+  }
 }));
+const actionsProps: { onCameraSelect?: (camera: MediaDeviceInfo) => void } = {};
 
 import { VideoUploadRecorder } from "@/features/shared/video-upload-threespeak/video-upload-recorder";
 import { VideoUpload } from "@/features/shared/video-upload-threespeak";
@@ -172,6 +176,194 @@ describe("VideoUploadRecorder and the 3Speak daily upload limit", () => {
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
     expect(onLimitReached).not.toHaveBeenCalled();
+  });
+});
+
+describe("VideoUploadRecorder releases the camera", () => {
+  const streams: Array<{ deviceId?: string; tracks: Array<{ kind: string; stop: ReturnType<typeof vi.fn> }> }> = [];
+  const pending: Array<() => void> = [];
+
+  function newStream(deviceId?: string) {
+    const tracks = [
+      { kind: "video", stop: vi.fn() },
+      { kind: "audio", stop: vi.fn() }
+    ];
+    const stream = { deviceId, tracks, getTracks: () => tracks };
+    streams.push(stream);
+    return stream;
+  }
+
+  beforeEach(() => {
+    streams.length = 0;
+    pending.length = 0;
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:rec"), revokeObjectURL: vi.fn() }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const allStopped = () =>
+    streams.every((s) => s.tracks.every((t) => t.stop.mock.calls.length > 0));
+
+  it("stops every stream it opened once it closes", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: { getUserMedia: vi.fn(async () => newStream()) }
+    });
+    const { unmount } = render(
+      <VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />
+    );
+    await waitFor(() => expect(streams.length).toBeGreaterThan(0));
+    await act(async () => {});
+    unmount();
+
+    expect(allStopped()).toBe(true);
+  });
+
+  it("stops a stream granted after the recorder closed", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: {
+        getUserMedia: vi.fn(() => new Promise((resolve) => pending.push(() => resolve(newStream()))))
+      }
+    });
+    const { unmount } = render(
+      <VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />
+    );
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    unmount();
+    await act(async () => {
+      pending.forEach((grant) => grant());
+    });
+
+    expect(streams.length).toBeGreaterThan(0);
+    expect(allStopped()).toBe(true);
+  });
+
+  it("stops a stream whose recorder could not be created before trying the fallback", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: { getUserMedia: vi.fn(async () => newStream()) }
+    });
+    vi.stubGlobal(
+      "MediaRecorder",
+      class extends FakeMediaRecorder {
+        constructor(stream: unknown, options: { mimeType: string }) {
+          super(stream, options);
+          if (options.mimeType === "video/webm") throw new Error("unsupported");
+        }
+      }
+    );
+    render(<VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />);
+    await waitFor(() => expect(streams.length).toBe(2));
+    await act(async () => {});
+
+    expect(streams[0].tracks.every((t) => t.stop.mock.calls.length > 0)).toBe(true);
+    expect(streams[1].tracks.every((t) => t.stop.mock.calls.length === 0)).toBe(true);
+  });
+
+  it("keeps the most recently chosen camera when an older grant lands last", async () => {
+    const grants: Array<{ deviceId?: string; grant: () => void }> = [];
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: {
+        getUserMedia: vi.fn(
+          (constraints: { video: true | { deviceId: string } }) =>
+            new Promise((resolve) => {
+              const deviceId = constraints.video === true ? undefined : constraints.video.deviceId;
+              grants.push({ deviceId, grant: () => resolve(newStream(deviceId)) });
+            })
+        )
+      }
+    });
+    render(<VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />);
+    await waitFor(() => expect(grants.length).toBe(1));
+    await act(async () => grants[0].grant());
+    await waitFor(() => expect(actionsProps.onCameraSelect).toBeDefined());
+
+    act(() => actionsProps.onCameraSelect!({ deviceId: "front" } as MediaDeviceInfo));
+    await waitFor(() => expect(grants.length).toBe(2));
+    act(() => actionsProps.onCameraSelect!({ deviceId: "back" } as MediaDeviceInfo));
+    await waitFor(() => expect(grants.length).toBe(3));
+
+    // "back" is granted first, then the stale "front" request lands.
+    await act(async () => grants[2].grant());
+    await act(async () => grants[1].grant());
+
+    const byDevice = (id?: string) => streams.find((stream) => stream.deviceId === id)!;
+    const [initial, front, back] = [byDevice(undefined), byDevice("front"), byDevice("back")];
+    expect(initial.tracks.every((t) => t.stop.mock.calls.length > 0)).toBe(true);
+    expect(back.tracks.every((t) => t.stop.mock.calls.length === 0)).toBe(true);
+    expect(front.tracks.every((t) => t.stop.mock.calls.length > 0)).toBe(true);
+  });
+
+  it("a stale camera request failing late neither retries nor hides the newer denial", async () => {
+    const requests: Array<{ deviceId?: string; deny: () => void }> = [];
+    const getUserMedia = vi.fn(
+      (constraints: { video: true | { deviceId: string } }) =>
+        new Promise((_resolve, reject) => {
+          const deviceId = constraints.video === true ? undefined : constraints.video.deviceId;
+          requests.push({ deviceId, deny: () => reject(new DOMException("denied", "NotAllowedError")) });
+        })
+    );
+    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+    render(<VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />);
+    await waitFor(() => expect(requests.length).toBe(1));
+    await waitFor(() => expect(actionsProps.onCameraSelect).toBeDefined());
+
+    // The newer camera is denied on both mime types...
+    act(() => actionsProps.onCameraSelect!({ deviceId: "back" } as MediaDeviceInfo));
+    await waitFor(() => expect(requests.length).toBe(2));
+    await act(async () => requests[1].deny());
+    await waitFor(() => expect(requests.length).toBe(3));
+    await act(async () => requests[2].deny());
+    expect(screen.getByText("video-upload.no-record-permission")).toBeTruthy();
+
+    // ...then the stale first request fails.
+    await act(async () => requests[0].deny());
+
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("video-upload.no-record-permission")).toBeTruthy();
+  });
+
+  it("asks twice and shows the no-permission state when the camera is denied", async () => {
+    const getUserMedia = vi.fn(async () => {
+      throw new DOMException("denied", "NotAllowedError");
+    });
+    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      render(<VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(screen.getByText("video-upload.no-record-permission")).toBeTruthy();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+
+  it("leaves the preview it handed to the dialog alive when it closes", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: { getUserMedia: vi.fn(async () => newStream()) }
+    });
+    let n = 0;
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => `blob:${++n}`), revokeObjectURL: revoke }));
+    mocks.uploadVideo.mockResolvedValue({ embedUrl: "https://play.3speak.tv/embed?v=alice/abc", permlink: "abc" });
+    const setSelectedFile = vi.fn();
+    const { upload, unmount } = await renderWithRecording({ onEmbedUrlReady: vi.fn(() => true), setSelectedFile });
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(setSelectedFile).toHaveBeenCalledTimes(1));
+    const handedOver = setSelectedFile.mock.calls[0][0];
+    unmount();
+
+    expect(revoke).not.toHaveBeenCalledWith(handedOver);
   });
 });
 
