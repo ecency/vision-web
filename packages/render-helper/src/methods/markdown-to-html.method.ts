@@ -3,7 +3,7 @@ import { sanitizeHtml } from './sanitize-html.method'
 import { stripAuthorMarkers } from './strip-author-markers.method'
 import { createRenderNonce, xmldomNodeFilter } from './render-boundary.method'
 import { withPlaceholderDelimiter } from './placeholder-delimiter'
-import { decodeCompleteReferences, decodeEntities, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, removeDuplicateAttributes } from '../helper'
+import { decodeCompleteReferences, decodeEntities, hasAmpSentinel, moveBlockClosingTagOutOfParagraph, internalizeLeoLinks, plainDestination, removeDuplicateAttributes, uriNormalized, withoutLoneSurrogates } from '../helper'
 import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX, PLACEHOLDER_DELIMITERS, PRIVATE_DELIMITERS_FROM, PRIVATE_DELIMITERS_TO } from '../consts'
 import { Remarkable, utils } from 'remarkable'
@@ -199,14 +199,8 @@ function decodeDestinations(state: { tokens: DestinationToken[] }): boolean {
 // URI-normalised as Remarkable does but undecoded, and decode_destinations
 // decodes it once like every other destination. Only when the token holds
 // exactly what Remarkable makes of that source, so a misread never changes one.
-const uriNormalized = (url: string): string => {
-  try {
-    url = decodeURI(url)
-  } catch {
-    // Remarkable keeps a malformed URI as it is too.
-  }
-  return encodeURI(url)
-}
+// uriNormalized and plainDestination live in helper.ts, shared with the card
+// scanner (#2176).
 
 // The app render's placeholders back to the entities they stand for.
 type Unswap = (text: string) => string
@@ -215,25 +209,11 @@ type Unswap = (text: string) => string
 // placeholders (which Remarkable percent-encoded, so the final restore could
 // never find them, #2154): those go back to their entities first, so the
 // destination reads exactly as written, whatever its scheme.
-// A destination as Remarkable normalises it (encodeURI) but for `%` and
-// non-ASCII, which stay as written: those are what the plain form keeps, so
-// the two forms of one URL name it alike (#2158: `<https://e.com/é>` is
-// `https://e.com/é`, as `https://e.com/é` is). The ASCII characters encodeURI
-// encodes (whitespace, controls, `\`, quotes, brackets) are still encoded: a
-// browser reads a raw `\` as `/`.
-const PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
-const plainForm = (url: string): string => {
-  if (!PLAIN_UNSAFE.test(url)) return url
-  // A `%` that starts no escape cannot stay raw next to new escapes
-  // (`50%%20off`): such a URL is normalised as Remarkable normalises it.
-  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url)
-  return url.replace(new RegExp(PLAIN_UNSAFE.source, 'g'), (c) => encodeURIComponent(c))
-}
 
 function undecodedAngleDestination(value: string | undefined, raw: string, unswap: Unswap): string | undefined {
   try {
     if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return undefined
-    return plainForm(utils.unescapeMd(unswap(raw)))
+    return plainDestination(utils.unescapeMd(unswap(raw)))
   } catch {
     return undefined
   }
@@ -329,7 +309,7 @@ function withAutolinkSource(rule: (state: InlineState, silent?: boolean) => bool
       } catch {
         continue
       }
-      token.href = plainForm(unswap(prefix + raw))
+      token.href = plainDestination(unswap(prefix + raw))
       break
     }
     return ok
@@ -782,14 +762,9 @@ export function stripDocumentWrapper(html: string): string {
 export function markdownToHTML(input: string, forApp: boolean, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): string {
   // A lone surrogate becomes U+FFFD, as a browser reads it: the parser's
   // encodeURI throws on one, and the whole body rendered empty (#2158).
-  input = input.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
-  // Internalize leofinance.io links
-  input = input.replace(new RegExp("https://leofinance.io/threads/view/","g"), "/@");
-  input = input.replace(new RegExp("https://leofinance.io/posts/","g"), "/@");
-  input = input.replace(new RegExp("https://leofinance.io/threads/","g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/threads/view/","g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/posts/","g"), "/@");
-  input = input.replace(new RegExp("https://inleo.io/threads/","g"), "/@");
+  input = withoutLoneSurrogates(input)
+  // Internalize leofinance.io and inleo.io links (shared with the card, #2176)
+  input = internalizeLeoLinks(input)
 
 
   const md = new Remarkable({

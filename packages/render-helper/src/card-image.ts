@@ -1,5 +1,6 @@
 import { getProxyBase, proxifyImageSrc } from './proxify-image-src'
-import { hasAmpSentinel, imageUrlEnd, unescapeDestination, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
+import { cleanReply } from './methods/clean-reply.method'
+import { hasAmpSentinel, imageUrlEnd, internalizeLeoLinks, plainDestination, unescapeDestination, withoutLoneSurrogates, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -323,42 +324,76 @@ function stripHiddenRegions(text: string): string {
 // matches image URLs that legitimately contain a literal `[` (e.g. array query params
 // like `?w[]=600`) — the per-position scan stays capped, so it's sub-quadratic on
 // untrusted input.
-// Lone surrogates as U+FFFD, as markdownToHTML reads its input (#2158); they
-// would also make encodeURI throw.
-function withoutLoneSurrogates(text: string): string {
-  return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
-}
-
 // An angle-bracket destination (`![](<url with spaces>)`, group 1) is read to
 // its first unescaped `>` on the line, as the parser reads it (#2156); the
-// plain form is group 2.
-const MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\s]{1,2048}))(?:\s+["'][^"']*["'])?\s*\)/
+// plain form is group 2, ended by a space or a control as the parser ends it,
+// a backslash escaping the character after it (`\)` is part of the URL).
+// Around the destination and title the parser skips only spaces and newlines,
+// and no part spans a blank line, which ends the paragraph first (#2176).
+const MD_IMAGE_RE = /!\[(?:[^[\]\n]|\n(?! *\n))*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/
 
-// An angle destination in the spelling its plain form has, as the render's
-// plainForm writes it: escapes resolved first, then whitespace, controls and
-// the ASCII encodeURI encodes percent-encoded (`%` and non-ASCII as written,
-// unless a `%` starts no escape: then encodeURI's reading). A `\\` left after
-// the unescape is encoded, so the destination decode unescapes nothing again.
-const ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
+// An angle destination in the spelling its plain form has, as the render
+// writes it (plainDestination, shared through helper.ts, #2176): escapes
+// resolved first, lone surrogates as U+FFFD, then the render's plain form. A
+// `\\` left after the unescape is encoded, so the destination decode
+// unescapes nothing again.
 function angleAsPlain(raw: string, ampEscapes: boolean): string {
-  const url = withoutLoneSurrogates(unescapeDestination(raw, ampEscapes))
-  if (!ANGLE_UNSAFE.test(url)) return url
-  if (/%(?![\da-f]{2})/i.test(url)) {
-    let normalized = url
-    try {
-      normalized = decodeURI(normalized)
-    } catch {
-      // kept as written, as Remarkable does
-    }
-    return encodeURI(normalized)
-  }
-  return url.replace(new RegExp(ANGLE_UNSAFE.source, 'g'), (c) => encodeURIComponent(c))
+  return plainDestination(withoutLoneSurrogates(unescapeDestination(raw, ampEscapes)))
 }
+
+// The body as the render's parser reads it, so the card scans the same text
+// (#2176). First the render's own input pass: cleanReply (markdown2Html drops
+// platform byline lines) and leofinance/inleo links internalised
+// (markdownToHTML); its lone-surrogate pass keeps every offset, and the scans
+// read a lone surrogate where it sits (#2158), so it is not repeated here. Then Remarkable's block parser
+// (ParserBlock.parse): U+00A0 as a space, `\r\n`, `\r\u0085`, U+2424, U+2028
+// and U+0085 as newlines, and each tab as one to four spaces, counted from the
+// previous tab on its line. Raw HTML is part of that text too.
+const PARSER_REWRITTEN_RE = /[\u00a0\t\r\u2424\u2028\u0085]/
+const PARSER_NEWLINES_RE = /\r[\n\u0085]|[\u2424\u2028\u0085]/g
+function parserInput(raw: string): string {
+  const body = internalizeLeoLinks(cleanReply(raw))
+  if (!PARSER_REWRITTEN_RE.test(body)) return body
+  let str = body.replace(/\u00a0/g, ' ').replace(PARSER_NEWLINES_RE, '\n')
+  if (str.indexOf('\t') >= 0) {
+    let lineStart = 0
+    let lastTabPos = 0
+    const source = str
+    str = source.replace(/[\n\t]/g, (match, offset: number) => {
+      if (source.charCodeAt(offset) === 0x0a) {
+        lineStart = offset + 1
+        lastTabPos = 0
+        return match
+      }
+      const spaces = '    '.slice((offset - lineStart - lastTabPos) % 4)
+      lastTabPos = offset - lineStart + 1
+      return spaces
+    })
+  }
+  return str
+}
+
 // A markdown image whose URL exceeds MD_IMAGE_RE's length bound (or whose syntax is broken)
 // isn't captured by it — leaving `mdMatch` null, or (MD_IMAGE_RE is unanchored) matching a
 // *later* image instead. This linear detector (label excludes `[`; no closing `)` required)
 // still spots the uncaptured image so findFirstImageUrl can bail to the full parser rather
 // than promoting a later HTML/bare/markdown candidate over it.
+// A line inside an image that may open a block as the parser reads one: a
+// heading, quote, list item, fence, thematic break, setext underline, table
+// row, or an HTML block (`<!`, `<?`, or a block tag). Such a line can end the
+// paragraph before the image closes, so the image is left to the render; any
+// other line keeps it readable.
+const BLOCK_START_LINE_RE =
+  /\n {0,3}(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|\|)/
+const HTML_LINE_TAG_RE = /\n {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/g
+function opensBlockInside(text: string): boolean {
+  if (BLOCK_START_LINE_RE.test(text)) return true
+  for (const m of regexMatches(text, HTML_LINE_TAG_RE)) {
+    if (HTML_BLOCK_TAGS.has(m[1].toLowerCase())) return true
+  }
+  return false
+}
+
 const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // A standalone (auto-linkified) image URL the renderer turns into an <img> via
@@ -575,7 +610,7 @@ const isImageHref = (href: string): boolean =>
  *   byte-identical.
  */
 function findFirstImageUrl(body: string, includeBareUrls = false): string | null {
-  return findFirstImageCandidate(prepareBody(body), includeBareUrls).candidate?.url ?? null
+  return findFirstImageCandidate(prepareBody(parserInput(body)), includeBareUrls).candidate?.url ?? null
 }
 
 /**
@@ -739,7 +774,8 @@ function htmlTextImageUrl(body: string, pos: number): string | null {
 // The first body image as the render will proxy it: decoded by where it came
 // from, an HTML attribute, a markdown destination, HTML block text or markdown
 // text (#2092, #2098). Null rather than a guess where the render differs.
-function firstBodyImageRawUrl(body: string): string | null {
+function firstBodyImageRawUrl(raw: string): string | null {
+  const body = parserInput(raw)
   return bodyImageRawUrl(body, prepareBody(body))
 }
 
@@ -1038,10 +1074,23 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // markdown parser handle it — returning a truncated URL would be wrong.
   // An angle destination is whole whatever it holds; a plain one with `(` may
   // have been cut short by the capture class.
-  const mdUrl = mdMatch ? (mdMatch[1] !== undefined ? angleAsPlain(mdMatch[1], !hasAmpSentinel(cleaned)) : mdMatch[2]) : undefined
+  // A plain destination's escapes resolve as an angle one's do (`\\)` is `)`);
+  // one without a backslash is unchanged.
+  const mdUrl = mdMatch
+    ? mdMatch[1] !== undefined || mdMatch[2].includes('\\')
+      ? angleAsPlain(mdMatch[1] ?? mdMatch[2], !hasAmpSentinel(cleaned))
+      : mdMatch[2]
+    : undefined
   if (mdMatch) {
     const url = mdUrl
-    if (!url || !SAFE_URL_RE.test(url) || (mdMatch[1] === undefined && url.includes('('))) {
+    if (
+      !url ||
+      !SAFE_URL_RE.test(url) ||
+      (mdMatch[1] === undefined && url.includes('(')) ||
+      opensBlockInside(mdMatch[0]) ||
+      // A backslash before whitespace escapes nothing in a plain destination.
+      (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2]))
+    ) {
       return AMBIGUOUS
     }
   }
@@ -1092,7 +1141,8 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
  * would have produced, whichever comes first in the source. Returns the same
  * proxied URL the full render's first <img> would have carried, or null.
  */
-function fastBodyImage(body: string, width: number, height: number, format: string): string | null {
+function fastBodyImage(raw: string, width: number, height: number, format: string): string | null {
+  const body = parserInput(raw)
   const prepared = prepareBody(body)
   // Same precedence as the full lookup: a markdown or HTML image found by the
   // regex wins outright, because the full lookup returns it before it would
@@ -1309,7 +1359,8 @@ export function getEntryLcpImage(obj: Entry): { url: string; poster: boolean } |
   if (cover) {
     return { url: cover, poster: false }
   }
-  const prepared = prepareBody(obj.body)
+  const body = parserInput(obj.body)
+  const prepared = prepareBody(body)
   const found = findFirstImageCandidate(prepared, true)
   if (found.ambiguous) {
     return null
@@ -1318,7 +1369,7 @@ export function getEntryLcpImage(obj: Entry): { url: string; poster: boolean } |
   if (poster && (!found.candidate || poster.pos < found.candidate.pos)) {
     return { url: poster.url, poster: true }
   }
-  const url = bodyImageRawUrl(obj.body, prepared)
+  const url = bodyImageRawUrl(body, prepared)
   return url ? { url, poster: false } : null
 }
 
