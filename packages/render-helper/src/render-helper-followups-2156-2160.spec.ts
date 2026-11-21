@@ -248,7 +248,9 @@ describe('#2157 card: realistic develop-right classes', () => {
     'x # y https://e.com/p.png))', 'Step # 2 (see image https://e.com/p.png))', 'x # y https://e.com/p.png?a=1))',
     'x &num; y https://e.com/p.png))', 'x &#35; y https://e.com/p.png))', 'x \\# y https://e.com/p.png))', 'x (#) y https://e.com/p.png))',
     '- x #, y https://e.com/p.png))', 'C# y https://e.com/p.png))', 'C# https://e.com/p.png))', 'x # y\nhttps://e.com/p.png?a=(1)',
-    '## Title https://e.com/p.png?a=(1)', '#tag https://e.com/p.png?a=(1)', 'x #1 https://e.com/p.png?a=(1)', '> x #! y https://e.com/p.png))'
+    '## Title https://e.com/p.png?a=(1)', '#tag https://e.com/p.png?a=(1)', 'x #1 https://e.com/p.png?a=(1)',
+    '_x_# https://e.com/p.png))', 'a_# https://e.com/p.png))', '\u00b2# https://e.com/p.png))', '#\u00b2 https://e.com/p.png))',
+    '(#hive) https://e.com/p.png))', '"#hive" https://e.com/p.png))', '#\ud83d\ude00 https://e.com/p.png))', '#_x https://e.com/p.png))', '> x #! y https://e.com/p.png))'
   ])('%j', (body) => {
     expect(cardImage(body)).toBe(renderedImage(body))
   })

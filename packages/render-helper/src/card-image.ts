@@ -780,16 +780,17 @@ function definitionDestinationAt(body: string, pos: number): boolean {
 }
 
 // Whether the line before `pos` holds a `#` that is neither a hashtag nor
-// after a word character (`x # y`, `\#`, `&num;`; not `#tag` or `C#`):
-// Autolinker stops matching for the rest of the text there, and the render
-// reads the URL its own way. A heading's own marker is not text.
+// after an Autolinker word character (`x # y`, `_#`, `\#`, `&num;`; not
+// `#tag`, `(#tag)` or `C#`): Autolinker's hashtag matcher then claims the text
+// to the token's end and drops the URL, and the render reads it its own way.
+// A heading's own marker is not text.
 function strayHashBefore(body: string, pos: number): boolean {
   const line = decodeCompleteReferences(body.slice(body.lastIndexOf('\n', pos - 1) + 1, pos).replace(/^ {0,3}#{1,6}(?=[ \t])/, ''))
-  const word = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_]/u.test(c)
   for (let i = line.indexOf('#'); i !== -1; i = line.indexOf('#', i + 1)) {
     const prev = line[i - 1]
-    if (word(prev)) continue
-    if ((prev === undefined || /\s/.test(prev)) && word(line[i + 1])) continue
+    const next = line[i + 1]
+    if (prev !== undefined && autolinkWordChar(prev)) continue
+    if (next !== undefined && (autolinkWordChar(next) || next === '_')) continue
     return true
   }
   return false
