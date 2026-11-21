@@ -65,11 +65,19 @@ export function decodeImageSrc(src: string): string {
  * A body image URL read from the parsed document (an <img> src, an href, a
  * text node). The parser, and for markdown the destination decode in
  * markdown-to-html, have already decoded its entities exactly once (#2092):
- * only percent-encoding is left. Guarded so a malformed `%` cannot throw.
+ * only percent-encoding is left. Escaped delimiters (`%23`, `%2F`, `%3F`,
+ * `%26`, `%3D`, `%2B`, ...) and `%25` stay escaped: decoded, they would name a
+ * different resource (#2174). A malformed escape keeps the URL as written, so
+ * it cannot throw.
  */
 export function decodeDomImageSrc(src: string): string {
   try {
-    return decodeURIComponent(src).trim()
+    const full = decodeURIComponent(src)
+    // An encoded URL nested inside (a legacy proxy path `/0x0/https%3A%2F%2F`,
+    // a `?url=` wrapper) is decoded whole as before, so the proxy unwraps it to
+    // the inner image (getLatestUrl).
+    if (/https?%3A%2F%2F/i.test(src)) return full.trim()
+    return decodeURI(src.replace(/%25/gi, '%2525')).trim()
   } catch {
     return src.trim()
   }

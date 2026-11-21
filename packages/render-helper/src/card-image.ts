@@ -1158,7 +1158,8 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
 // Percent-decoded as the render decodes its <img> src before proxying
 // (decodeDomImageSrc), so `a%20b.png` preloads the image the body shows
 // (#2169). A legacy passthrough that carries the URL itself rather than a
-// /p/ hash keeps it as written: decoded, a `%23` would become a live `#`.
+// /p/ hash keeps it as written: decoded, a `%20` or `%0A` would become raw
+// whitespace in it.
 function proxifyFound(src: string, width: number, height: number, format: string): string {
   const entityDecoded = decodeEntities(src)
   const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format)
