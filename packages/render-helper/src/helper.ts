@@ -70,13 +70,17 @@ export function decodeImageSrc(src: string): string {
  * different resource (#2174). A malformed escape keeps the URL as written, so
  * it cannot throw.
  */
+const LEGACY_ENCODED_INNER_RE =
+  /^https?:\/\/(?:images\.hive\.blog|steemitimages\.com|images\.ecency\.com|i\.ecency\.com)\/\d+x\d+\/https?(?::%2F%2F|%3A%2F%2F|%3A\/\/)/i
+
 export function decodeDomImageSrc(src: string): string {
   try {
     const full = decodeURIComponent(src)
-    // An encoded URL nested inside (a legacy proxy path `/0x0/https%3A%2F%2F`,
-    // a `?url=` wrapper) is decoded whole as before, so the proxy unwraps it to
-    // the inner image (getLatestUrl).
-    if (/https?%3A%2F%2F/i.test(src)) return full.trim()
+    // A legacy sized proxy path with an encoded inner URL
+    // (`steemitimages.com/0x0/https%3A%2F%2F...`) is decoded whole as before,
+    // so the proxy unwraps it to the inner image (getLatestUrl). Any other URL
+    // that merely mentions one (`?url=`, `?ref=`) is the image itself.
+    if (LEGACY_ENCODED_INNER_RE.test(src)) return full.trim()
     return decodeURI(src.replace(/%25/gi, '%2525')).trim()
   } catch {
     return src.trim()

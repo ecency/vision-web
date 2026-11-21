@@ -16,7 +16,9 @@ describe('image src keeps escaped URL delimiters (#2174)', () => {
     'https://example.com/i.png?sig=ab%2Bcd%3D&u=a%26b',
     'https://example.com/dir%2Fa.png',
     'https://example.com/a.png?x=%3F',
-    'https://example.com/a%2520b.png'
+    'https://example.com/a%2520b.png',
+    'https://wsrv.nl/?url=https%3A%2F%2Fother.com%2Fx.png&w=600',
+    'https://cdn.example.com/img.png?ref=https%3A%2F%2Fsite.com%2Fp&sig=a%2Bb%3D'
   ])('body, card and preload proxy %s as written', (url) => {
     const body = `![x](${url})`
     expect(shown(body)).toBe(proxied(url))
@@ -46,7 +48,9 @@ describe('image src keeps escaped URL delimiters (#2174)', () => {
 
   it.each([
     ['https://steemitimages.com/0x0/https%3A%2F%2Fe.com%2Fa.png', 'https://e.com/a.png'],
-    ['https://images.hive.blog/640x0/https%3A%2F%2Fe.com%2Fa%20b.png', 'https://e.com/a%20b.png']
+    ['https://images.hive.blog/640x0/https%3A%2F%2Fe.com%2Fa%20b.png', 'https://e.com/a%20b.png'],
+    ['https://images.ecency.com/0x0/https%3A%2F%2Fe.com%2Fa.png', 'https://e.com/a.png'],
+    ['https://steemitimages.com/0x0/https:%2F%2Fe.com%2Fa.png', 'https://e.com/a.png']
   ])('a legacy proxy URL with an encoded inner URL still unwraps to it (%s)', (url, inner) => {
     const body = `![x](${url})`
     expect(shown(body)).toBe(proxied(inner))
