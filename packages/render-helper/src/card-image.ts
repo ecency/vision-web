@@ -747,6 +747,23 @@ function markdownTextSpan(body: string, pos: number): string {
   return body.slice(pos, end)
 }
 
+// The index of the first lone surrogate in `text`, or -1.
+function loneSurrogateAt(text: string): number {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = text.charCodeAt(i + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++
+        continue
+      }
+      return i
+    }
+    if (c >= 0xdc00 && c <= 0xdfff) return i
+  }
+  return -1
+}
+
 // Whether `pos` starts a reference definition's destination: `]:`, then
 // spaces and at most one line break.
 function definitionDestinationAt(body: string, pos: number): boolean {
@@ -778,8 +795,12 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // Develop's reading: the URL token up to a parenthesis, bracket or quote,
   // without trailing sentence punctuation.
   const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4)
+  // A lone surrogate reads as U+FFFD in the render now (#2158), which ends
+  // the URL there.
+  const loneAt = loneSurrogateAt(candidate.url)
+  const token = loneAt === -1 ? candidate.url : candidate.url.slice(0, loneAt)
   const tokenUrl = (): string | null => {
-    const url = withoutTrailingPunctuation(candidate.url, after)
+    const url = withoutTrailingPunctuation(token, loneAt === -1 ? after : '')
     return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
   }
   // A raw anchor's text and a reference definition's destination are not
@@ -789,13 +810,19 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // `?a=1&#41;`, `(url)text`): the token stops at it, while the render's
   // linkify (Autolinker) balances it (#2157). Read there as Autolinker does;
   // emphasis and everything else as before.
-  const span = decodeCompleteReferences(markdownTextSpan(body, candidate.pos).replace(/\\&/g, '&amp;'))
-    .replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
-  const paren = span.search(/[()]/)
-  const marker = span.search(/[*~]/)
-  if (paren === -1 || (marker !== -1 && marker < paren)) return tokenUrl()
-  const text = marker === -1 ? span : span.slice(0, marker)
-  const url = text.slice(0, autolinkUrlEnd(text))
+  // Only where nothing else can end the text first: no inline delimiter the
+  // parser may take (`*~_|^`, `==`, `++`, raw or as a reference), and the URL starting
+  // the line or after whitespace or `(`, not after `@` or a mid-line `#`
+  // (Autolinker skips those and the render reads them its own way).
+  const raw = markdownTextSpan(body, candidate.pos)
+  let span = decodeCompleteReferences(raw.replace(/\\&/g, '&amp;'))
+  span = span.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+  let k = candidate.pos - 1
+  while (k >= 0 && (body[k] === ' ' || body[k] === '\t')) k--
+  const before = k < 0 ? '\n' : body[k]
+  const plain = k === candidate.pos - 1 ? before === '\n' || before === '(' : before !== '#' && before !== '@'
+  if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl()
+  const url = span.slice(0, autolinkUrlEnd(span))
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }
 
@@ -1102,8 +1129,14 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
   }
 }
 
+// Percent-decoded as the render decodes its <img> src before proxying
+// (decodeDomImageSrc), so `a%20b.png` preloads the image the body shows
+// (#2169). A legacy passthrough that carries the URL itself rather than a
+// /p/ hash keeps it as written: decoded, a `%23` would become a live `#`.
 function proxifyFound(src: string, width: number, height: number, format: string): string {
-  return proxifyImageSrc(decodeEntities(src), width, height, format)
+  const entityDecoded = decodeEntities(src)
+  const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format)
+  return proxied.includes('/p/') ? proxied : proxifyImageSrc(entityDecoded, width, height, format)
 }
 
 function getImage(entry: Entry, width: number, height: number, format: string, renderFirstImage: RenderFirstImage | null): string | null {

@@ -189,7 +189,7 @@ describe('#2156-#2160 fourth review round', () => {
   }
 
   it.each([
-    'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~', '*Source: https://e.com/p.png&#41;*',
+    'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~', 
     'https://e.com/p.png?_', 'Is it https://e.com/p.png?*', 'https://e.com/p.png?v=2_',
     '**https://e.com/p.png**', '*Source: https://e.com/p.png*'
   ])('the card names the image the render shows for %j', (body) => {
@@ -227,5 +227,38 @@ describe('#2157 card keeps develop\'s reading outside the parenthesis cases', ()
     '"**https://e.com/p.jpeg**"', '**https://e.com/p.jpeg**)', '*https://e.com/p.png*)', 'https://e.com/p.gif&#91;_', 'https://e.com/p.png&lt;~'
   ])('%j', (body) => {
     expect(cardImage(body)).toBe(renderedImage(body))
+  })
+})
+
+// Sixth review: the realistic classes it found right on develop stay right.
+describe('#2157 card: realistic develop-right classes', () => {
+  const renderedImage = (body: string) => {
+    const src = render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]
+    return src ? src.replace(/&amp;/g, '&') : null
+  }
+  const cardImage = (body: string) => {
+    const url = getEntryCardImageRawUrl(entry(body))
+    return url ? proxifyImageSrc(url, 0, 0, 'match') : null
+  }
+  it.each([
+    '_(https://e.com/p.png)_', '_(Source: https://e.com/p.png)_', '(https://e.com/p.png)_a_', '- _(https://e.com/p.png)_',
+    '==(https://e.com/p.png)==', '++(https://e.com/p.png)++', '| a | b |\n|---|---|\n|(https://e.com/p.png)|x|',
+    'https://e.com/p.png&#41;*', 'a@https://e.com/p.png))', '@HTTPS://e.com/p.jpg))',
+    'x # https://e.com/p.png.)', '^https://e.com/p.png))^', 'https://e.com/p.png\ud83d', 'https://e.com/\ud83dp.png'
+  ])('%j', (body) => {
+    expect(cardImage(body)).toBe(renderedImage(body))
+  })
+})
+
+describe('the LCP preload and card proxy the image the body shows (#2169)', () => {
+  const shown = (body: string) => render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]?.replace(/&amp;/g, '&')
+  it.each(['![x](https://example.com/a%20b.png)', '![x](https://example.com/caf%C3%A9.png)', '<img src="https://example.com/a%20b.png">'])('%j', (body) => {
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(shown(body))
+  })
+
+  it('a legacy 0x0 card URL carries no live #', () => {
+    const body = '![x](https://images.ecency.com/0x0/https://e.com/a%23b.png)'
+    const card = catchPostImage(entry(body), 0, 0, 'match') ?? ''
+    expect(card).not.toContain('#')
   })
 })
