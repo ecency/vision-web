@@ -244,7 +244,11 @@ describe('#2157 card: realistic develop-right classes', () => {
     '_(https://e.com/p.png)_', '_(Source: https://e.com/p.png)_', '(https://e.com/p.png)_a_', '- _(https://e.com/p.png)_',
     '==(https://e.com/p.png)==', '++(https://e.com/p.png)++', '| a | b |\n|---|---|\n|(https://e.com/p.png)|x|',
     'https://e.com/p.png&#41;*', 'a@https://e.com/p.png))', '@HTTPS://e.com/p.jpg))',
-    'x # https://e.com/p.png.)', '^https://e.com/p.png))^', 'https://e.com/p.png\ud83d', 'https://e.com/\ud83dp.png'
+    'x # https://e.com/p.png.)', '^https://e.com/p.png))^', 'https://e.com/p.png\ud83d', 'https://e.com/\ud83dp.png',
+    'x # y https://e.com/p.png))', 'Step # 2 (see image https://e.com/p.png))', 'x # y https://e.com/p.png?a=1))',
+    'x &num; y https://e.com/p.png))', 'x &#35; y https://e.com/p.png))', 'x \\# y https://e.com/p.png))', 'x (#) y https://e.com/p.png))',
+    '- x #, y https://e.com/p.png))', 'C# y https://e.com/p.png))', 'C# https://e.com/p.png))', 'x # y\nhttps://e.com/p.png?a=(1)',
+    '## Title https://e.com/p.png?a=(1)', '#tag https://e.com/p.png?a=(1)', 'x #1 https://e.com/p.png?a=(1)', '> x #! y https://e.com/p.png))'
   ])('%j', (body) => {
     expect(cardImage(body)).toBe(renderedImage(body))
   })
@@ -260,5 +264,15 @@ describe('the LCP preload and card proxy the image the body shows (#2169)', () =
     const body = '![x](https://images.ecency.com/0x0/https://e.com/a%23b.png)'
     const card = catchPostImage(entry(body), 0, 0, 'match') ?? ''
     expect(card).not.toContain('#')
+  })
+
+  it.each([
+    '![x](https://images.ecency.com/0x0/https://example.com/p/a%23b.png)',
+    '![x](https://steemitimages.com/0x0/https://www.instagram.com/p/Bx%23y/media.jpg)',
+    '![x](https://images.hive.blog/0x0/https://example.com/p/a%0Ab.png)'
+  ])('a legacy passthrough with /p/ in its own path keeps its escapes: %j', (body) => {
+    const card = catchPostImage(entry(body), 0, 0, 'match') ?? ''
+    expect(card).not.toMatch(/[#\s]/)
+    expect(card).toContain('%')
   })
 })

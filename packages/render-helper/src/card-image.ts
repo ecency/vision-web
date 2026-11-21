@@ -1,4 +1,4 @@
-import { proxifyImageSrc } from './proxify-image-src'
+import { getProxyBase, proxifyImageSrc } from './proxify-image-src'
 import { hasAmpSentinel, imageUrlEnd, unescapeDestination, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
@@ -779,6 +779,22 @@ function definitionDestinationAt(body: string, pos: number): boolean {
   return k >= 1 && body[k] === ':' && body[k - 1] === ']'
 }
 
+// Whether the line before `pos` holds a `#` that is neither a hashtag nor
+// after a word character (`x # y`, `\#`, `&num;`; not `#tag` or `C#`):
+// Autolinker stops matching for the rest of the text there, and the render
+// reads the URL its own way. A heading's own marker is not text.
+function strayHashBefore(body: string, pos: number): boolean {
+  const line = decodeCompleteReferences(body.slice(body.lastIndexOf('\n', pos - 1) + 1, pos).replace(/^ {0,3}#{1,6}(?=[ \t])/, ''))
+  const word = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_]/u.test(c)
+  for (let i = line.indexOf('#'); i !== -1; i = line.indexOf('#', i + 1)) {
+    const prev = line[i - 1]
+    if (word(prev)) continue
+    if ((prev === undefined || /\s/.test(prev)) && word(line[i + 1])) continue
+    return true
+  }
+  return false
+}
+
 function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   const candidate = findFirstImageCandidate(prepared, true).candidate
   if (!candidate) return null
@@ -812,15 +828,18 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // emphasis and everything else as before.
   // Only where nothing else can end the text first: no inline delimiter the
   // parser may take (`*~_|^`, `==`, `++`, raw or as a reference), and the URL starting
-  // the line or after whitespace or `(`, not after `@` or a mid-line `#`
-  // (Autolinker skips those and the render reads them its own way).
+  // the line or after whitespace or `(`, not after `@` or with a stray `#`
+  // earlier on the line (Autolinker skips those and the render reads them its
+  // own way).
   const raw = markdownTextSpan(body, candidate.pos)
   let span = decodeCompleteReferences(raw.replace(/\\&/g, '&amp;'))
   span = span.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
   let k = candidate.pos - 1
   while (k >= 0 && (body[k] === ' ' || body[k] === '\t')) k--
   const before = k < 0 ? '\n' : body[k]
-  const plain = k === candidate.pos - 1 ? before === '\n' || before === '(' : before !== '#' && before !== '@'
+  const plain =
+    (k === candidate.pos - 1 ? before === '\n' || before === '(' : before !== '@') &&
+    !strayHashBefore(body, candidate.pos)
   if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl()
   const url = span.slice(0, autolinkUrlEnd(span))
   return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
@@ -1136,7 +1155,7 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
 function proxifyFound(src: string, width: number, height: number, format: string): string {
   const entityDecoded = decodeEntities(src)
   const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format)
-  return proxied.includes('/p/') ? proxied : proxifyImageSrc(entityDecoded, width, height, format)
+  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(entityDecoded, width, height, format)
 }
 
 function getImage(entry: Entry, width: number, height: number, format: string, renderFirstImage: RenderFirstImage | null): string | null {
