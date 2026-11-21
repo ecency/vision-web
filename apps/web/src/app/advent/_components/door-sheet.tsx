@@ -17,7 +17,7 @@ import { Sky } from "@/features/advent/sky";
 import { WreathArt } from "@/features/advent/art";
 import { adventFont } from "@/features/advent/font";
 import type { DoorResult, MeDoor, OpenedDoor, PublicDoor } from "@/features/advent/types";
-import { rewardIcon, rewardLabel } from "@/features/advent/reward";
+import { prizeText, rewardIcon, rewardLabel } from "@/features/advent/reward";
 
 /// A door is drawn this long after it closes (games-api's DRAW_DELAY_MS).
 const DRAW_DELAY_MS = 2 * 3_600_000;
@@ -74,7 +74,9 @@ function PrizeLine({ door }: { door: PublicDoor }) {
     <div className="adv-row" style={{ justifyContent: "flex-start", gap: 6 }}>
       <span className="adv-pill">
         {rewardIcon(door.reward.kind)}
-        {rewardLabel(door.reward.kind)} · {door.reward.amounts.map(fmt).join(" / ")}
+        {door.reward.kind === "spotlight"
+          ? `${rewardLabel(door.reward.kind)} · ${prizeText(door.reward.kind, door.reward.amounts[0])}`
+          : `${rewardLabel(door.reward.kind)} · ${door.reward.amounts.map(fmt).join(" / ")}`}
       </span>
       <span className="adv-pill">{i18next.t("advent.draw-at", { time: when(drawAt) })}</span>
     </div>
@@ -347,7 +349,7 @@ function Result({ door, account, onAnswerLate, onMyAnswer }: ResultProps) {
                   </Link>
                   {amount !== undefined && (
                     <span className="adv-pill">
-                      {fmt(amount)} {rewardLabel(door.reward.kind)}
+                      {prizeText(door.reward.kind, amount)}
                     </span>
                   )}
                 </div>

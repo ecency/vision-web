@@ -19,3 +19,11 @@ export const rewardIcon = (kind: RewardKind | undefined) => {
   }
 };
 export const rewardLabel = (kind: RewardKind) => i18next.t(`advent.reward-${kind}`);
+
+/// A prize as the reader sees it: "2,500 Points", "125 HIVE". A Spotlight
+/// prize is a promotion of the winner's post, paid in Ecency Points, so it
+/// reads "Promotion worth 1,000 Points".
+export const prizeText = (kind: RewardKind, amount: number) =>
+  kind === "spotlight"
+    ? i18next.t("advent.spotlight-amount", { n: amount.toLocaleString("en-US") })
+    : `${amount.toLocaleString("en-US")} ${rewardLabel(kind)}`;

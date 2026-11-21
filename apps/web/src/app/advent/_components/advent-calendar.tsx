@@ -4,7 +4,7 @@ import i18next from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UilStar } from "@tooni/iconscout-unicons-react";
-import { rewardIcon, rewardLabel } from "@/features/advent/reward";
+import { prizeText, rewardIcon, rewardLabel } from "@/features/advent/reward";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
 import { adventApi } from "@/features/advent/client";
@@ -136,7 +136,7 @@ function DoorTile({ day, door, view, swinging, onOpen }: DoorTileProps) {
     case "won":
       cls = "won";
       art = <StarArt />;
-      meta = `${fmt(view.prize!.amount)} ${rewardLabel(view.prize!.kind)}`;
+      meta = prizeText(view.prize!.kind, view.prize!.amount);
       extra = <span className="adv-ribbon">{i18next.t("advent.place", { n: view.prize!.place })}</span>;
       break;
     case "missed":
@@ -266,7 +266,7 @@ function MyPrizes({ me }: { me: NonNullable<SeasonState["me"]> }) {
           <div key={`${day}p`} className="adv-row adv-muted">
             <span>{i18next.t("advent.prize-row", { day, place: d.prize.place })}</span>
             <span>
-              {fmt(d.prize.amount)} {rewardLabel(d.prize.kind)} · {status(d.prize.status)}
+              {prizeText(d.prize.kind, d.prize.amount)} · {status(d.prize.status)}
             </span>
           </div>
         ),
