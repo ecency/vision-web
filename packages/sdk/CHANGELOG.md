@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.7
+
+### Patch Changes
+
+- fix(sdk): send the upload token in an Authorization header, not the URL (#2184)
+
 ## 2.9.6
 
 ### Patch Changes
