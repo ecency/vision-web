@@ -17,7 +17,11 @@ const api = vi.hoisted(() => ({
 vi.mock("@/features/advent/font", () => ({ adventFont: {} }));
 vi.mock("@/features/advent/client", () => ({ adventApi: api }));
 const session = vi.hoisted(() => ({ status: "ready", signNow: vi.fn(), lost: vi.fn() }));
-vi.mock("@/features/advent/use-advent-session", () => ({ useAdventSession: () => session, sessionIsFor: () => true }));
+const owner = vi.hoisted(() => ({ account: "maria" as string | null }));
+vi.mock("@/features/advent/use-advent-session", () => ({
+  useAdventSession: () => session,
+  sessionIsFor: (a: string | null | undefined) => !!a && a === owner.account
+}));
 const postWave = vi.hoisted(() => vi.fn());
 vi.mock("@/features/advent/use-advent-wave", () => ({ useAdventWave: () => postWave }));
 
@@ -63,6 +67,7 @@ beforeEach(() => {
   api.grand.mockRejectedValue(new Error("no_grand"));
   postWave.mockReset();
   session.status = "ready";
+  owner.account = "maria";
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -237,4 +242,22 @@ describe("Advent Calendar page", () => {
     expect(postWave).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "advent.post-wave" })).not.toBeInTheDocument();
   }, 20_000);
+
+  it("never links a Wave once the shared session belongs to another account", async () => {
+    localStorage.clear();
+    await openToday(7);
+    api.answer.mockResolvedValue({ ok: true, late: false });
+    api.wave.mockResolvedValue({ ok: true });
+    // another tab signs in as bob while maria's Wave is being posted
+    postWave.mockImplementation(async () => {
+      owner.account = "bob";
+      return "wave-maria";
+    });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Curation trails taught me a lot." } });
+    fireEvent.click(screen.getByRole("button", { name: "advent.submit-wave" }));
+    await screen.findByText("advent.answered-title");
+    expect(api.wave).not.toHaveBeenCalled();
+    // kept for maria, to link once her session is back
+    expect(localStorage.getItem("ecency_advent_wave_pending_2026_maria_7")).toContain("wave-maria");
+  });
 });

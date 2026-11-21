@@ -2,7 +2,7 @@
 
 import i18next from "i18next";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, ModalBody } from "@ui/modal";
 import { adventApi } from "@/features/advent/client";
 import { AdventError } from "@/features/advent/advent-api";
@@ -30,9 +30,13 @@ const when = (t: number) => new Date(t).toLocaleString([], { dateStyle: "medium"
 /// Tells the games API which Wave belongs to the answer, trying a few times.
 /// Until that works the Wave is kept in this browser (pending-wave.ts), so it
 /// is linked again later and never published twice.
-async function linkWave(account: string, day: number, permlink: string): Promise<boolean> {
+async function linkWave(account: string, day: number, permlink: string, live: () => boolean): Promise<boolean> {
   keepPendingWave(account, day, permlink);
   for (let i = 0; i < 3; i++) {
+    // only with this account's own session, while its sheet is still open: a
+    // session swapped to another account (another tab) would attach this Wave
+    // to their answer. The Wave stays pending for this account.
+    if (!live() || !sessionIsFor(account)) return false;
     try {
       await adventApi.wave(ADVENT_SEASON, day, permlink);
       clearPendingWave(account, day);
@@ -96,7 +100,20 @@ interface AnswerProps {
   onDone: (answer: string | null, wave: string | null, late: boolean, linked: boolean) => void;
 }
 
+/// False once the component is gone (the sheet closed or its account changed).
+function useLive() {
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  return useCallback(() => live.current, []);
+}
+
 function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerProps) {
+  const isLive = useLive();
   const postWave = useAdventWave();
   const [text, setText] = useState("");
   const [choice, setChoice] = useState<number | null>(null);
@@ -130,9 +147,10 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
     // the answer counts already; the Wave is extra, and may be posted again later
     try {
       const permlink = await postWave(waveText(door, open ? text : undefined));
-      onDone(open ? text.trim() : null, permlink, late, await linkWave(account, door.day, permlink));
+      const linked = await linkWave(account, door.day, permlink, isLive);
+      if (isLive()) onDone(open ? text.trim() : null, permlink, late, linked);
     } catch {
-      onDone(open ? text.trim() : null, null, late, true);
+      if (isLive()) onDone(open ? text.trim() : null, null, late, true);
     }
   };
 
@@ -201,6 +219,7 @@ interface DoneProps {
 }
 
 function Answered({ door, account, answer, wave, linked, late, onWave, onClose }: DoneProps) {
+  const isLive = useLive();
   const postWave = useAdventWave();
   const [posting, setPosting] = useState(false);
   const drawAt = Date.parse(door.closeAt) + DRAW_DELAY_MS;
@@ -209,7 +228,8 @@ function Answered({ door, account, answer, wave, linked, late, onWave, onClose }
     try {
       // a Wave already posted is only linked again, never posted twice
       const permlink = wave ?? (await postWave(waveText(door, answer ?? undefined)));
-      onWave(permlink, await linkWave(account, door.day, permlink));
+      const ok = await linkWave(account, door.day, permlink, isLive);
+      if (isLive()) onWave(permlink, ok);
     } catch {
       // the Waves composer already said why; the button stays
     } finally {
