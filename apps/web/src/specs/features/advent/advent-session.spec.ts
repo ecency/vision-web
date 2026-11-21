@@ -107,4 +107,18 @@ describe("advent game session", () => {
     expect(rs.clearSession).toHaveBeenCalled();
     expect(rs.session?.account).toBe("maria");
   });
+
+  it("signs in again once after a refusal, then waits for the reader instead of looping", async () => {
+    hydration.hydrated = true;
+    localStorage.setItem("ecency_active_user", JSON.stringify("maria"));
+    rs.signIn.mockImplementation(async () => live("maria"));
+    const { result } = renderHook(() => useAdventSession("maria"));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    result.current.lost("t-maria");
+    await waitFor(() => expect(rs.signIn).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    result.current.lost("t-maria");
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(rs.signIn).toHaveBeenCalledTimes(2);
+  });
 });

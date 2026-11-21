@@ -52,6 +52,9 @@ export function useAdventSession(username: string | null) {
   const [boot, setBoot] = useState(0);
   const userRef = useRef(username);
   userRef.current = username;
+  // refusals since the last sign-in the reader asked for: a server that keeps
+  // refusing fresh sessions must not start an endless sign-in loop
+  const refusals = useRef(0);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -121,6 +124,7 @@ export function useAdventSession(username: string | null) {
   const signNow = useCallback(async () => {
     const asUser = userRef.current;
     if (!asUser) return;
+    refusals.current = 0;
     setStatus("signing");
     try {
       const s = await signIn(asUser, signerFor(asUser) ?? "extension", true, true);
@@ -135,6 +139,12 @@ export function useAdventSession(username: string | null) {
   /// still the stored one, and sign in again.
   const lost = useCallback((token: string | null | undefined) => {
     if (token && loadSession()?.token === token) clearSession();
+    refusals.current += 1;
+    // once by itself; after that the reader asks (the "try again" button)
+    if (refusals.current > 1) {
+      setStatus("failed");
+      return;
+    }
     setBoot((n) => n + 1);
   }, []);
 
