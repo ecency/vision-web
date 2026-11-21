@@ -318,6 +318,14 @@ export async function LandingPage() {
             <p className="m-0 text-sm opacity-60">
               {t("landing-page.copy-rights", { year: new Date().getFullYear() })}
             </p>
+            <a
+              href="https://hive.io"
+              target="_blank"
+              rel="noopener"
+              className="ml-auto text-sm"
+            >
+              {t("landing-page.footer-powered-by-hive")}
+            </a>
           </div>
         </div>
       </footer>

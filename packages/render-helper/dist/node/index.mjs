@@ -2813,7 +2813,7 @@ function cleanReply(s) {
   }).filter((item) => item.toLowerCase().includes("originally posted through [scrobble.life") === false).filter((item) => item.toLowerCase().includes("*posted via lumen") === false).filter((item) => item.toLowerCase().includes("<sub>posted via [hivesuite](") === false).filter((item) => !/^\s*<sub>\[via hivesuite\]\(https:\/\/hivesuite\.app\/[^)\s]*\)<\/sub>\s*$/i.test(item)).filter((item) => !/^[ \t]*▶\uFE0F?[ \t]*\[watch on 3speak\.tv\]\(https:\/\/3speak\.tv\/watch[^)\s]*\)\s*$/i.test(item)).filter((item) => item.toLowerCase().includes('view this post <a href="https://travelfeed.com/') === false).filter((item) => {
     const l = item.toLowerCase();
     return !(l.includes("_posted from liketu clips") && l.includes("short video, trimmed"));
-  }).filter((item) => item.toLowerCase().includes("[via Inbox]") === false).filter((item) => item.toLowerCase().includes("<sub>[via apps from](") === false).join("\n") : "").replace('Posted via <a href="https://d.buzz" data-link="promote-link">D.Buzz</a>', "").replace('<div class="pull-right"><a href="/@hive.engage">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace('<div><a href="https://engage.hivechain.app">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace(`<div class="text-center"><img src="https://cdn.steemitimages.com/DQmNp6YwAm2qwquALZw8PdcovDorwaBSFuxQ38TrYziGT6b/A-20.png"><a href="https://bit.ly/actifit-app"><img src="https://cdn.steemitimages.com/DQmQqfpSmcQtfrHAtzfBtVccXwUL9vKNgZJ2j93m8WNjizw/l5.png"></a><a href="https://bit.ly/actifit-ios"><img src="https://cdn.steemitimages.com/DQmbWy8KzKT1UvCvznUTaFPw6wBUcyLtBT5XL9wdbB7Hfmn/l6.png"></a></div>`, "");
+  }).filter((item) => !/^[ \t]*(?:<sub>[ \t]*)?(?:posted[ \t]+)?\[via inbox\]\([^)\s]+\)(?:[ \t]*<\/sub>)?[ \t\r]*$/i.test(item)).filter((item) => item.toLowerCase().includes("<sub>[via apps from](") === false).join("\n") : "").replace('Posted via <a href="https://d.buzz" data-link="promote-link">D.Buzz</a>', "").replace('<div class="pull-right"><a href="/@hive.engage">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace('<div><a href="https://engage.hivechain.app">![](https://i.imgur.com/XsrNmcl.png)</a></div>', "").replace(`<div class="text-center"><img src="https://cdn.steemitimages.com/DQmNp6YwAm2qwquALZw8PdcovDorwaBSFuxQ38TrYziGT6b/A-20.png"><a href="https://bit.ly/actifit-app"><img src="https://cdn.steemitimages.com/DQmQqfpSmcQtfrHAtzfBtVccXwUL9vKNgZJ2j93m8WNjizw/l5.png"></a><a href="https://bit.ly/actifit-ios"><img src="https://cdn.steemitimages.com/DQmbWy8KzKT1UvCvznUTaFPw6wBUcyLtBT5XL9wdbB7Hfmn/l6.png"></a></div>`, "");
 }
 
 // src/methods/strip-author-markers.method.ts
@@ -11552,7 +11552,7 @@ function getMd() {
 }
 function simpleMarkdownToHTML(input) {
   if (!input) return "";
-  const html = getMd().render(input);
+  const html = getMd().render(withoutLoneSurrogates(input));
   return sanitizeHtml(html);
 }
 var cache = new LRUCache({ max: 500 });
@@ -11856,7 +11856,13 @@ function stripHiddenRegions(text3) {
   spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
   return spellings.text;
 }
-var MD_IMAGE_RE = /!\[(?:[^[\]\n]|\n(?! *\n))*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/;
+var MD_IMAGE_RE = /!\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n))*\])*\])*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/;
+function escapedAt(text3, pos) {
+  let k = pos - 1;
+  while (k >= 0 && text3.charCodeAt(k) === 92) k--;
+  return (pos - 1 - k) % 2 === 1;
+}
+var STRAY_PCT_RE = /%(?![\da-f]{2})/i;
 function angleAsPlain(raw, ampEscapes2) {
   return plainDestination(withoutLoneSurrogates(unescapeDestination(raw, ampEscapes2)));
 }
@@ -11883,7 +11889,7 @@ function parserInput(raw) {
   }
   return str;
 }
-var BLOCK_START_LINE_RE = /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\|)/;
+var BLOCK_START_LINE_RE = /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d+[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\[\^[^\]\n]*\]:|\|)/;
 var HTML_LINE_TAG_RE = /\n {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/g;
 function opensBlockInside(text3) {
   if (BLOCK_START_LINE_RE.test(text3)) return true;
@@ -11892,7 +11898,21 @@ function opensBlockInside(text3) {
   }
   return false;
 }
-var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
+var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*(?:\]\(\s*[^\s)]|\[)/g;
+function firstUnescapedImage(text3, re) {
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(text3)) !== null) {
+    if (!escapedAt(text3, m.index) || escapedLabelHoldsUrl(m[0])) return m;
+    re.lastIndex = m.index + 2;
+  }
+  return null;
+}
+function escapedLabelHoldsUrl(match) {
+  const close = match.lastIndexOf("](");
+  return match.slice(0, close === -1 ? match.length : close).includes("://");
+}
+var MD_IMAGE_RE_G = new RegExp(MD_IMAGE_RE.source, "g");
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var URL_TOKEN_RE2 = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi;
 var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
@@ -12268,18 +12288,22 @@ var AMBIGUOUS = { candidate: null, ambiguous: true };
 function findFirstImageCandidate(prepared, includeBareUrls = false) {
   const { cleaned } = prepared;
   if (!cleaned) return NONE;
-  const mdMatch = cleaned.match(MD_IMAGE_RE);
+  const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
   const mdUrl = mdMatch ? mdMatch[1] !== void 0 || mdMatch[2].includes("\\") ? angleAsPlain(mdMatch[1] ?? mdMatch[2], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
   if (mdMatch) {
     const url = mdUrl;
-    if (!url || !SAFE_URL_RE.test(url) || mdMatch[1] === void 0 && url.includes("(") || opensBlockInside(mdMatch[0]) || // A backslash before whitespace escapes nothing in a plain destination.
-    mdMatch[2] !== void 0 && /\\[\u0000-\u0020]/.test(mdMatch[2])) {
+    if (!url || !SAFE_URL_RE.test(url) || mdMatch[1] === void 0 && url.includes("(") || opensBlockInside(mdMatch[0]) || // An escaped `!` before a link whose text holds a URL (#2181 review).
+    escapedAt(cleaned, mdMatch.index) || // A backslash before whitespace escapes nothing in a plain destination.
+    mdMatch[2] !== void 0 && /\\[\u0000-\u0020]/.test(mdMatch[2]) || // With a `%` that starts no escape, the render normalises the escaped
+    // destination and decodes it once, which only the parser reads exactly
+    // (#2179).
+    mdMatch[2] !== void 0 && mdMatch[2].includes("\\") && STRAY_PCT_RE.test(mdMatch[2])) {
       return AMBIGUOUS;
     }
   }
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned;
-  if (MD_IMAGE_PRESENT_RE.test(priorRegion)) {
+  if (firstUnescapedImage(priorRegion, MD_IMAGE_PRESENT_RE)) {
     return AMBIGUOUS;
   }
   const candidates = [];
@@ -12318,6 +12342,7 @@ function fastBodyImage(raw, width, height, format) {
   }
   const bare = findFirstImageCandidate(prepared, true).candidate;
   const poster = findFirstVideoPoster(prepared);
+  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1 && !(poster && poster.pos < bare.pos)) return null;
   if (poster && (!bare || poster.pos < bare.pos)) {
     return proxifyFound(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
   }

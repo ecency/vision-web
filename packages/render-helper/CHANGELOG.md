@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.57
+
+### Patch Changes
+
+- fix: render-helper parity gaps and lone surrogates; suggestion popup specs; Powered by Hive link (#2181)
+
 ## 2.5.56
 
 ### Patch Changes

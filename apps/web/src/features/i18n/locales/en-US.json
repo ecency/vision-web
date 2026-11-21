@@ -3430,6 +3430,7 @@
     "send": "Send",
     "subscribe-paragraph": "Be first to know what's happening in decentralized web.",
     "copy-rights": "©{{year}} Ecency. All rights reserved.",
+    "footer-powered-by-hive": "Powered by Hive",
     "success-message-subscribe": "You are subscribed to our newsletters!",
     "validation-email": "A valid email is required",
     "error-occured": "A server error occurred.",

@@ -57,7 +57,8 @@ export function cleanReply(s: string): string {
       const l = item.toLowerCase();
       return !(l.includes('_posted from liketu clips') && l.includes('short video, trimmed'));
     })
-    .filter(item => item.toLowerCase().includes('[via Inbox]') === false)
+    // A whole-line [via Inbox] byline, matched in any case (#2179).
+    .filter(item => !/^[ \t]*(?:<sub>[ \t]*)?(?:posted[ \t]+)?\[via inbox\]\([^)\s]+\)(?:[ \t]*<\/sub>)?[ \t\r]*$/i.test(item))
     .filter(item => item.toLowerCase().includes('<sub>[via apps from](') === false)
     .join('\n') : '')
     .replace('Posted via <a href="https://d.buzz" data-link="promote-link">D.Buzz</a>', '')
