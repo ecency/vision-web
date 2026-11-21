@@ -215,10 +215,25 @@ type Unswap = (text: string) => string
 // placeholders (which Remarkable percent-encoded, so the final restore could
 // never find them, #2154): those go back to their entities first, so the
 // destination reads exactly as written, whatever its scheme.
+// A destination as Remarkable normalises it (encodeURI) but for `%` and
+// non-ASCII, which stay as written: those are what the plain form keeps, so
+// the two forms of one URL name it alike (#2158: `<https://e.com/é>` is
+// `https://e.com/é`, as `https://e.com/é` is). The ASCII characters encodeURI
+// encodes (whitespace, controls, `\`, quotes, brackets) are still encoded: a
+// browser reads a raw `\` as `/`.
+const PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
+const plainForm = (url: string): string => {
+  if (!PLAIN_UNSAFE.test(url)) return url
+  // A `%` that starts no escape cannot stay raw next to new escapes
+  // (`50%%20off`): such a URL is normalised as Remarkable normalises it.
+  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url)
+  return url.replace(new RegExp(PLAIN_UNSAFE.source, 'g'), (c) => encodeURIComponent(c))
+}
+
 function undecodedAngleDestination(value: string | undefined, raw: string, unswap: Unswap): string | undefined {
   try {
     if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return undefined
-    return uriNormalized(utils.unescapeMd(unswap(raw)))
+    return plainForm(utils.unescapeMd(unswap(raw)))
   } catch {
     return undefined
   }
@@ -293,6 +308,145 @@ function withAngleDestinations(rule: (state: InlineState, silent?: boolean) => b
     const undecoded = undecodedAngleDestination(token[field], raw, unswap)
     if (undecoded !== undefined) token[field] = undecoded
     return ok
+  }
+}
+
+// The same for an autolink (`<https://...>`, `<a@b.c>`): Remarkable decodes it
+// (normalizeLink) and decode_destinations decoded it again, and on the app
+// render a placeholder in it was percent-encoded (#2158). No escapes apply.
+function withAutolinkSource(rule: (state: InlineState, silent?: boolean) => boolean, unswap: Unswap) {
+  return (state: InlineState, silent?: boolean): boolean => {
+    const start = state.pos
+    const before = state.tokens.length
+    const ok = rule(state, silent)
+    if (!ok || silent) return ok
+    const raw = state.src.slice(start + 1, state.pos - 1)
+    const token = state.tokens.slice(before).find((t) => t.type === 'link_open')
+    if (!token) return ok
+    for (const prefix of ['', 'mailto:']) {
+      try {
+        if (token.href !== uriNormalized(utils.replaceEntities(prefix + raw))) continue
+      } catch {
+        continue
+      }
+      token.href = plainForm(unswap(prefix + raw))
+      break
+    }
+    return ok
+  }
+}
+
+// An entity as Remarkable's inline entity rule decodes it in text: a numeric
+// reference it refuses (`&#0;`, `&#146;`, a surrogate) is U+FFFD there, which
+// replaceEntities leaves as written.
+function entityRuleDecode(entity: string): string {
+  const numeric = /^&#(x[\da-f]+|\d+);$/i.exec(entity)
+  if (!numeric) return utils.replaceEntities(entity)
+  const code = numeric[1][0].toLowerCase() === 'x' ? parseInt(numeric[1].slice(1), 16) : parseInt(numeric[1], 10)
+  return utils.isValidEntityCode(code) ? utils.fromCodePoint(code) : '\ufffd'
+}
+
+type LinkifyToken = { type: string; content?: string; children?: LinkifyToken[] }
+// A text token in the reading linkify gets, and where each of its characters
+// came from in the token as it is.
+type LinkifyView = {
+  text: string
+  at: number[]
+  // For each character of `text`, the placeholder it was decoded from (an
+  // index into `spans`), or -1.
+  spanOf: number[]
+  spans: Array<{ d0: number; d1: number; s0: number; s1: number }>
+}
+
+// `text[from, to)` in the token's own spelling: characters outside a decoded
+// placeholder map one to one; a whole decoded placeholder is its placeholder;
+// part of one (a link boundary inside a multi-character decode) is that part
+// of the decoded text, so nothing is lost or repeated.
+function sourceSlice(view: LinkifyView, source: string, from: number, to: number): string {
+  let out = ''
+  let d = from
+  while (d < to) {
+    const k = view.spanOf[d]
+    if (k !== -1) {
+      const span = view.spans[k]
+      if (d === span.d0 && span.d1 <= to) {
+        out += source.slice(span.s0, span.s1)
+        d = span.d1
+      } else {
+        const stop = Math.min(span.d1, to)
+        out += view.text.slice(d, stop)
+        d = stop
+      }
+      continue
+    }
+    let n = d
+    while (n < to && view.spanOf[n] === -1) n++
+    out += source.slice(view.at[d], view.at[d] + (n - d))
+    d = n
+  }
+  return out
+}
+
+// On the app render, text holds placeholders where the web holds the decoded
+// entity, so linkify ended a URL at one (`https://e.com/a)&amp;x` linked only
+// `https://e.com/a`, #2160). Linkify reads each text token with its
+// placeholders decoded, exactly the text the web render hands it, so it
+// names the same URLs; its text pieces (which together are the token's text,
+// in order) then get their placeholders back, so the text shows the entities
+// as written. A link's href keeps linkify's own (web) reading.
+function withDecodedLinkify(rule: (state: { tokens: LinkifyToken[] }) => unknown, view: (text: string) => LinkifyView | null) {
+  return (state: { tokens: LinkifyToken[] }): unknown => {
+    const sources = new Map<LinkifyToken, { source: string; view: LinkifyView }>()
+    const before = new Map<LinkifyToken, LinkifyToken[]>()
+    for (const block of state.tokens) {
+      if (block.type !== 'inline' || !block.children) continue
+      let viewed = false
+      for (const token of block.children) {
+        if (token.type !== 'text' || !token.content) continue
+        const v = view(token.content)
+        if (!v) continue
+        sources.set(token, { source: token.content, view: v })
+        token.content = v.text
+        viewed = true
+      }
+      if (viewed) before.set(block, block.children.slice())
+    }
+    const result = rule(state)
+    for (const [block, old] of before) {
+      const now = block.children ?? []
+      let k = 0
+      for (const token of old) {
+        const pieces: LinkifyToken[] = []
+        if (now[k] === token) {
+          pieces.push(now[k++])
+        } else {
+          // Replaced by linkify: its pieces, up to its own text's length.
+          const length = token.content?.length ?? 0
+          let taken = 0
+          while (k < now.length && (taken < length || now[k].type === 'link_close')) {
+            const piece = now[k++]
+            if (piece.type === 'text') taken += piece.content?.length ?? 0
+            pieces.push(piece)
+          }
+        }
+        const source = sources.get(token)
+        if (!source) continue
+        // A linkified URL's own text keeps the web's reading, so the link
+        // reads as its href (a.method promotes an image link by that);
+        // the text around it gets its placeholders back.
+        let d = 0
+        let inLink = false
+        for (const piece of pieces) {
+          if (piece.type === 'link_open') inLink = true
+          else if (piece.type === 'link_close') inLink = false
+          if (piece.type !== 'text' || piece.content === undefined) continue
+          const length = piece.content.length
+          if (!inLink) piece.content = sourceSlice(source.view, source.source, d, d + length)
+          d += length
+        }
+      }
+    }
+    return result
   }
 }
 
@@ -626,6 +780,9 @@ export function stripDocumentWrapper(html: string): string {
 }
 
 export function markdownToHTML(input: string, forApp: boolean, parentDomain: string = 'ecency.com', seoContext?: SeoContext, renderOptions?: RenderOptions): string {
+  // A lone surrogate becomes U+FFFD, as a browser reads it: the parser's
+  // encodeURI throws on one, and the whole body rendered empty (#2158).
+  input = input.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
   // Internalize leofinance.io links
   input = input.replace(new RegExp("https://leofinance.io/threads/view/","g"), "/@");
   input = input.replace(new RegExp("https://leofinance.io/posts/","g"), "/@");
@@ -671,8 +828,10 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   // wrappers hand the rule.
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', (rule) => withAngleDestinations(rule, (text) => unswap(text)))
   wrapRule(md.inline.ruler as unknown as RuleList, 'links', withPairedSource)
+  wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', (rule) => withAutolinkSource(rule, (text) => unswap(text)))
   wrapRule(md.inline.ruler as unknown as RuleList, 'autolink', withOriginalSource)
   wrapRule(md.core.ruler as unknown as RuleList, 'references', (rule) => withAngleReferences(rule, (text) => unswap(text)))
+  wrapRule(md.core.ruler as unknown as RuleList, 'linkify', (rule) => withDecodedLinkify(rule, (text) => linkifyView(text)))
   wrapRule(md.core.ruler as unknown as RuleList, 'references', withPairedReferences)
   md.core.ruler.enable([
     'abbr'
@@ -703,6 +862,41 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
   const entityPlaceholders: string[] = [];
   const delimiter = entities ? placeholderDelimiter(input) : null;
   const placeholderRe = delimiter ? new RegExp(`${delimiter}(0|[1-9]\\d*)${delimiter}`, 'g') : null;
+  // A text token with its placeholders decoded as the web's entity rule
+  // decodes them (withDecodedLinkify), or null when it holds none.
+  const linkifyView = (source: string): LinkifyView | null => {
+    if (!placeholderRe || !delimiter || !source.includes(delimiter)) return null;
+    let text = '';
+    const at: number[] = [];
+    const spanOf: number[] = [];
+    const spans: LinkifyView['spans'] = [];
+    let last = 0;
+    for (const m of regexMatches(source, placeholderRe)) {
+      const start = m.index ?? 0;
+      const entity = entityPlaceholders[+m[1]];
+      if (entity === undefined) continue;
+      for (let i = last; i < start; i++) {
+        at.push(i);
+        spanOf.push(-1);
+      }
+      text += source.slice(last, start);
+      const decoded = entityRuleDecode(entity);
+      spans.push({ d0: text.length, d1: text.length + decoded.length, s0: start, s1: start + m[0].length });
+      for (let i = 0; i < decoded.length; i++) {
+        at.push(i === 0 ? start : start + m[0].length);
+        spanOf.push(spans.length - 1);
+      }
+      text += decoded;
+      last = start + m[0].length;
+    }
+    for (let i = last; i < source.length; i++) {
+      at.push(i);
+      spanOf.push(-1);
+    }
+    at.push(source.length);
+    spanOf.push(-1);
+    return { text: text + source.slice(last), at, spanOf, spans };
+  };
   const unswap = (text: string) =>
     placeholderRe ? text.replace(placeholderRe, (placeholder, index: string) => entityPlaceholders[+index] ?? placeholder) : text;
 

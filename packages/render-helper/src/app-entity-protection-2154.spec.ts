@@ -77,8 +77,9 @@ describe('#2154 review edges', () => {
     const want = 'data-href="https://e.com/?q=&amp;"'
     expect(render('[a]: https://e.com/?q=&amp;\n[a]: <https://e.com/?q=&amp;amp;>\n\n[x][a]')).toContain(want)
     const failedFirst = render('[a]: <https://e.com/?q=&amp;amp;> junk\n\n[a]: https://e.com/?q=&amp;\n\n[x][a]')
-    expect(failedFirst).toContain(want)
-    expect(failedFirst).not.toContain('&amp;amp;"')
+    // The [x][a] link names the definition that won (the failed one's text
+    // stays a paragraph, whose autolink names its own URL).
+    expect(failedFirst.match(/data-href="([^"]*)">x</)?.[1]).toBe('https://e.com/?q=&amp;')
   })
 
   it.each(['```\nx&lt;\ty\n```', '    x&lt;\ty &amp;\tz\n', 'a\tb\n\n```\n&copy;\t|\n```'])('keeps tab stops in code as on the web (%j)', (body) => {

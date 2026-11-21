@@ -78,6 +78,32 @@ const hasQuotedAttr = (attrs: string, wanted: string): boolean => {
 const IFRAME_TAG = /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>|<\/iframe\s*>/gi
 const IFRAME_START = /<iframe\b/gi
 const IFRAME_CLOSE = /<\/iframe\s*>/gi
+// An iframe tag (group 1 set for a close), or the start of any other tag.
+const ANY_TAG = /<(\/?)iframe\b(?:[^>"']|"[^"]*"|'[^']*')*>|<[a-zA-Z!/]/gi
+
+// Each iframe opening's close by nesting, as the DOM path pairs them, when
+// nothing but text and iframe tags lies between: opening start -> close end.
+// One pass with a stack.
+function wholeIframeElements(html: string): Map<number, number> {
+  const whole = new Map<number, number>()
+  const stack: Array<{ start: number; others: number }> = []
+  let others = 0
+  ANY_TAG.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = ANY_TAG.exec(html)) !== null) {
+    if (!/^<\/?iframe/i.test(m[0])) {
+      others++
+      continue
+    }
+    if (m[1] !== '/') {
+      stack.push({ start: m.index, others })
+    } else {
+      const open = stack.pop()
+      if (open && open.others === others) whole.set(open.start, ANY_TAG.lastIndex)
+    }
+  }
+  return whole
+}
 
 // Drops each iframe whose src was refused, with its `</iframe>` (#2155). The
 // close is its own only when no other iframe opens first; an unclosed one
@@ -86,9 +112,12 @@ const IFRAME_CLOSE = /<\/iframe\s*>/gi
 // the DOM path drops with the element, so it goes too; markup there stays, so
 // a refused iframe never unbalances the tags around it (`<p>` opened inside,
 // closed outside). A close left over, which closes no kept iframe (an opening
-// xss dropped, `<iframe/src=..>`), goes as well. Linear: the next close and
-// the next opening are each looked up again only once the scan passed them.
+// xss dropped, `<iframe/src=..>`), goes as well. One nested only in iframes and
+// text (`<iframe>a<iframe>b</iframe>c</iframe>`) goes whole, as the DOM path
+// drops the element with its children (#2170). Linear: the next close and the
+// next opening are each looked up again only once the scan passed them.
 function dropRefusedIframes(html: string): string {
+  const whole = wholeIframeElements(html)
   const find = (re: RegExp, from: number): [number, number] => {
     re.lastIndex = from
     const m = re.exec(html)
@@ -136,6 +165,12 @@ function dropRefusedIframes(html: string): string {
     }
     out += html.slice(last, tag.index)
     last = IFRAME_TAG.lastIndex
+    const element = whole.get(tag.index)
+    if (element !== undefined) {
+      last = element
+      IFRAME_TAG.lastIndex = last
+      continue
+    }
     if (close[0] !== -1 && close[0] < last) close = find(IFRAME_CLOSE, last)
     if (close[0] === -1) continue
     if (next[0] !== -1 && next[0] < last) next = find(IFRAME_START, last)
@@ -472,8 +507,12 @@ export function sanitizeHtml(html: string, options?: SanitizeHtmlOptions): strin
       // out as a bare href). Any other passes xss's own link rule too (it refuses
       // `java script:`, `%6a...:` and other non-links).
       if (isWhiteAttr && name === 'href') {
-        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, undefined as never)
-          ? `href="${escapeAttr(decoded)}"`
+        // xss's rule is case-sensitive about http(s) too: `HTTPS://A.com/p` came
+        // out as a bare href (#2159). The scheme is case-insensitive, so it is
+        // checked and written lower-cased.
+        const href = decoded.replace(/^https?:/i, (scheme) => scheme.toLowerCase());
+        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, href, undefined as never)
+          ? `href="${escapeAttr(href)}"`
           : 'href';
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {

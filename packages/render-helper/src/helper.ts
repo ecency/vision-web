@@ -65,11 +65,23 @@ export function decodeImageSrc(src: string): string {
  * A body image URL read from the parsed document (an <img> src, an href, a
  * text node). The parser, and for markdown the destination decode in
  * markdown-to-html, have already decoded its entities exactly once (#2092):
- * only percent-encoding is left. Guarded so a malformed `%` cannot throw.
+ * only percent-encoding is left. Escaped delimiters (`%23`, `%2F`, `%3F`,
+ * `%26`, `%3D`, `%2B`, ...) and `%25` stay escaped: decoded, they would name a
+ * different resource (#2174). A malformed escape keeps the URL as written, so
+ * it cannot throw.
  */
+const LEGACY_ENCODED_INNER_RE =
+  /^https?:\/\/(?:images\.hive\.blog|steemitimages\.com|images\.ecency\.com|i\.ecency\.com)\/\d+x\d+\/https?(?::%2F%2F|%3A%2F%2F|%3A\/\/)/i
+
 export function decodeDomImageSrc(src: string): string {
   try {
-    return decodeURIComponent(src).trim()
+    const full = decodeURIComponent(src)
+    // A legacy sized proxy path with an encoded inner URL
+    // (`steemitimages.com/0x0/https%3A%2F%2F...`) is decoded whole as before,
+    // so the proxy unwraps it to the inner image (getLatestUrl). Any other URL
+    // that merely mentions one (`?url=`, `?ref=`) is the image itself.
+    if (LEGACY_ENCODED_INNER_RE.test(src)) return full.trim()
+    return decodeURI(src.replace(/%25/gi, '%2525')).trim()
   } catch {
     return src.trim()
   }
@@ -176,9 +188,15 @@ const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
  * Raw HTML differs only for a legacy name without `;` before a
  * non-alphanumeric character, which an HTML attribute decodes.
  */
+// A markdown destination's backslash escapes resolved as Remarkable resolves
+// them; an escaped `&` is a literal one (`&amp;`) when ampEscapes.
+export function unescapeDestination(src: string, ampEscapes = true): string {
+  return src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+}
+
 export function decodeRawBodyImageSrc(src: string, destination = false, ampEscapes = true): string {
   const unescaped = destination
-    ? src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+    ? unescapeDestination(src, ampEscapes)
     : src.replace(/\\&/g, '&amp;')
   return decodeDomImageSrc(decodeCompleteReferences(unescaped))
 }

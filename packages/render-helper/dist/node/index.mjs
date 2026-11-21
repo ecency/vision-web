@@ -32,9 +32,12 @@ function decodeAttributeEntities(value) {
 function decodeImageSrc(src) {
   return decodeDomImageSrc(decodeEntities(src));
 }
+var LEGACY_ENCODED_INNER_RE = /^https?:\/\/(?:images\.hive\.blog|steemitimages\.com|images\.ecency\.com|i\.ecency\.com)\/\d+x\d+\/https?(?::%2F%2F|%3A%2F%2F|%3A\/\/)/i;
 function decodeDomImageSrc(src) {
   try {
-    return decodeURIComponent(src).trim();
+    const full = decodeURIComponent(src);
+    if (LEGACY_ENCODED_INNER_RE.test(src)) return full.trim();
+    return decodeURI(src.replace(/%25/gi, "%2525")).trim();
   } catch {
     return src.trim();
   }
@@ -89,8 +92,11 @@ function hasAmpSentinel(body) {
   return /[\uE000\uE001]|%EE%80%8[01]|&#x0*e00[01];|&#0*5734[45];/i.test(body);
 }
 var MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g;
+function unescapeDestination(src, ampEscapes2 = true) {
+  return src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c);
+}
 function decodeRawBodyImageSrc(src, destination = false, ampEscapes2 = true) {
-  const unescaped = destination ? src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c) : src.replace(/\\&/g, "&amp;");
+  const unescaped = destination ? unescapeDestination(src, ampEscapes2) : src.replace(/\\&/g, "&amp;");
   return decodeDomImageSrc(decodeCompleteReferences(unescaped));
 }
 function escapeAttrValue(value) {
@@ -389,7 +395,10 @@ var WHITE_LIST = [
   "dapplr.in",
   "liketu.com",
   "bilpcoin.com",
-  "inji.com"
+  "inji.com",
+  // WorldMapPin, the travel map (#2167). Its /p/<permlink> post links carry no
+  // author, so only /@user and /@user/permlink forms become internal.
+  "worldmappin.com"
 ];
 
 // src/consts/section-list.const.ts
@@ -1086,7 +1095,29 @@ var hasQuotedAttr = (attrs, wanted) => {
 var IFRAME_TAG = /<iframe\b((?:[^>"']|"[^"]*"|'[^']*')*)>|<\/iframe\s*>/gi;
 var IFRAME_START = /<iframe\b/gi;
 var IFRAME_CLOSE = /<\/iframe\s*>/gi;
+var ANY_TAG = /<(\/?)iframe\b(?:[^>"']|"[^"]*"|'[^']*')*>|<[a-zA-Z!/]/gi;
+function wholeIframeElements(html) {
+  const whole = /* @__PURE__ */ new Map();
+  const stack = [];
+  let others = 0;
+  ANY_TAG.lastIndex = 0;
+  let m;
+  while ((m = ANY_TAG.exec(html)) !== null) {
+    if (!/^<\/?iframe/i.test(m[0])) {
+      others++;
+      continue;
+    }
+    if (m[1] !== "/") {
+      stack.push({ start: m.index, others });
+    } else {
+      const open = stack.pop();
+      if (open && open.others === others) whole.set(open.start, ANY_TAG.lastIndex);
+    }
+  }
+  return whole;
+}
 function dropRefusedIframes(html) {
+  const whole = wholeIframeElements(html);
   const find = (re, from) => {
     re.lastIndex = from;
     const m = re.exec(html);
@@ -1127,6 +1158,12 @@ function dropRefusedIframes(html) {
     }
     out += html.slice(last, tag.index);
     last = IFRAME_TAG.lastIndex;
+    const element = whole.get(tag.index);
+    if (element !== void 0) {
+      last = element;
+      IFRAME_TAG.lastIndex = last;
+      continue;
+    }
     if (close[0] !== -1 && close[0] < last) close = find(IFRAME_CLOSE, last);
     if (close[0] === -1) continue;
     if (next[0] !== -1 && next[0] < last) next = find(IFRAME_START, last);
@@ -1283,7 +1320,8 @@ function sanitizeHtml(html, options) {
         if (target !== null) return `${name}="#${escapeAttr(namespacedId(target))}"`;
       }
       if (isWhiteAttr && name === "href") {
-        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, decoded, void 0) ? `href="${escapeAttr(decoded)}"` : "href";
+        const href = decoded.replace(/^https?:/i, (scheme) => scheme.toLowerCase());
+        return hrefSchemeAllowed || xssSafeAttrValue(tag, name, href, void 0) ? `href="${escapeAttr(href)}"` : "href";
       }
       if (!beforeTransform && isWhiteAttr && isUrlAttribute(tag, name)) {
         return `${name}="${escapeAttr(decoded)}"`;
@@ -2663,12 +2701,7 @@ function video(el) {
   if (poster === null) {
     return;
   }
-  let decoded;
-  try {
-    decoded = decodeURIComponent(poster).trim();
-  } catch {
-    decoded = poster.trim();
-  }
+  const decoded = decodeDomImageSrc(poster);
   if (decoded.startsWith(`${trimTrailingSlash(getProxyBase())}/`)) {
     return;
   }
@@ -10962,10 +10995,16 @@ var uriNormalized = (url) => {
   }
   return encodeURI(url);
 };
+var PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/;
+var plainForm = (url) => {
+  if (!PLAIN_UNSAFE.test(url)) return url;
+  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url);
+  return url.replace(new RegExp(PLAIN_UNSAFE.source, "g"), (c) => encodeURIComponent(c));
+};
 function undecodedAngleDestination(value, raw, unswap) {
   try {
     if (value !== uriNormalized(utils.replaceEntities(utils.unescapeMd(raw)))) return void 0;
-    return uriNormalized(utils.unescapeMd(unswap(raw)));
+    return plainForm(utils.unescapeMd(unswap(raw)));
   } catch {
     return void 0;
   }
@@ -11021,6 +11060,108 @@ function withAngleDestinations(rule, unswap) {
     const undecoded = undecodedAngleDestination(token[field], raw, unswap);
     if (undecoded !== void 0) token[field] = undecoded;
     return ok;
+  };
+}
+function withAutolinkSource(rule, unswap) {
+  return (state, silent) => {
+    const start = state.pos;
+    const before = state.tokens.length;
+    const ok = rule(state, silent);
+    if (!ok || silent) return ok;
+    const raw = state.src.slice(start + 1, state.pos - 1);
+    const token = state.tokens.slice(before).find((t) => t.type === "link_open");
+    if (!token) return ok;
+    for (const prefix of ["", "mailto:"]) {
+      try {
+        if (token.href !== uriNormalized(utils.replaceEntities(prefix + raw))) continue;
+      } catch {
+        continue;
+      }
+      token.href = plainForm(unswap(prefix + raw));
+      break;
+    }
+    return ok;
+  };
+}
+function entityRuleDecode(entity2) {
+  const numeric = /^&#(x[\da-f]+|\d+);$/i.exec(entity2);
+  if (!numeric) return utils.replaceEntities(entity2);
+  const code2 = numeric[1][0].toLowerCase() === "x" ? parseInt(numeric[1].slice(1), 16) : parseInt(numeric[1], 10);
+  return utils.isValidEntityCode(code2) ? utils.fromCodePoint(code2) : "\uFFFD";
+}
+function sourceSlice(view, source, from, to) {
+  let out = "";
+  let d = from;
+  while (d < to) {
+    const k = view.spanOf[d];
+    if (k !== -1) {
+      const span = view.spans[k];
+      if (d === span.d0 && span.d1 <= to) {
+        out += source.slice(span.s0, span.s1);
+        d = span.d1;
+      } else {
+        const stop = Math.min(span.d1, to);
+        out += view.text.slice(d, stop);
+        d = stop;
+      }
+      continue;
+    }
+    let n = d;
+    while (n < to && view.spanOf[n] === -1) n++;
+    out += source.slice(view.at[d], view.at[d] + (n - d));
+    d = n;
+  }
+  return out;
+}
+function withDecodedLinkify(rule, view) {
+  return (state) => {
+    const sources = /* @__PURE__ */ new Map();
+    const before = /* @__PURE__ */ new Map();
+    for (const block2 of state.tokens) {
+      if (block2.type !== "inline" || !block2.children) continue;
+      let viewed = false;
+      for (const token of block2.children) {
+        if (token.type !== "text" || !token.content) continue;
+        const v = view(token.content);
+        if (!v) continue;
+        sources.set(token, { source: token.content, view: v });
+        token.content = v.text;
+        viewed = true;
+      }
+      if (viewed) before.set(block2, block2.children.slice());
+    }
+    const result = rule(state);
+    for (const [block2, old] of before) {
+      const now = block2.children ?? [];
+      let k = 0;
+      for (const token of old) {
+        const pieces = [];
+        if (now[k] === token) {
+          pieces.push(now[k++]);
+        } else {
+          const length = token.content?.length ?? 0;
+          let taken = 0;
+          while (k < now.length && (taken < length || now[k].type === "link_close")) {
+            const piece = now[k++];
+            if (piece.type === "text") taken += piece.content?.length ?? 0;
+            pieces.push(piece);
+          }
+        }
+        const source = sources.get(token);
+        if (!source) continue;
+        let d = 0;
+        let inLink = false;
+        for (const piece of pieces) {
+          if (piece.type === "link_open") inLink = true;
+          else if (piece.type === "link_close") inLink = false;
+          if (piece.type !== "text" || piece.content === void 0) continue;
+          const length = piece.content.length;
+          if (!inLink) piece.content = sourceSlice(source.view, source.source, d, d + length);
+          d += length;
+        }
+      }
+    }
+    return result;
   };
 }
 function withAngleReferences(rule, unswap) {
@@ -11222,6 +11363,7 @@ function stripDocumentWrapper(html) {
   return html.replace(/ xmlns="http:\/\/www.w3.org\/1999\/xhtml"/g, "").replace(/^<\?xml[^?]*\?>/, "").replace(/^<!DOCTYPE[^>]*>/i, "").replace(/<\/?html(?=[\s/>])[^>]*>/g, "").replace(/<head(?=[\s/>])[^>]*>[\s\S]*?<\/head>/g, "").replace('<body id="root">', "").replace("</body>", "").trim();
 }
 function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
+  input = input.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => c.length === 2 ? c : "\uFFFD");
   input = input.replace(new RegExp("https://leofinance.io/threads/view/", "g"), "/@");
   input = input.replace(new RegExp("https://leofinance.io/posts/", "g"), "/@");
   input = input.replace(new RegExp("https://leofinance.io/threads/", "g"), "/@");
@@ -11258,8 +11400,10 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
   wrapRule(md.inline.ruler, "links", (rule) => withAngleDestinations(rule, (text3) => unswap(text3)));
   wrapRule(md.inline.ruler, "links", withPairedSource);
+  wrapRule(md.inline.ruler, "autolink", (rule) => withAutolinkSource(rule, (text3) => unswap(text3)));
   wrapRule(md.inline.ruler, "autolink", withOriginalSource);
   wrapRule(md.core.ruler, "references", (rule) => withAngleReferences(rule, (text3) => unswap(text3)));
+  wrapRule(md.core.ruler, "linkify", (rule) => withDecodedLinkify(rule, (text3) => linkifyView(text3)));
   wrapRule(md.core.ruler, "references", withPairedReferences);
   md.core.ruler.enable([
     "abbr"
@@ -11285,6 +11429,39 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
   const entityPlaceholders = [];
   const delimiter = entities2 ? placeholderDelimiter(input) : null;
   const placeholderRe = delimiter ? new RegExp(`${delimiter}(0|[1-9]\\d*)${delimiter}`, "g") : null;
+  const linkifyView = (source) => {
+    if (!placeholderRe || !delimiter || !source.includes(delimiter)) return null;
+    let text3 = "";
+    const at = [];
+    const spanOf = [];
+    const spans = [];
+    let last = 0;
+    for (const m of regexMatches(source, placeholderRe)) {
+      const start = m.index ?? 0;
+      const entity2 = entityPlaceholders[+m[1]];
+      if (entity2 === void 0) continue;
+      for (let i2 = last; i2 < start; i2++) {
+        at.push(i2);
+        spanOf.push(-1);
+      }
+      text3 += source.slice(last, start);
+      const decoded = entityRuleDecode(entity2);
+      spans.push({ d0: text3.length, d1: text3.length + decoded.length, s0: start, s1: start + m[0].length });
+      for (let i2 = 0; i2 < decoded.length; i2++) {
+        at.push(i2 === 0 ? start : start + m[0].length);
+        spanOf.push(spans.length - 1);
+      }
+      text3 += decoded;
+      last = start + m[0].length;
+    }
+    for (let i2 = last; i2 < source.length; i2++) {
+      at.push(i2);
+      spanOf.push(-1);
+    }
+    at.push(source.length);
+    spanOf.push(-1);
+    return { text: text3 + source.slice(last), at, spanOf, spans };
+  };
   const unswap = (text3) => placeholderRe ? text3.replace(placeholderRe, (placeholder, index) => entityPlaceholders[+index] ?? placeholder) : text3;
   if (entities2 && delimiter) {
     input = expandTabsLikeRemarkable(input);
@@ -11668,7 +11845,24 @@ function stripHiddenRegions(text3) {
   spellings = blankSpans(spellings, "<code", "</code", true, blockMask);
   return spellings.text;
 }
-var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/;
+function withoutLoneSurrogates(text3) {
+  return text3.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => c.length === 2 ? c : "\uFFFD");
+}
+var MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\s]{1,2048}))(?:\s+["'][^"']*["'])?\s*\)/;
+var ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/;
+function angleAsPlain(raw, ampEscapes2) {
+  const url = withoutLoneSurrogates(unescapeDestination(raw, ampEscapes2));
+  if (!ANGLE_UNSAFE.test(url)) return url;
+  if (/%(?![\da-f]{2})/i.test(url)) {
+    let normalized = url;
+    try {
+      normalized = decodeURI(normalized);
+    } catch {
+    }
+    return encodeURI(normalized);
+  }
+  return url.replace(new RegExp(ANGLE_UNSAFE.source, "g"), (c) => encodeURIComponent(c));
+}
 var MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/;
 var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
 var URL_TOKEN_RE2 = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi;
@@ -11791,6 +11985,67 @@ function promotesToImage(label, href) {
   return deAmp(decodeCompleteReferences(href.trim())) === deAmp(serialized);
 }
 var CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+var AUTOLINK_ALNUM = /[\p{L}\p{Nd}\p{M}]/u;
+var AUTOLINK_EMOJI = /[\u2700-\u27bf\udde6-\uddff\ud800-\udbff\udc00-\udfff\ufe0e\ufe0f\u0300-\u036f\ufe20-\ufe23\u20d0-\u20f0\ud83c\udffb-\udfff\u200d\u3299\u3297\u303d\u3030\u24c2\ud83c\udd70-\udd71\udd7e-\udd7f\udd8e\udd91-\udd9a\udde6-\uddff\ude01-\ude02\ude1a\ude2f\ude32-\ude3a\ude50-\ude51\u203c\u2049\u25aa-\u25ab\u25b6\u25c0\u25fb-\u25fe\u00a9\u00ae\u2122\u2139\udc04\u2600-\u26FF\u2b05\u2b06\u2b07\u2b1b\u2b1c\u2b50\u2b55\u231a\u231b\u2328\u23cf\u23e9-\u23f3\u23f8-\u23fa\udccf\u2935\u2934\u2190-\u21ff]/;
+var AUTOLINK_PUNCT = "-+&@#/%=~_()|'$*[]{}?!:,.;^\u2713";
+var AUTOLINK_END = "-+&@#/%=~_()|'$*[]{}\u2713";
+var autolinkWordChar = (c) => AUTOLINK_ALNUM.test(c) || AUTOLINK_EMOJI.test(c);
+var AUTOLINK_CLOSE = { ")": "(", "]": "[", "}": "{" };
+function autolinkUrlEnd(text3) {
+  const scheme = /^https?:\/\//i.exec(text3);
+  if (!scheme) return 0;
+  const hostStart = scheme[0].length;
+  let end = hostStart;
+  let pos = hostStart;
+  while (pos < text3.length && autolinkWordChar(text3[pos])) {
+    let k = pos;
+    let lastWord = pos;
+    while (k < text3.length && (autolinkWordChar(text3[k]) || text3[k] === "-" || text3[k] === "_")) {
+      if (autolinkWordChar(text3[k])) lastWord = k;
+      k++;
+    }
+    end = lastWord + 1;
+    if (text3[end] !== "." || !autolinkWordChar(text3[end + 1] ?? "")) break;
+    pos = end + 1;
+  }
+  if (end === hostStart) return 0;
+  const port = /^:[0-9]+/.exec(text3.slice(end));
+  if (port) end += port[0].length;
+  if (end < text3.length && "/?#".includes(text3[end])) {
+    let last = end + 1;
+    for (let i2 = end + 1; i2 < text3.length; i2++) {
+      const c = text3[i2];
+      const word = autolinkWordChar(c);
+      if (!word && !AUTOLINK_PUNCT.includes(c)) break;
+      if (word || AUTOLINK_END.includes(c)) last = i2 + 1;
+    }
+    end = last;
+  }
+  if (text3[end - 1] === "?") end--;
+  const open = AUTOLINK_CLOSE[text3[end - 1]];
+  if (open) {
+    let depth = 0;
+    for (let i2 = 0; i2 < end - 1; i2++) {
+      if (text3[i2] === open) depth++;
+      else if (text3[i2] === text3[end - 1]) depth = Math.max(depth - 1, 0);
+    }
+    if (depth === 0) return end - 1;
+  }
+  let tld = -1;
+  let dotOk = false;
+  for (let i2 = hostStart; i2 < end; i2++) {
+    const c = text3[i2];
+    if (c === ".") {
+      dotOk = i2 > hostStart && text3[i2 - 1] !== ".";
+    } else if (c === "-" || autolinkWordChar(c)) {
+      if (dotOk) tld = i2 + 1;
+    } else {
+      break;
+    }
+  }
+  if (tld !== -1 && tld < end && !/[-.A-Za-z0-9:/?#]/.test(text3[tld])) return tld;
+  return end;
+}
 function withoutTrailingPunctuation(url, after) {
   if (after.startsWith(")") || /^<\/a[\s>]/i.test(after)) return url;
   let end = url.length;
@@ -11822,6 +12077,49 @@ function htmlTextImageUrl(body, pos) {
 function firstBodyImageRawUrl(body) {
   return bodyImageRawUrl(body, prepareBody(body));
 }
+function markdownTextSpan(body, pos) {
+  let end = pos;
+  while (end < body.length && !/[\s<[]/.test(body[end])) end++;
+  return body.slice(pos, end);
+}
+function loneSurrogateAt(text3) {
+  for (let i2 = 0; i2 < text3.length; i2++) {
+    const c = text3.charCodeAt(i2);
+    if (c >= 55296 && c <= 56319) {
+      const next = text3.charCodeAt(i2 + 1);
+      if (next >= 56320 && next <= 57343) {
+        i2++;
+        continue;
+      }
+      return i2;
+    }
+    if (c >= 56320 && c <= 57343) return i2;
+  }
+  return -1;
+}
+function definitionDestinationAt(body, pos) {
+  let k = pos - 1;
+  const skipBlanks = () => {
+    while (k >= 0 && (body[k] === " " || body[k] === "	")) k--;
+  };
+  skipBlanks();
+  if (body[k] === "\n") {
+    k--;
+    skipBlanks();
+  }
+  return k >= 1 && body[k] === ":" && body[k - 1] === "]";
+}
+function strayHashBefore(body, pos) {
+  const line = decodeCompleteReferences(body.slice(body.lastIndexOf("\n", pos - 1) + 1, pos).replace(/^ {0,3}#{1,6}(?=[ \t])/, ""));
+  for (let i2 = line.indexOf("#"); i2 !== -1; i2 = line.indexOf("#", i2 + 1)) {
+    const prev = line[i2 - 1];
+    const next = line[i2 + 1];
+    if (prev !== void 0 && autolinkWordChar(prev)) continue;
+    if (next !== void 0 && (autolinkWordChar(next) || next === "_")) continue;
+    return true;
+  }
+  return false;
+}
 function bodyImageRawUrl(body, prepared) {
   const candidate = findFirstImageCandidate(prepared, true).candidate;
   if (!candidate) return null;
@@ -11832,8 +12130,24 @@ function bodyImageRawUrl(body, prepared) {
     return CONTROL_CHAR_RE.test(url2) ? null : url2;
   }
   if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos);
-  const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4));
-  return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes2);
+  const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4);
+  const loneAt = loneSurrogateAt(candidate.url);
+  const token = loneAt === -1 ? candidate.url : candidate.url.slice(0, loneAt);
+  const tokenUrl = () => {
+    const url2 = withoutTrailingPunctuation(token, loneAt === -1 ? after : "");
+    return imageUrlEnd(url2) === -1 ? null : decodeRawBodyImageSrc(url2, false, ampEscapes2);
+  };
+  if (/^<\/a[\s>]/i.test(after) || definitionDestinationAt(body, candidate.pos)) return tokenUrl();
+  const raw = markdownTextSpan(body, candidate.pos);
+  let span = decodeCompleteReferences(raw.replace(/\\&/g, "&amp;"));
+  span = withoutLoneSurrogates(span);
+  let k = candidate.pos - 1;
+  while (k >= 0 && (body[k] === " " || body[k] === "	")) k--;
+  const before = k < 0 ? "\n" : body[k];
+  const plain = (k === candidate.pos - 1 ? before === "\n" || before === "(" : before !== "@") && !strayHashBefore(body, candidate.pos);
+  if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl();
+  const url = span.slice(0, autolinkUrlEnd(span));
+  return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url);
 }
 function codeBlanked(body) {
   return blankMatches(blankMatches(blankMatches(body, BACKTICK_FENCE_RE), TILDE_FENCE_RE), INLINE_CODE_RE);
@@ -11926,9 +12240,10 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
   if (!cleaned) return NONE;
   const mdMatch = cleaned.match(MD_IMAGE_RE);
   const htmlMatch = cleaned.match(HTML_IMAGE_RE);
+  const mdUrl = mdMatch ? mdMatch[1] !== void 0 ? angleAsPlain(mdMatch[1], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
   if (mdMatch) {
-    const url = mdMatch[1];
-    if (!url || !SAFE_URL_RE.test(url) || url.includes("(")) {
+    const url = mdUrl;
+    if (!url || !SAFE_URL_RE.test(url) || mdMatch[1] === void 0 && url.includes("(")) {
       return AMBIGUOUS;
     }
   }
@@ -11937,7 +12252,7 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     return AMBIGUOUS;
   }
   const candidates = [];
-  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0, destination: true });
+  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true });
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true });
   }
@@ -12003,7 +12318,9 @@ function metaFingerprint(jsonMetadata) {
   }
 }
 function proxifyFound(src, width, height, format) {
-  return proxifyImageSrc(decodeEntities(src), width, height, format);
+  const entityDecoded = decodeEntities(src);
+  const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format);
+  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(entityDecoded, width, height, format);
 }
 function getImage(entry, width, height, format, renderFirstImage) {
   let meta;

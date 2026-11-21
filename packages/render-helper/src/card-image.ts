@@ -1,5 +1,5 @@
-import { proxifyImageSrc } from './proxify-image-src'
-import { hasAmpSentinel, imageUrlEnd, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
+import { getProxyBase, proxifyImageSrc } from './proxify-image-src'
+import { hasAmpSentinel, imageUrlEnd, unescapeDestination, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -323,7 +323,37 @@ function stripHiddenRegions(text: string): string {
 // matches image URLs that legitimately contain a literal `[` (e.g. array query params
 // like `?w[]=600`) — the per-position scan stays capped, so it's sub-quadratic on
 // untrusted input.
-const MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*([^)\s]{1,2048})(?:\s+["'][^"']*["'])?\s*\)/
+// Lone surrogates as U+FFFD, as markdownToHTML reads its input (#2158); they
+// would also make encodeURI throw.
+function withoutLoneSurrogates(text: string): string {
+  return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+}
+
+// An angle-bracket destination (`![](<url with spaces>)`, group 1) is read to
+// its first unescaped `>` on the line, as the parser reads it (#2156); the
+// plain form is group 2.
+const MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\s]{1,2048}))(?:\s+["'][^"']*["'])?\s*\)/
+
+// An angle destination in the spelling its plain form has, as the render's
+// plainForm writes it: escapes resolved first, then whitespace, controls and
+// the ASCII encodeURI encodes percent-encoded (`%` and non-ASCII as written,
+// unless a `%` starts no escape: then encodeURI's reading). A `\\` left after
+// the unescape is encoded, so the destination decode unescapes nothing again.
+const ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
+function angleAsPlain(raw: string, ampEscapes: boolean): string {
+  const url = withoutLoneSurrogates(unescapeDestination(raw, ampEscapes))
+  if (!ANGLE_UNSAFE.test(url)) return url
+  if (/%(?![\da-f]{2})/i.test(url)) {
+    let normalized = url
+    try {
+      normalized = decodeURI(normalized)
+    } catch {
+      // kept as written, as Remarkable does
+    }
+    return encodeURI(normalized)
+  }
+  return url.replace(new RegExp(ANGLE_UNSAFE.source, 'g'), (c) => encodeURIComponent(c))
+}
 // A markdown image whose URL exceeds MD_IMAGE_RE's length bound (or whose syntax is broken)
 // isn't captured by it — leaving `mdMatch` null, or (MD_IMAGE_RE is unanchored) matching a
 // *later* image instead. This linear detector (label excludes `[`; no closing `)` required)
@@ -568,6 +598,87 @@ function promotesToImage(label: string, href: string): boolean {
 // it its own way, and a guessed preload is a wasted download.
 const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/
 
+// Characters Autolinker 3 (Remarkable's linkify) takes in a URL
+// (regex-lib.js): letters, marks and decimal digits (as Unicode properties),
+// its emoji list (copied as written, read one UTF-16 unit at a time as it
+// reads it, so without the u flag), and the punctuation url-matcher.js allows
+// in a path, query or fragment; a URL ends on one of AUTOLINK_END.
+const AUTOLINK_ALNUM = /[\p{L}\p{Nd}\p{M}]/u
+const AUTOLINK_EMOJI = /[\u2700-\u27bf\udde6-\uddff\ud800-\udbff\udc00-\udfff\ufe0e\ufe0f\u0300-\u036f\ufe20-\ufe23\u20d0-\u20f0\ud83c\udffb-\udfff\u200d\u3299\u3297\u303d\u3030\u24c2\ud83c\udd70-\udd71\udd7e-\udd7f\udd8e\udd91-\udd9a\udde6-\uddff\ude01-\ude02\ude1a\ude2f\ude32-\ude3a\ude50-\ude51\u203c\u2049\u25aa-\u25ab\u25b6\u25c0\u25fb-\u25fe\u00a9\u00ae\u2122\u2139\udc04\u2600-\u26FF\u2b05\u2b06\u2b07\u2b1b\u2b1c\u2b50\u2b55\u231a\u231b\u2328\u23cf\u23e9-\u23f3\u23f8-\u23fa\udccf\u2935\u2934\u2190-\u21ff]/
+const AUTOLINK_PUNCT = "-+&@#/%=~_()|'$*[]{}?!:,.;^\u2713"
+const AUTOLINK_END = "-+&@#/%=~_()|'$*[]{}\u2713"
+const autolinkWordChar = (c: string): boolean => AUTOLINK_ALNUM.test(c) || AUTOLINK_EMOJI.test(c)
+const AUTOLINK_CLOSE: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
+
+/**
+ * Where Autolinker 3.16 ends a scheme URL at the start of `text` (decoded
+ * markdown text, as the render's linkify reads it, #2157), ported from
+ * url-matcher.js: the host's labels (getDomainNameStr: a word character, then
+ * word characters, `-` and `_`, ending on a word character, joined by dots),
+ * a port, then a path, query or fragment to its last allowed end character;
+ * then a trailing `?` dropped, and either one closing bracket the match does
+ * not open dropped, or the match cut where matchHasInvalidCharAfterTld cuts it.
+ */
+function autolinkUrlEnd(text: string): number {
+  const scheme = /^https?:\/\//i.exec(text)
+  if (!scheme) return 0
+  const hostStart = scheme[0].length
+  let end = hostStart
+  let pos = hostStart
+  while (pos < text.length && autolinkWordChar(text[pos])) {
+    let k = pos
+    let lastWord = pos
+    while (k < text.length && (autolinkWordChar(text[k]) || text[k] === '-' || text[k] === '_')) {
+      if (autolinkWordChar(text[k])) lastWord = k
+      k++
+    }
+    end = lastWord + 1
+    if (text[end] !== '.' || !autolinkWordChar(text[end + 1] ?? '')) break
+    pos = end + 1
+  }
+  if (end === hostStart) return 0
+  const port = /^:[0-9]+/.exec(text.slice(end))
+  if (port) end += port[0].length
+  if (end < text.length && '/?#'.includes(text[end])) {
+    let last = end + 1
+    for (let i = end + 1; i < text.length; i++) {
+      const c = text[i]
+      const word = autolinkWordChar(c)
+      if (!word && !AUTOLINK_PUNCT.includes(c)) break
+      if (word || AUTOLINK_END.includes(c)) last = i + 1
+    }
+    end = last
+  }
+  if (text[end - 1] === '?') end--
+  const open = AUTOLINK_CLOSE[text[end - 1]]
+  if (open) {
+    let depth = 0
+    for (let i = 0; i < end - 1; i++) {
+      if (text[i] === open) depth++
+      else if (text[i] === text[end - 1]) depth = Math.max(depth - 1, 0)
+    }
+    if (depth === 0) return end - 1
+  }
+  // matchHasInvalidCharAfterTld: the longest `[-.w]*[-w]\.[-w]+` after the
+  // `//` (w a word character), and a cut there when what follows is not one
+  // of `[-.A-Za-z0-9:/?#]`. One pass: the match may end after any [-w] whose
+  // segment since the last dot is non-empty, that dot having a [-w] before it.
+  let tld = -1
+  let dotOk = false
+  for (let i = hostStart; i < end; i++) {
+    const c = text[i]
+    if (c === '.') {
+      dotOk = i > hostStart && text[i - 1] !== '.'
+    } else if (c === '-' || autolinkWordChar(c)) {
+      if (dotOk) tld = i + 1
+    } else {
+      break
+    }
+  }
+  if (tld !== -1 && tld < end && !/[-.A-Za-z0-9:/?#]/.test(text[tld])) return tld
+  return end
+}
+
 /**
  * A URL in markdown text without the trailing sentence punctuation the
  * autolinker leaves out, after a query or fragment too (verified against the
@@ -632,6 +743,65 @@ function firstBodyImageRawUrl(body: string): string | null {
   return bodyImageRawUrl(body, prepareBody(body))
 }
 
+// The text a bare URL at `pos` sits in, as the inline parser leaves it for
+// linkify: to whitespace or `<`, and before a `[`, which may open a link,
+// image or footnote (develop's reading; the render keeps the `[` only when no
+// such construct parses, which is rare in a URL).
+function markdownTextSpan(body: string, pos: number): string {
+  let end = pos
+  while (end < body.length && !/[\s<[]/.test(body[end])) end++
+  return body.slice(pos, end)
+}
+
+// The index of the first lone surrogate in `text`, or -1.
+function loneSurrogateAt(text: string): number {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = text.charCodeAt(i + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++
+        continue
+      }
+      return i
+    }
+    if (c >= 0xdc00 && c <= 0xdfff) return i
+  }
+  return -1
+}
+
+// Whether `pos` starts a reference definition's destination: `]:`, then
+// spaces and at most one line break.
+function definitionDestinationAt(body: string, pos: number): boolean {
+  let k = pos - 1
+  const skipBlanks = () => {
+    while (k >= 0 && (body[k] === ' ' || body[k] === '\t')) k--
+  }
+  skipBlanks()
+  if (body[k] === '\n') {
+    k--
+    skipBlanks()
+  }
+  return k >= 1 && body[k] === ':' && body[k - 1] === ']'
+}
+
+// Whether the line before `pos` holds a `#` that is neither a hashtag nor
+// after an Autolinker word character (`x # y`, `_#`, `\#`, `&num;`; not
+// `#tag`, `(#tag)` or `C#`): Autolinker's hashtag matcher then claims the text
+// to the token's end and drops the URL, and the render reads it its own way.
+// A heading's own marker is not text.
+function strayHashBefore(body: string, pos: number): boolean {
+  const line = decodeCompleteReferences(body.slice(body.lastIndexOf('\n', pos - 1) + 1, pos).replace(/^ {0,3}#{1,6}(?=[ \t])/, ''))
+  for (let i = line.indexOf('#'); i !== -1; i = line.indexOf('#', i + 1)) {
+    const prev = line[i - 1]
+    const next = line[i + 1]
+    if (prev !== undefined && autolinkWordChar(prev)) continue
+    if (next !== undefined && (autolinkWordChar(next) || next === '_')) continue
+    return true
+  }
+  return false
+}
+
 function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   const candidate = findFirstImageCandidate(prepared, true).candidate
   if (!candidate) return null
@@ -645,8 +815,41 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // with code already blanked (a `<div>` inside a fence opens no block); the
   // blanking keeps every offset.
   if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos)
-  const url = withoutTrailingPunctuation(candidate.url, body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4))
-  return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
+  // Develop's reading: the URL token up to a parenthesis, bracket or quote,
+  // without trailing sentence punctuation.
+  const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4)
+  // A lone surrogate reads as U+FFFD in the render now (#2158), which ends
+  // the URL there.
+  const loneAt = loneSurrogateAt(candidate.url)
+  const token = loneAt === -1 ? candidate.url : candidate.url.slice(0, loneAt)
+  const tokenUrl = (): string | null => {
+    const url = withoutTrailingPunctuation(token, loneAt === -1 ? after : '')
+    return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
+  }
+  // A raw anchor's text and a reference definition's destination are not
+  // autolinked.
+  if (/^<\/a[\s>]/i.test(after) || definitionDestinationAt(body, candidate.pos)) return tokenUrl()
+  // Markdown text with a parenthesis in the URL (`?a=(1)`, `?a=1))`,
+  // `?a=1&#41;`, `(url)text`): the token stops at it, while the render's
+  // linkify (Autolinker) balances it (#2157). Read there as Autolinker does;
+  // emphasis and everything else as before.
+  // Only where nothing else can end the text first: no inline delimiter the
+  // parser may take (`*~_|^`, `==`, `++`, raw or as a reference), and the URL starting
+  // the line or after whitespace or `(`, not after `@` or with a stray `#`
+  // earlier on the line (Autolinker skips those and the render reads them its
+  // own way).
+  const raw = markdownTextSpan(body, candidate.pos)
+  let span = decodeCompleteReferences(raw.replace(/\\&/g, '&amp;'))
+  span = withoutLoneSurrogates(span)
+  let k = candidate.pos - 1
+  while (k >= 0 && (body[k] === ' ' || body[k] === '\t')) k--
+  const before = k < 0 ? '\n' : body[k]
+  const plain =
+    (k === candidate.pos - 1 ? before === '\n' || before === '(' : before !== '@') &&
+    !strayHashBefore(body, candidate.pos)
+  if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl()
+  const url = span.slice(0, autolinkUrlEnd(span))
+  return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
 }
 
 // Fenced blocks and inline code blanked, offsets kept, nothing else touched:
@@ -833,9 +1036,12 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // means the URL was truncated mid-paren (e.g., a real
   // `https://x.com/path_(a)_full.jpg`). When ambiguous, bail and let the full
   // markdown parser handle it — returning a truncated URL would be wrong.
+  // An angle destination is whole whatever it holds; a plain one with `(` may
+  // have been cut short by the capture class.
+  const mdUrl = mdMatch ? (mdMatch[1] !== undefined ? angleAsPlain(mdMatch[1], !hasAmpSentinel(cleaned)) : mdMatch[2]) : undefined
   if (mdMatch) {
-    const url = mdMatch[1]
-    if (!url || !SAFE_URL_RE.test(url) || url.includes('(')) {
+    const url = mdUrl
+    if (!url || !SAFE_URL_RE.test(url) || (mdMatch[1] === undefined && url.includes('('))) {
       return AMBIGUOUS
     }
   }
@@ -852,7 +1058,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // Collect valid candidates with their source position; the rendered document
   // surfaces whichever image appears first in source order.
   const candidates: ImageCandidate[] = []
-  if (mdMatch) candidates.push({ url: mdMatch[1], pos: mdMatch.index ?? 0, destination: true })
+  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true })
   if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true })
   }
@@ -949,8 +1155,15 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
   }
 }
 
+// Percent-decoded as the render decodes its <img> src before proxying
+// (decodeDomImageSrc), so `a%20b.png` preloads the image the body shows
+// (#2169). A legacy passthrough that carries the URL itself rather than a
+// /p/ hash keeps it as written: decoded, a `%20` or `%0A` would become raw
+// whitespace in it.
 function proxifyFound(src: string, width: number, height: number, format: string): string {
-  return proxifyImageSrc(decodeEntities(src), width, height, format)
+  const entityDecoded = decodeEntities(src)
+  const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format)
+  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(entityDecoded, width, height, format)
 }
 
 function getImage(entry: Entry, width: number, height: number, format: string, renderFirstImage: RenderFirstImage | null): string | null {

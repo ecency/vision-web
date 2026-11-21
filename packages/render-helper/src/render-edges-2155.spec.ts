@@ -31,7 +31,8 @@ describe('a refused iframe leaves nothing behind (#2155)', () => {
 
   it('leaves no close tag that closes no kept iframe', () => {
     expect(untransformed('<iframe/src="https://evil.example.com/x">Unavailable</iframe>')).not.toContain('iframe')
-    expect(untransformed('<iframe>a<iframe>b<iframe>c</iframe>d</iframe>e</iframe>f')).toBe('abdef')
+    // Nested only in iframes and text: dropped whole, as the main path does (#2170).
+    expect(untransformed('<iframe>a<iframe>b<iframe>c</iframe>d</iframe>e</iframe>f')).toBe('f')
   })
 
   it('keeps what follows an unclosed one', () => {
@@ -150,5 +151,33 @@ describe('#2155 PR review edges', () => {
   it('leaves an author U+2060 in a web path to the in-site check', () => {
     const html = markdown2Html(entry('<a href="/topic\u2060/@alice/some-post">x</a>'), false)
     expect(html).toContain('href="/@alice/some-post"')
+  })
+})
+
+describe('the fallback path drops a refused nested iframe as the main path does (#2170)', () => {
+  it('same text on both renders and the sanitize-only path', () => {
+    const body = '<iframe>a<iframe>b<iframe>c</iframe>d</iframe>e</iframe>f'
+    const text = (html: string) => {
+      let out = ''
+      let i = 0
+      while (i < html.length) {
+        const open = html.indexOf('<', i)
+        if (open === -1) return out + html.slice(i)
+        out += html.slice(i, open)
+        const close = html.indexOf('>', open)
+        if (close === -1) return out
+        i = close + 1
+      }
+      return out
+    }
+    expect(text(markdown2Html(entry(body), true))).toBe('f')
+    expect(text(markdown2Html(entry(body), false))).toBe('f')
+    expect(text(untransformed(body))).toBe('f')
+  })
+})
+
+describe('private-use characters are author content (#2170)', () => {
+  it.each(['a\uE000b', 'a\uE123b', 'a\uF8FFb', 'a\u{F0000}b'])('%j survives both renders', (body) => {
+    for (const forApp of [true, false]) expect(markdown2Html(entry(body), forApp)).toBe(`<p dir="auto">${body}</p>`)
   })
 })
