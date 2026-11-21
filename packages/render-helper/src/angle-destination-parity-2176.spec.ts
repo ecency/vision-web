@@ -140,6 +140,24 @@ describe('every image form: card and render agree on parser-rewritten input', ()
     // A thematic break of underscores ends the paragraph too.
     '![a\n___\nb](<https://e.com/a b.png>)',
     '![a\n<div>b</div>](<https://e.com/a b.png>)',
+    // A setext underline of any hyphen count, a table separator without a
+    // leading pipe, and a definition marker each split the paragraph too.
+    '![a\n--\nb](<https://e.com/a b.png>)',
+    '![a|b\n-|- \nc](<https://e.com/a b.png>)',
+    '![a|b\n:-|-:\nc](<https://e.com/a b.png>)',
+    '![a\n: b](<https://e.com/a b.png>)',
+    '![a\n~ b](<https://e.com/a b.png>)',
+    // A one-column separator needs no pipe of its own.
+    '![a|\n:-:\nb](<https://e.com/a b.png>)',
+    '![a|\n-:\nb](<https://e.com/a b.png>)',
+    '|![a\n:-\nb](<https://e.com/a b.png>)',
+    // Inside a list item a block starts at the item's indent, which can be 4+.
+    '10. ![a\n    --\n    b](<https://e.com/a b.png>)',
+    '10. ![a\n    : b](<https://e.com/a b.png>)',
+    '10. ![a|b\n    -|-\n    c](<https://e.com/a b.png>)',
+    '10. ![a\n    # h\n    b](<https://e.com/a b.png>)',
+    '- item\n  - ![a\n    ===\n    b](<https://e.com/a b.png>)',
+    '1. - ![a|b\n     -|-\n     c](<https://e.com/a b.png>)',
     // cleanReply drops a platform byline line before the render.
     '![x](https://e.com/a.png) Posted using [LeoFinance](https://leofinance.io)\n\n![y](https://e.com/b.png)'
   ])('%j', (body) => {
@@ -181,7 +199,11 @@ describe('a multi-line image the card still reads in fast mode', () => {
     '![a\n1999-01 photo](https://e.com/a.png)',
     '![x](\n<https://e.com/a b.png>)',
     '![x](\nhttps://e.com/a.png)',
-    '![a\n<3 you](https://e.com/a.png)'
+    '![a\n<3 you](https://e.com/a.png)',
+    '![a\n--b](https://e.com/a.png)',
+    '![a\n:b](https://e.com/a.png)',
+    '![a\n~b](https://e.com/a.png)',
+    '![a\n-:b](https://e.com/a.png)'
   ])('%j', (body) => {
     const rendered = shown(body)
     expect(rendered).not.toBeNull()

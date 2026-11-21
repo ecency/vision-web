@@ -380,11 +380,13 @@ function parserInput(raw: string): string {
 // than promoting a later HTML/bare/markdown candidate over it.
 // A line inside an image that may open a block as the parser reads one: a
 // heading, quote, list item, fence, thematic break, setext underline, table
-// row, or an HTML block (`<!`, `<?`, or a block tag). Such a line can end the
-// paragraph before the image closes, so the image is left to the render; any
-// other line keeps it readable.
+// row, a separator or hyphen underline (`-`, `:` and `|` only), a definition
+// marker, or an HTML block (`<!`, `<?`, or a block tag). Such a line can end
+// the paragraph before the image closes, so the image is left to the render;
+// any other line keeps it readable. Any indent counts: inside a list item a
+// block starts at the item's own indent, which can be 4 or more.
 const BLOCK_START_LINE_RE =
-  /\n {0,3}(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|\|)/
+  /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\|)/
 const HTML_LINE_TAG_RE = /\n {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/g
 function opensBlockInside(text: string): boolean {
   if (BLOCK_START_LINE_RE.test(text)) return true
