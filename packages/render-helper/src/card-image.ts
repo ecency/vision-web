@@ -411,7 +411,21 @@ function opensBlockInside(text: string): boolean {
   return false
 }
 
-const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*(?:\]\(\s*[^\s)]|\[)/
+const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*(?:\]\(\s*[^\s)]|\[)/g
+
+// The first match of a global `re` whose `!` is not backslash-escaped: an
+// escaped `\![...](url)` is a link, and an image may still sit inside its
+// label, so the scan resumes just past the escaped `![` (#2179).
+function firstUnescapedImage(text: string, re: RegExp): RegExpExecArray | null {
+  re.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (!escapedAt(text, m.index)) return m
+    re.lastIndex = m.index + 2
+  }
+  return null
+}
+const MD_IMAGE_RE_G = new RegExp(MD_IMAGE_RE.source, 'g')
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // A standalone (auto-linkified) image URL the renderer turns into an <img> via
 // text.method / linkify (IMG_REGEX). Required to sit at a line start or after
@@ -1081,7 +1095,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   const { cleaned } = prepared
   if (!cleaned) return NONE
 
-  const mdMatch = cleaned.match(MD_IMAGE_RE)
+  const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G)
   const htmlMatch = cleaned.match(HTML_IMAGE_RE)
 
   // If markdown image syntax is present at all, it must be unambiguous. The
@@ -1105,9 +1119,6 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       !SAFE_URL_RE.test(url) ||
       (mdMatch[1] === undefined && url.includes('(')) ||
       opensBlockInside(mdMatch[0]) ||
-      // An escaped `!` (an odd run of backslashes before it) makes a link,
-      // not an image (#2179).
-      escapedAt(cleaned, mdMatch.index ?? 0) ||
       // A backslash before whitespace escapes nothing in a plain destination.
       (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2])) ||
       // With a `%` that starts no escape, the render normalises the escaped
@@ -1124,7 +1135,7 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // parser so it resolves the true first image rather than promoting a later HTML/bare/markdown
   // candidate.
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned
-  if (MD_IMAGE_PRESENT_RE.test(priorRegion)) {
+  if (firstUnescapedImage(priorRegion, MD_IMAGE_PRESENT_RE)) {
     return AMBIGUOUS
   }
 
@@ -1183,10 +1194,11 @@ function fastBodyImage(raw: string, width: number, height: number, format: strin
   // Otherwise the full lookup would render and take the first <img> in source
   // order, which is a bare image URL or a video poster.
   const bare = findFirstImageCandidate(prepared, true).candidate
-  // The render ends a bare URL at a lone surrogate (#2158), which the full
-  // lookup reads its own way: give up rather than name another URL (#2179).
-  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1) return null
   const poster = findFirstVideoPoster(prepared)
+  // The render ends a bare URL at a lone surrogate (#2158), which the full
+  // lookup reads its own way: give up rather than name another URL (#2179),
+  // unless a poster comes first and wins on source order anyway.
+  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1 && !(poster && poster.pos < bare.pos)) return null
   if (poster && (!bare || poster.pos < bare.pos)) {
     // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at
     // the requested size is exactly what the full render path does with it.

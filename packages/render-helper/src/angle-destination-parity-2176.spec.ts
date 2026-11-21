@@ -218,6 +218,46 @@ describe('a plain destination with a stray % and an escape: all lookups agree', 
   })
 })
 
+// Fast mode keeps source order around a bare URL it cannot read: an earlier
+// video poster still wins, a later one does not (#2181 review).
+describe('a lone surrogate in a bare URL beside a video poster', () => {
+  const YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+  it('an earlier poster is still named in fast mode', () => {
+    const body = `${YT}\n\nhttps://e.com/\ud800x.png`
+    const rendered = shown(body)
+    expect(rendered).not.toBeNull()
+    expect(catchPostImage(entry(body), 0, 0, 'match', FAST)).toBe(rendered)
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(rendered)
+  })
+
+  it('a later poster is not promoted over the unread URL', () => {
+    const body = `https://e.com/\ud800x.png\n\n${YT}`
+    const fast = catchPostImage(entry(body), 0, 0, 'match', FAST)
+    if (fast !== null) expect(fast).toBe(shown(body))
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(shown(body))
+  })
+})
+
+// A fragment that cannot be an image (an escaped `!`, or a label a blank line
+// ends) does not hide a later image from the parserless lookups (#2181 review).
+describe('a later image after a fragment that is not an image', () => {
+  it.each([
+    '\\![a [b\n\n![c](https://e.com/b.png)',
+    '\\![a [b] c](x) ![d](https://e.com/b.png)'
+  ])('%j', (body) => {
+    const rendered = shown(body)
+    expect(rendered).not.toBeNull()
+    for (const [name, lookup] of Object.entries(lookups)) {
+      if (name === 'card') {
+        expect([name, lookup(body)]).toEqual([name, rendered])
+        continue
+      }
+      const found = lookup(body)
+      expect([name, found]).toEqual([name, rendered])
+    }
+  })
+})
+
 describe('the shared destination helpers (#2176)', () => {
   it('replaces lone surrogates only', () => {
     expect(withoutLoneSurrogates('a\ud800b\udc00c😀')).toBe('a�b�c😀')

@@ -579,6 +579,10 @@ Posted using [Partiko iOS](https://partiko.app)`
       expect(cleanReply('Hello\n<sub>Posted [via Inbox](https://example.com)</sub>').trim()).toBe('Hello')
     })
 
+    it('keeps a [via Inbox] link with an empty destination', () => {
+      expect(cleanReply('Hello\n[via Inbox]()').trim()).toBe('Hello\n[via Inbox]()')
+    })
+
     it('keeps prose that mentions [via Inbox] on its line', () => {
       const input = 'I got this [via Inbox] yesterday ![x](https://e.com/a.png)\nnext'
       expect(cleanReply(input).trim()).toBe(input)
