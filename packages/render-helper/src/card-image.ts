@@ -415,15 +415,21 @@ const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*(?:\]\(\s*[^\s)]|\[)/g
 
 // The first match of a global `re` whose `!` is not backslash-escaped: an
 // escaped `\![...](url)` is a link, and an image may still sit inside its
-// label, so the scan resumes just past the escaped `![` (#2179).
+// label, so the scan resumes just past the escaped `![` (#2179). A label
+// holding a URL is returned all the same: the render can turn that link into
+// an image, which only the parser reads exactly, so the caller defers.
 function firstUnescapedImage(text: string, re: RegExp): RegExpExecArray | null {
   re.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
-    if (!escapedAt(text, m.index)) return m
+    if (!escapedAt(text, m.index) || escapedLabelHoldsUrl(m[0])) return m
     re.lastIndex = m.index + 2
   }
   return null
+}
+function escapedLabelHoldsUrl(match: string): boolean {
+  const close = match.lastIndexOf('](')
+  return match.slice(0, close === -1 ? match.length : close).includes('://')
 }
 const MD_IMAGE_RE_G = new RegExp(MD_IMAGE_RE.source, 'g')
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
@@ -1119,6 +1125,8 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       !SAFE_URL_RE.test(url) ||
       (mdMatch[1] === undefined && url.includes('(')) ||
       opensBlockInside(mdMatch[0]) ||
+      // An escaped `!` before a link whose text holds a URL (#2181 review).
+      escapedAt(cleaned, mdMatch.index) ||
       // A backslash before whitespace escapes nothing in a plain destination.
       (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2])) ||
       // With a `%` that starts no escape, the render normalises the escaped
