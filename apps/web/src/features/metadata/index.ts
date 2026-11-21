@@ -55,6 +55,13 @@ export namespace PagesMetadataGenerator {
     };
   }
 
+  function buildForAdvent(): Metadata {
+    return {
+      title: i18next.t("advent.page-title"),
+      description: i18next.t("advent.page-description")
+    };
+  }
+
   function buildForDiscover(): Metadata {
     return {
       title: i18next.t("discover.title"),
@@ -188,6 +195,7 @@ export namespace PagesMetadataGenerator {
     if (name === "creator-economy") return buildForCreatorEconomy();
     if (name === "decks") return buildForDecks();
     if (name === "raidstead") return buildForRaidstead();
+    if (name === "advent") return buildForAdvent();
     if (name === "discover") return buildForDiscover();
     if (name === "curation") return buildForCuration();
     if (name === "curation-guide") return buildForCurationGuide();

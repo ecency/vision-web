@@ -31,6 +31,7 @@ import { JsonLd, buildBreadcrumbJsonLd } from "@/features/structured-data";
 import { getServerAppBase } from "@/utils/server-app-base";
 import defaults from "@/defaults";
 import { WavesOnboardingChecklist } from "@/features/waves/components/waves-onboarding-checklist";
+import { AdventBanner } from "@/features/advent/advent-banner";
 
 interface Props {
   params: Promise<{ sections: string[] }>;
@@ -200,6 +201,8 @@ export default async function FeedPage({ params, searchParams }: Props) {
             {/* Personal feed (/@user/feed) is where new users land after login;
                 the card self-gates to fresh accounts and renders nothing otherwise. */}
             {filter === "feed" && <WavesOnboardingChecklist />}
+            {/* shows itself from 29 November to 31 December, once a day */}
+            <AdventBanner />
             {showTagHeader && <TagFeedHeader tag={tag} hasPosts={firstPage.length > 0} />}
           </>
         }

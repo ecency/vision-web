@@ -7,6 +7,7 @@ import {
   UilCommentDots,
   UilCommentPlus,
   UilEditAlt,
+  UilGift,
   UilHome,
   UilListUl,
   UilShield,
@@ -30,6 +31,7 @@ import defaults from "@/defaults";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { useAdventVisible } from "@/features/advent/use-advent-visible";
 import { ASK_ESIE_HREF } from "@/features/chat/official-accounts";
 
 // The full search experience (suggester + transfer/gallery/bookmarks graph) is
@@ -51,6 +53,7 @@ interface Props {
 export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
   const router = useRouter();
   const { activeUser } = useActiveAccount();
+  const advent = useAdventVisible();
   const hydrated = useHydrated();
   const { data: unread } = useMattermostUnread(Boolean(activeUser && hydrated));
 
@@ -177,6 +180,14 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
               icon={<UilColumns className="size-4" />}
             />
           </EcencyConfigManager.Conditional>
+        )}
+        {advent && (
+          <NavbarSideMainMenuItem
+            label={i18next.t("navbar.advent")}
+            to="/advent"
+            onClick={() => setShow(false)}
+            icon={<UilGift className="size-4" aria-hidden />}
+          />
         )}
         <EcencyConfigManager.Conditional
           condition={({ visionFeatures }) => visionFeatures.raidstead.enabled}
