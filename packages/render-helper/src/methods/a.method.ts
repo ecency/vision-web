@@ -268,6 +268,9 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   ) {
     const isLCP = false; // LCP handled elsewhere
     const imgHTML = createImageHTML(href, isLCP, forApp);
+    // A URL the proxy refuses has no image to show: the link stays a link
+    // (an empty document would throw and end the render, #2185).
+    if (!imgHTML) return
     const doc = DOMParser.parseFromString(imgHTML, 'text/html');
     const replaceNode = (doc as any).body?.firstChild || doc.firstChild
 

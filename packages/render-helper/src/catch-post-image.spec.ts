@@ -150,15 +150,15 @@ describe('getEntryImageRawUrl', () => {
     expect(getEntryImageRawUrl(entry)).toBe('https://files.peakd.com/x/cover.png')
   })
 
-  // A bare URL first is the render's to read when a markdown image follows:
-  // the scans cannot tell it from one the render shows as no image (#2180).
-  it('defers when a bare URL comes before a markdown image', () => {
+  // A bare URL on a line of its own before a markdown image is the first
+  // image the render shows (#2185).
+  it('names a bare URL that comes before a markdown image', () => {
     const entry = {
       author: 'a', permlink: 'p', last_update: '2019-05-10T09:15:21',
       body: 'https://files.peakd.com/x/first.png\n\n![a](https://files.peakd.com/x/second.png)',
       json_metadata: '{}'
     } as any
-    expect(getEntryImageRawUrl(entry)).toBeNull()
+    expect(getEntryImageRawUrl(entry)).toBe('https://files.peakd.com/x/first.png')
   })
 
   it('does NOT capture an image-extension URL inside a [label](href) link (avoids false-positive preload)', () => {

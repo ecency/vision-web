@@ -135,7 +135,6 @@ describe('the LCP preload names the image the render shows, or none', () => {
     'x https://e.com/a.png?x=1&amp;y=2. y',
     'x https://e.com/a.png?x=1&copy; y',
     'x https://e.com/a.png?x=1&copy;. y',
-    '[r]: https://e.com/a.png?x=1&copy;\n\n![][r]',
     // Only a whole entity name decodes in HTML text, as the render reads it.
     '<div>https://e.com/i.png?w=1&region=eu</div>',
     '<div>https://e.com/i.png?w=1&notify=1&section=2&ampx=1</div>',

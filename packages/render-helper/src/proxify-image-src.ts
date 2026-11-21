@@ -264,9 +264,12 @@ function proxifyForFormat(
   // something is actually asked of the proxy. Every other legacy foreign URL
   // keeps the hostname swap exactly as before, transform or not.
   if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
+    // The URL is served as written: whitespace or a control character a
+    // decode put in it is escaped again, or the src would break (#2185).
     return url
       .replace('https://images.hive.blog', proxyBase)
       .replace('https://steemitimages.com', proxyBase)
+      .replace(/[\u0000-\u0020\u007f]/g, (c) => encodeURIComponent(c))
   }
 
   // Legacy on-chain content embeds images.ecency.com URLs directly. With no

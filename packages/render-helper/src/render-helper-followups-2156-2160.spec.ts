@@ -113,13 +113,19 @@ describe('#2156-#2160 review round', () => {
     expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
   })
 
-  it.each(['https://h.example/p.jpg[^1]', 'https://h.example/p.jpg[x](https://e.com)'])('the card leaves a following construct out (%j)', (body) => {
+  it.each(['https://h.example/p.jpg[x](https://e.com)'])('the card leaves a following construct out (%j)', (body) => {
     expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
   })
 
-  // A markdown image after a bare URL: the render's to read (#2180).
-  it('defers on a bare URL with a markdown image after it', () => {
-    expect(getEntryCardImageRawUrl(entry('https://h.example/p.jpg![x](https://e.com/q.png)'))).toBeNull()
+  // Without its definition `[^1]` is text the linkify takes into the URL
+  // (`p.jpg[^1]`), so the lookup defers (#2185).
+  it('defers on a footnote reference with no definition after the URL', () => {
+    expect(getEntryCardImageRawUrl(entry('https://h.example/p.jpg[^1]'))).toBeNull()
+  })
+
+  // A bare URL before a markdown image is the first image (#2185).
+  it('names a bare URL with a markdown image glued after it', () => {
+    expect(getEntryCardImageRawUrl(entry('https://h.example/p.jpg![x](https://e.com/q.png)'))).toBe('https://h.example/p.jpg')
   })
 
   it('an underscore host is a host', () => {
@@ -294,10 +300,11 @@ describe('the LCP preload and card proxy the image the body shows (#2169)', () =
     '![x](https://images.ecency.com/0x0/https://example.com/p/a%23b.png)',
     '![x](https://steemitimages.com/0x0/https://www.instagram.com/p/Bx%23y/media.jpg)',
     '![x](https://images.hive.blog/0x0/https://example.com/p/a%0Ab.png)'
-  ])('a legacy passthrough with /p/ in its own path keeps its escapes: %j', (body) => {
+  ])('a legacy sized URL with /p/ in its own path proxies as the render does: %j', (body) => {
+    // The render routes it through /p/ (img(), forceProxy), #2185.
     const card = catchPostImage(entry(body), 0, 0, 'match') ?? ''
     expect(card).not.toMatch(/[#\s]/)
-    expect(card).toContain('%')
+    expect(card).toBe(shown(body))
   })
 })
 
