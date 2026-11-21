@@ -469,8 +469,10 @@ describe('catchPostImage fast mode', () => {
     const small = body(5_000)
     const large = body(40_000)
     once(small) // warm the JIT before measuring
-    // Load only ever inflates a ratio, a real regression inflates every one:
-    // the best of up to three attempts filters the noise and keeps the signal.
+    // A regression inflates every attempt, load only some: the best of up to
+    // three attempts drops a burst on the large runs. Load on the small runs
+    // deflates a ratio instead, so a bound well below the 30+ of a rescan, not
+    // the retry, is what keeps this sensitive.
     let ratio = Infinity
     for (let attempt = 0; attempt < 3 && ratio >= 18; attempt++) {
       ratio = Math.min(ratio, ratioOf(small, large))
