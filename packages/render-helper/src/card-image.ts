@@ -330,7 +330,13 @@ function stripHiddenRegions(text: string): string {
 // a backslash escaping the character after it (`\)` is part of the URL).
 // Around the destination and title the parser skips only spaces and newlines,
 // and no part spans a blank line, which ends the paragraph first (#2176).
-const MD_IMAGE_RE = /!\[(?:[^[\]\n]|\n(?! *\n))*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/
+// The label may hold balanced brackets two levels deep (#2179); a deeper one
+// is not captured, and the uncaptured-image check below defers it. A
+// backslash escape is one character, so `\\[` and `\\]` are not brackets.
+const MD_IMAGE_RE = /!\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n))*\])*\])*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/
+
+// A `%` that starts no percent escape.
+const STRAY_PCT_RE = /%(?![\da-f]{2})/i
 
 // An angle destination in the spelling its plain form has, as the render
 // writes it (plainDestination, shared through helper.ts, #2176): escapes
@@ -375,18 +381,19 @@ function parserInput(raw: string): string {
 
 // A markdown image whose URL exceeds MD_IMAGE_RE's length bound (or whose syntax is broken)
 // isn't captured by it — leaving `mdMatch` null, or (MD_IMAGE_RE is unanchored) matching a
-// *later* image instead. This linear detector (label excludes `[`; no closing `)` required)
-// still spots the uncaptured image so findFirstImageUrl can bail to the full parser rather
-// than promoting a later HTML/bare/markdown candidate over it.
+// *later* image instead. This linear detector (no closing `)` required; a label opening a
+// nested `[` counts, #2179) still spots the uncaptured image so findFirstImageUrl can bail
+// to the full parser rather than promoting a later HTML/bare/markdown candidate over it.
 // A line inside an image that may open a block as the parser reads one: a
 // heading, quote, list item, fence, thematic break, setext underline, table
 // row, a separator or hyphen underline (`-`, `:` and `|` only), a definition
-// marker, or an HTML block (`<!`, `<?`, or a block tag). Such a line can end
-// the paragraph before the image closes, so the image is left to the render;
-// any other line keeps it readable. Any indent counts: inside a list item a
-// block starts at the item's own indent, which can be 4 or more.
+// marker, a footnote definition, an ordered list marker of any length, or an
+// HTML block (`<!`, `<?`, or a block tag). Such a line can end the paragraph
+// before the image closes, so the image is left to the render; any other line
+// keeps it readable. Any indent counts: inside a list item a block starts at
+// the item's own indent, which can be 4 or more.
 const BLOCK_START_LINE_RE =
-  /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d{1,9}[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\|)/
+  /\n *(?:#{1,6}(?=[ \n]|$)|>|[-*+](?=[ \n]|$)|\d+[.)](?=[ \n]|$)|`{3,}|~{3,}|<[!?]|(?:[-*_] *){3,}(?=\n|$)|=+ *(?=\n|$)|[-:][-:| ]*(?=\n|$)|[:~] |\[\^[^\]\n]*\]:|\|)/
 const HTML_LINE_TAG_RE = /\n {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/g
 function opensBlockInside(text: string): boolean {
   if (BLOCK_START_LINE_RE.test(text)) return true
@@ -396,7 +403,7 @@ function opensBlockInside(text: string): boolean {
   return false
 }
 
-const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*\]\(\s*[^\s)]/
+const MD_IMAGE_PRESENT_RE = /!\[[^[\]]*(?:\]\(\s*[^\s)]|\[)/
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // A standalone (auto-linkified) image URL the renderer turns into an <img> via
 // text.method / linkify (IMG_REGEX). Required to sit at a line start or after
@@ -1091,7 +1098,11 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       (mdMatch[1] === undefined && url.includes('(')) ||
       opensBlockInside(mdMatch[0]) ||
       // A backslash before whitespace escapes nothing in a plain destination.
-      (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2]))
+      (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2])) ||
+      // With a `%` that starts no escape, the render normalises the escaped
+      // destination and decodes it once, which only the parser reads exactly
+      // (#2179).
+      (mdMatch[2] !== undefined && mdMatch[2].includes('\\') && STRAY_PCT_RE.test(mdMatch[2]))
     ) {
       return AMBIGUOUS
     }
@@ -1161,6 +1172,9 @@ function fastBodyImage(raw: string, width: number, height: number, format: strin
   // Otherwise the full lookup would render and take the first <img> in source
   // order, which is a bare image URL or a video poster.
   const bare = findFirstImageCandidate(prepared, true).candidate
+  // The render ends a bare URL at a lone surrogate (#2158), which the full
+  // lookup reads its own way: give up rather than name another URL (#2179).
+  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1) return null
   const poster = findFirstVideoPoster(prepared)
   if (poster && (!bare || poster.pos < bare.pos)) {
     // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at

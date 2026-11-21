@@ -156,6 +156,31 @@ describe('every image form: card and render agree on parser-rewritten input', ()
     '10. ![a\n    : b](<https://e.com/a b.png>)',
     '10. ![a|b\n    -|-\n    c](<https://e.com/a b.png>)',
     '10. ![a\n    # h\n    b](<https://e.com/a b.png>)',
+    // #2179: a stray `%` beside a backslash escape in a plain destination is
+    // normalised then decoded once by the render, so it reads as written.
+    '![x](https://e.com/50%\\x.png)',
+    '![x](https://e.com/50%\\x%41.png)',
+    '![x](https://e.com/50%\\_x.png)',
+    '![x](https://e.com/50%\\\\_x.png)',
+    // #2179: a label holding balanced brackets is still an image.
+    '![a [b] c](https://e.com/a.png)\n\n![y](https://e.com/b.png)',
+    '![a [b [c]] d](https://e.com/a.png) <img src="https://e.com/b.png">',
+    '![a [b [c [d]]] e](https://e.com/a.png)\n\n![y](https://e.com/b.png)',
+    '![a [b [c [d]]] e](https://e.com/a.png) <img src="https://e.com/b.png">',
+    // An escaped bracket is not a bracket: the label ends elsewhere.
+    '![\\[1] my photo](https://e.com/page)\n\n![d](https://e.com/b.png)',
+    '![a \\[b] c](https://e.com/page) ![d](https://e.com/b.png)',
+    '![a [b\\] c](https://e.com/a.png) x](https://e.com/b.png)',
+    '![a\\](https://e.com/page) b](https://e.com/b.png)',
+    '![a \\] b](https://e.com/a.png)\n\n<img src="https://e.com/b.png">',
+    '![a [b] c](<https://e.com/a b.png>)',
+    // #2179: a footnote definition opens a block inside a title too, and an
+    // ordered list marker has no digit cap.
+    '![a](<https://e.com/a b.png> "t\n[^1]: x")',
+    '![a\n1234567890. b](<https://e.com/a b.png>)',
+    '![a\n1234567890) b](<https://e.com/a b.png>)',
+    // #2179: a bare URL holding a lone surrogate.
+    'https://e.com/\ud800x.png',
     '- item\n  - ![a\n    ===\n    b](<https://e.com/a b.png>)',
     '1. - ![a|b\n     -|-\n     c](<https://e.com/a b.png>)',
     // cleanReply drops a platform byline line before the render.
@@ -165,6 +190,25 @@ describe('every image form: card and render agree on parser-rewritten input', ()
     expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(rendered)
     const fast = catchPostImage(entry(body), 0, 0, 'match', FAST)
     if (fast !== null) expect(fast).toBe(rendered)
+  })
+})
+
+// A stray `%` beside an escape: every lookup names what the body shows (#2179).
+describe('a plain destination with a stray % and an escape: all lookups agree', () => {
+  it.each([
+    '![x](https://e.com/50%\\x.png)',
+    '![x](https://e.com/50%\\_x.png)',
+    '![x](https://e.com/50%\\\\_x.png)',
+    '![x](https://e.com/50%\\.png)'
+  ])('%j', (body) => {
+    // Lookups without a parser (fast, raw, lcp) may give up (null), never
+    // name another image; the card falls back to the render.
+    const rendered = shown(body)
+    for (const [name, lookup] of Object.entries(lookups)) {
+      const found = lookup(body)
+      if (name !== 'card' && found === null) continue
+      expect([name, found]).toEqual([name, rendered])
+    }
   })
 })
 
@@ -203,7 +247,10 @@ describe('a multi-line image the card still reads in fast mode', () => {
     '![a\n--b](https://e.com/a.png)',
     '![a\n:b](https://e.com/a.png)',
     '![a\n~b](https://e.com/a.png)',
-    '![a\n-:b](https://e.com/a.png)'
+    '![a\n-:b](https://e.com/a.png)',
+    // Balanced brackets in a label, two levels deep (#2179).
+    '![a [b] c](https://e.com/a.png)\n\n![y](https://e.com/b.png)',
+    '![a [b [c]] d](https://e.com/a.png)'
   ])('%j', (body) => {
     const rendered = shown(body)
     expect(rendered).not.toBeNull()

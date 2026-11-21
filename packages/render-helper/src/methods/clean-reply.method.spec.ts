@@ -572,4 +572,20 @@ Posted using [Partiko iOS](https://partiko.app)`
       expect(result.trim()).toBe('I think Partiko is a great app')
     })
   })
+
+  // The filter lower-cases the line, so it must compare lower case (#2179).
+  describe('[via Inbox] byline', () => {
+    it('drops a [via Inbox] byline line', () => {
+      expect(cleanReply('Hello\n<sub>Posted [via Inbox](https://example.com)</sub>').trim()).toBe('Hello')
+    })
+
+    it('keeps prose that mentions [via Inbox] on its line', () => {
+      const input = 'I got this [via Inbox] yesterday ![x](https://e.com/a.png)\nnext'
+      expect(cleanReply(input).trim()).toBe(input)
+    })
+
+    it('keeps a line without the byline', () => {
+      expect(cleanReply('Hello\nvia inbox, no link').trim()).toBe('Hello\nvia inbox, no link')
+    })
+  })
 })

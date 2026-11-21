@@ -1,6 +1,7 @@
 import { Remarkable } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
 import { sanitizeHtml } from './sanitize-html.method'
+import { withoutLoneSurrogates } from '../helper'
 
 let mdInstance: Remarkable | null = null
 
@@ -26,6 +27,8 @@ function getMd(): Remarkable {
 export function simpleMarkdownToHTML(input: string): string {
   if (!input) return ''
 
-  const html = getMd().render(input)
+  // A lone surrogate becomes U+FFFD, as markdownToHTML reads it: the parser's
+  // encodeURI throws on one (#2178).
+  const html = getMd().render(withoutLoneSurrogates(input))
   return sanitizeHtml(html)
 }
