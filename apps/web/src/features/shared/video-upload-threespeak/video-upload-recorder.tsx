@@ -63,6 +63,8 @@ export function VideoUploadRecorder({
   } = useThreeSpeakEmbedUpload();
 
   useUnmount(() => {
+    // Invalidate any camera request still in flight, so it neither retries nor goes live.
+    streamRequestRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = undefined;
     if (recordedVideoUrlRef.current) {
@@ -148,7 +150,7 @@ export function VideoUploadRecorder({
     try {
       await initStream("video/webm", request);
     } catch {
-      // A newer camera request superseded this one; it handles its own fallback.
+      // Superseded by a newer camera request, or the recorder closed.
       if (request !== streamRequestRef.current) return;
       try {
         await initStream("video/mp4", request);

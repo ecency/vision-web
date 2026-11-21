@@ -328,6 +328,22 @@ describe("VideoUploadRecorder releases the camera", () => {
     expect(screen.getByText("video-upload.no-record-permission")).toBeTruthy();
   });
 
+  it("does not ask for the camera again when the first request fails after it closed", async () => {
+    const denials: Array<() => void> = [];
+    const getUserMedia = vi.fn(
+      () => new Promise((_resolve, reject) => denials.push(() => reject(new DOMException("denied", "NotAllowedError"))))
+    );
+    vi.stubGlobal("navigator", { ...navigator, mediaDevices: { getUserMedia } });
+    const { unmount } = render(
+      <VideoUploadRecorder onEmbedUrlReady={vi.fn(() => true)} setSelectedFile={vi.fn()} onReset={vi.fn()} />
+    );
+    await waitFor(() => expect(denials.length).toBe(1));
+    unmount();
+    await act(async () => denials[0]());
+
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
   it("asks twice and shows the no-permission state when the camera is denied", async () => {
     const getUserMedia = vi.fn(async () => {
       throw new DOMException("denied", "NotAllowedError");
