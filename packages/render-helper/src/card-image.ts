@@ -323,6 +323,12 @@ function stripHiddenRegions(text: string): string {
 // matches image URLs that legitimately contain a literal `[` (e.g. array query params
 // like `?w[]=600`) — the per-position scan stays capped, so it's sub-quadratic on
 // untrusted input.
+// Lone surrogates as U+FFFD, as markdownToHTML reads its input (#2158); they
+// would also make encodeURI throw.
+function withoutLoneSurrogates(text: string): string {
+  return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+}
+
 // An angle-bracket destination (`![](<url with spaces>)`, group 1) is read to
 // its first unescaped `>` on the line, as the parser reads it (#2156); the
 // plain form is group 2.
@@ -335,7 +341,7 @@ const MD_IMAGE_RE = /!\[[^[\]]*\]\(\s*(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|([^)\
 // the unescape is encoded, so the destination decode unescapes nothing again.
 const ANGLE_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
 function angleAsPlain(raw: string, ampEscapes: boolean): string {
-  const url = unescapeDestination(raw, ampEscapes)
+  const url = withoutLoneSurrogates(unescapeDestination(raw, ampEscapes))
   if (!ANGLE_UNSAFE.test(url)) return url
   if (/%(?![\da-f]{2})/i.test(url)) {
     let normalized = url
@@ -834,7 +840,7 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // own way).
   const raw = markdownTextSpan(body, candidate.pos)
   let span = decodeCompleteReferences(raw.replace(/\\&/g, '&amp;'))
-  span = span.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+  span = withoutLoneSurrogates(span)
   let k = candidate.pos - 1
   while (k >= 0 && (body[k] === ' ' || body[k] === '\t')) k--
   const before = k < 0 ? '\n' : body[k]

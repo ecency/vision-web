@@ -3,11 +3,27 @@ import { markdown2Html } from './markdown-2-html'
 import { getEntryCardImageRawUrl } from './card-image'
 import { catchPostImage } from './catch-post-image'
 import { proxifyImageSrc } from './proxify-image-src'
+import { getEntryLcpImage } from './card-image'
 
 let n = 0
 const entry = (body: string) => ({ author: 'followup', permlink: `f${n++}`, last_update: '2026-11-21', body }) as never
 const render = (body: string, forApp = true) => markdown2Html(entry(body), forApp)
 const href = (html: string) => html.match(/(?:data-)?href="([^"]*)"/)?.[1]
+
+// The text between tags, markup kept as the render escaped it.
+const stripTags = (html: string) => {
+  let out = ''
+  let i = 0
+  while (i < html.length) {
+    const open = html.indexOf('<', i)
+    if (open === -1) return out + html.slice(i)
+    out += html.slice(i, open)
+    const close = html.indexOf('>', open)
+    if (close === -1) return out
+    i = close + 1
+  }
+  return out
+}
 
 describe('card image reads an angle-bracket image destination (#2156)', () => {
   it('as the plain form', () => {
@@ -202,11 +218,11 @@ describe('#2156-#2160 fourth review round', () => {
   ])('app link text loses nothing at an entity boundary (%j)', (body, tail) => {
     const app = render(body)
     expect(app).toContain(tail)
-    expect(app.replace(/<[^>]+>/g, '')).toBe(render(body, false).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&amp;'))
+    expect(stripTags(app)).toBe(stripTags(render(body, false)))
   })
 
   it('app link text repeats nothing at an entity boundary', () => {
-    const text = render('joe@exam&bne;ple.com').replace(/<[^>]+>/g, '')
+    const text = stripTags(render('joe@exam&bne;ple.com'))
     expect(text.split('⃥').length - 1).toBe(1)
   })
 })
@@ -277,5 +293,13 @@ describe('the LCP preload and card proxy the image the body shows (#2169)', () =
     const card = catchPostImage(entry(body), 0, 0, 'match') ?? ''
     expect(card).not.toMatch(/[#\s]/)
     expect(card).toContain('%')
+  })
+})
+
+describe('an angle destination with a lone surrogate does not throw (PR review)', () => {
+  it.each(['![x](<https://e.com/\ud800 a%zz.png>)', '![x](<https://e.com/a b\udc00.png>)', '![x](<https://e.com/\ud800%.png>)'])('%j', (body) => {
+    const shown = render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]?.replace(/&amp;/g, '&') ?? null
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(shown)
+    expect(() => getEntryLcpImage(entry(body))).not.toThrow()
   })
 })

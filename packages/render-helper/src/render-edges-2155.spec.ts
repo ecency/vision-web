@@ -157,7 +157,19 @@ describe('#2155 PR review edges', () => {
 describe('the fallback path drops a refused nested iframe as the main path does (#2170)', () => {
   it('same text on both renders and the sanitize-only path', () => {
     const body = '<iframe>a<iframe>b<iframe>c</iframe>d</iframe>e</iframe>f'
-    const text = (html: string) => html.replace(/<[^>]+>/g, '')
+    const text = (html: string) => {
+      let out = ''
+      let i = 0
+      while (i < html.length) {
+        const open = html.indexOf('<', i)
+        if (open === -1) return out + html.slice(i)
+        out += html.slice(i, open)
+        const close = html.indexOf('>', open)
+        if (close === -1) return out
+        i = close + 1
+      }
+      return out
+    }
     expect(text(markdown2Html(entry(body), true))).toBe('f')
     expect(text(markdown2Html(entry(body), false))).toBe('f')
     expect(text(untransformed(body))).toBe('f')
