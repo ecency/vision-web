@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.55
+
+### Patch Changes
+
+- fix(render-helper): card, autolink, angle and linkify follow-ups, WorldMapPin links, LCP proxy and fallback iframe (#2156-#2160, #2167, #2169, #2170) (#2173)
+
 ## 2.5.54
 
 ### Patch Changes
