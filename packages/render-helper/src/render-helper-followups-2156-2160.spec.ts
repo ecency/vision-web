@@ -230,8 +230,9 @@ describe('#2157 card keeps develop\'s reading outside the parenthesis cases', ()
   })
 })
 
-// Sixth review: the realistic classes it found right on develop stay right.
-describe('#2157 card: realistic develop-right classes', () => {
+// Realistic classes from the review rounds: those right on develop stay right,
+// and the stray-# ones read as the render reads them.
+describe('#2157 card matches the render on realistic classes', () => {
   const renderedImage = (body: string) => {
     const src = render(body, false).match(/<img [^>]*src="([^"]*)"/)?.[1]
     return src ? src.replace(/&amp;/g, '&') : null
