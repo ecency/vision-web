@@ -11,7 +11,6 @@ const api = vi.hoisted(() => ({
   answer: vi.fn(),
   wave: vi.fn(),
   result: vi.fn(),
-  reminders: vi.fn(),
   grand: vi.fn()
 }));
 // next/font only runs inside the Next build
@@ -79,7 +78,8 @@ describe("Advent Calendar page", () => {
     const { container } = renderWithQueryClient(<AdventCalendar />);
     expect(screen.getByText("advent.teaser-title")).toBeInTheDocument();
     expect(look(container, "locked")).toHaveLength(24);
-    expect(screen.getByRole("button", { name: /advent.remind/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /advent.snow/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /advent.remind/ })).not.toBeInTheDocument();
   });
 
   it("shows where a signed-in reader stands on 6 December", async () => {
@@ -186,5 +186,32 @@ describe("Advent Calendar page", () => {
     await screen.findByText("advent.answered-title");
     expect(api.answer).toHaveBeenCalledWith(2026, 8, { choice: 1 });
     expect(postWave.mock.calls[0][0]).not.toContain("Decks");
+  });
+
+  it("keeps a failed Wave reachable on a door that has been drawn", async () => {
+    vi.setSystemTime(Date.UTC(2026, 11, 6, 9));
+    signedIn("maria");
+    api.season.mockResolvedValue({
+      season: 2026,
+      doors: doors(6),
+      me: { account: "maria", answered: 1, reminders: false, doors: { "2": { opened: true, answered: true, late: false } } }
+    });
+    api.result.mockResolvedValue({ day: 2, seedBlock: 1, seedId: "ab", rule: "r", eligible: [], skipped: [], winners: [], entries: 3 });
+    const d2 = doors(6)[1];
+    api.open.mockResolvedValue({ ...d2, entry: { answered: true, answer: "hello there", choice: null, late: false, wave: null } });
+    const { container } = renderWithQueryClient(<AdventCalendar />);
+    await waitFor(() => expect(look(container, "answered")).toHaveLength(1));
+    fireEvent.click(look(container, "answered")[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "advent.your-answer-open" }));
+    expect(await screen.findByRole("button", { name: "advent.post-wave" })).toBeInTheDocument();
+  });
+
+  it("offers to try again when the calendar does not load", async () => {
+    vi.setSystemTime(Date.UTC(2026, 11, 6, 9));
+    signedIn(null);
+    session.status = "none";
+    api.season.mockRejectedValue(new Error("offline"));
+    renderWithQueryClient(<AdventCalendar />);
+    expect(await screen.findByText("advent.calendar-failed", {}, { timeout: 5000 })).toBeInTheDocument();
   });
 });

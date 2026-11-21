@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHydrated } from "@/api/queries";
+import { useGlobalStore } from "@/core/global-store";
 import * as ls from "@/utils/local-storage";
 import {
   clearSession,
@@ -9,7 +10,8 @@ import {
   raidsteadApi,
   saveSession,
   signIn,
-  signerFor
+  signerFor,
+  type RaidsteadSession
 } from "@/features/raidstead/client";
 
 /// - none: no Ecency login, so nothing to sign in as;
@@ -23,10 +25,27 @@ export type AdventSessionStatus = "none" | "signing" | "ready" | "sign" | "faile
 export const sessionIsFor = (account: string | null | undefined) =>
   !!account && loadSession()?.account === account;
 
+/// The Ecency login every tab shares, as it is now (this tab's copy only changes on a reload).
+const liveEcencyUser = (): string | null => {
+  const u = ls.get("active_user");
+  return typeof u === "string" && u ? u : null;
+};
+
+/// Saves a session signed in for `account` unless another tab has meanwhile
+/// stored one for someone else: that one is newer and is not overwritten.
+function saveIfStillWanted(s: RaidsteadSession, account: string): boolean {
+  if (s.account !== account || liveEcencyUser() !== account) return false;
+  const now = loadSession();
+  if (now && now.account !== account) return false;
+  saveSession(s);
+  return true;
+}
+
 /// The game session for the Ecency user of the page, shared with Raidstead. A
 /// login that needs no wallet prompt signs in by itself; otherwise the page
 /// asks for one signature. A session made for someone else is ended, never
-/// used. Nothing is decided before the page knows its Ecency user (hydrated).
+/// used. Nothing is decided before the page knows its Ecency user (hydrated),
+/// and a login changed in another tab is followed here, as Raidstead does.
 export function useAdventSession(username: string | null) {
   const hydrated = useHydrated();
   const [status, setStatus] = useState<AdventSessionStatus>("none");
@@ -71,9 +90,8 @@ export function useAdventSession(username: string | null) {
     setStatus("signing");
     signIn(username, kind, true)
       .then((s) => {
-        if (cancelled || userRef.current !== username || s.account !== username) return;
-        saveSession(s);
-        setStatus("ready");
+        if (cancelled || userRef.current !== username) return;
+        setStatus(saveIfStillWanted(s, username) ? "ready" : "failed");
       })
       .catch(() => {
         if (!cancelled) setStatus(signerFor(username) === "extension" ? "sign" : "failed");
@@ -83,10 +101,17 @@ export function useAdventSession(username: string | null) {
     };
   }, [hydrated, username, boot]);
 
-  // the session is shared by every tab: one ended or replaced elsewhere is looked at again here
+  // Every tab shares the Ecency login and the game session. A login changed in
+  // another tab becomes this tab's too (so a session is never ended for an
+  // account that is still in use elsewhere), and a session ended or replaced
+  // elsewhere is looked at again here.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === null || e.key.startsWith(`${ls.PREFIX}_raidstead_session`)) setBoot((n) => n + 1);
+      if (e.key !== null && e.key !== `${ls.PREFIX}_active_user` && !e.key.startsWith(`${ls.PREFIX}_raidstead_session`))
+        return;
+      const live = liveEcencyUser();
+      if (live !== userRef.current) useGlobalStore.getState().setActiveUser(live);
+      setBoot((n) => n + 1);
     };
     addEventListener("storage", onStorage);
     return () => removeEventListener("storage", onStorage);
@@ -100,20 +125,16 @@ export function useAdventSession(username: string | null) {
     try {
       const s = await signIn(asUser, signerFor(asUser) ?? "extension", true, true);
       if (userRef.current !== asUser) return;
-      if (s.account !== asUser) {
-        setStatus("failed");
-        return;
-      }
-      saveSession(s);
-      setStatus("ready");
+      setStatus(saveIfStillWanted(s, asUser) ? "ready" : "failed");
     } catch {
       if (userRef.current === asUser) setStatus("failed");
     }
   }, []);
 
-  /// The server no longer takes the session (a 401): drop it and sign in again.
-  const lost = useCallback(() => {
-    clearSession();
+  /// The server refused the session `token` (a 401): drop it, only if it is
+  /// still the stored one, and sign in again.
+  const lost = useCallback((token: string | null | undefined) => {
+    if (token && loadSession()?.token === token) clearSession();
     setBoot((n) => n + 1);
   }, []);
 

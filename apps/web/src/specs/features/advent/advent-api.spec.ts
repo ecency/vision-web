@@ -32,14 +32,12 @@ describe("advent API client", () => {
     await api.answer(2026, 7, { choice: 2 });
     await api.wave(2026, 6, "wave-abc");
     await api.open(2026, 6);
-    await api.reminders(true);
     const calls = f.mock.calls.map(([u, i]) => [i?.method, u, i?.body]);
     expect(calls).toEqual([
       ["POST", "https://games.test/v1/advent/2026/doors/6/answer", JSON.stringify({ answer: "hello" })],
       ["POST", "https://games.test/v1/advent/2026/doors/7/answer", JSON.stringify({ choice: 2 })],
       ["POST", "https://games.test/v1/advent/2026/doors/6/wave", JSON.stringify({ permlink: "wave-abc" })],
-      ["POST", "https://games.test/v1/advent/2026/doors/6/open", undefined],
-      ["PUT", "https://games.test/v1/advent/reminders", JSON.stringify({ enabled: true })]
+      ["POST", "https://games.test/v1/advent/2026/doors/6/open", undefined]
     ]);
   });
 

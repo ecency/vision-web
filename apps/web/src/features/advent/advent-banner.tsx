@@ -28,14 +28,31 @@ export function AdventBanner() {
   const [snow] = useSnowSwitch();
 
   useEffect(() => {
-    const now = Date.now();
-    const phase = adventPhase(now);
-    const day = utcDay(now);
-    if (phase === "hidden" || ls.get(DISMISSED_KEY) === day || ls.get(ANSWERED_KEY) === day) return;
-    const door = todayDoor(now);
-    // after door 24 the calendar stays up for results, but there is nothing new to invite to
-    if (phase === "season" && door === null) return;
-    setShow(phase === "teaser" ? "teaser" : door);
+    const check = () => {
+      const now = Date.now();
+      const phase = adventPhase(now);
+      const day = utcDay(now);
+      const door = todayDoor(now);
+      // after door 24 the calendar stays up for results, but there is nothing new to invite to
+      if (
+        phase === "hidden" ||
+        ls.get(DISMISSED_KEY) === day ||
+        ls.get(ANSWERED_KEY) === day ||
+        (phase === "season" && door === null)
+      ) {
+        setShow(null);
+        return;
+      }
+      setShow(phase === "teaser" ? "teaser" : door);
+    };
+    check();
+    // a feed left open over midnight (UTC), or a door answered in another tab
+    const id = setInterval(check, 60_000);
+    addEventListener("storage", check);
+    return () => {
+      clearInterval(id);
+      removeEventListener("storage", check);
+    };
   }, []);
 
   if (show === null) return null;

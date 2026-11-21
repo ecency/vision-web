@@ -5946,7 +5946,6 @@
     "hours": "hours",
     "minutes": "min",
     "first-door-at": "1 Dec, 00:00 UTC · {{time}} your time",
-    "remind": "Remind me daily",
     "snow": "Snow",
     "login-to-open": "Log in to open doors",
     "new-to-hive": "New to Hive? Sign up free on Ecency.",
@@ -6036,6 +6035,11 @@
     "grand-progress": "{{n}} of {{of}} doors",
     "grand-row": "Grand draw · place {{place}}",
     "skip-group": "same group as a winner",
-    "skip-limit": "season limit"
+    "skip-limit": "season limit",
+    "calendar-failed": "The calendar did not load. Check your connection.",
+    "status-delayed": "Delayed, we're on it",
+    "link-wave": "Add your Wave to the door",
+    "your-answer-note": "You answered this door.",
+    "your-answer-open": "See your answer"
   }
 }

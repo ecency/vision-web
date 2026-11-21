@@ -9,6 +9,8 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
 import { adventApi } from "@/features/advent/client";
 import { AdventError } from "@/features/advent/advent-api";
+import { AdventQueryKeys } from "@/features/advent/query-keys";
+import { loadSession } from "@/features/raidstead/client";
 import { useAdventSession } from "@/features/advent/use-advent-session";
 import { doorView, type DoorView } from "@/features/advent/door-view";
 import {
@@ -248,7 +250,9 @@ function MyPrizes({ me }: { me: NonNullable<SeasonState["me"]> }) {
       0
     ) + (grand?.amount ?? 0);
   const status = (s: string) => (
-    <span className={`adv-pill ${s === "paid" ? "green" : ""}`}>{i18next.t(`advent.status-${s === "paid" ? "paid" : "pending"}`)}</span>
+    <span className={`adv-pill ${s === "paid" ? "green" : ""}`}>
+      {i18next.t(`advent.status-${s === "paid" ? "paid" : s === "pending" ? "pending" : "delayed"}`)}
+    </span>
   );
   return (
     <div className="adv-card">
@@ -346,22 +350,31 @@ export function AdventCalendar() {
   const [snow, toggleSnow] = useSnowSwitch();
   const queryClient = useQueryClient();
   const ready = status === "ready";
-  const queryKey = useMemo(() => ["advent", ADVENT_SEASON, ready ? username : null], [ready, username]);
+  const queryKey = useMemo(() => AdventQueryKeys.season(ready ? username : null), [ready, username]);
 
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey,
-    queryFn: () => adventApi.season(ADVENT_SEASON),
+    queryFn: async () => {
+      const token = loadSession()?.token;
+      try {
+        return await adventApi.season(ADVENT_SEASON);
+      } catch (e) {
+        // the server no longer takes this session: sign in again rather than show a locked calendar
+        if (e instanceof AdventError && e.status === 401) lost(token);
+        throw e;
+      }
+    },
     enabled: phase !== "hidden" && status !== "signing",
     refetchInterval: 60_000
   });
   const { data: grand } = useQuery({
-    queryKey: ["advent-grand", ADVENT_SEASON],
+    queryKey: AdventQueryKeys.grand(),
     queryFn: () => adventApi.grand(ADVENT_SEASON),
     enabled: phase === "season",
     retry: false,
     refetchInterval: 300_000
   });
-  const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: ["advent", ADVENT_SEASON] }), [queryClient]);
+  const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: AdventQueryKeys.seasonAll() }), [queryClient]);
   // signed in: load the reader's own part now, not at the next minute
   useEffect(() => {
     if (ready) void refresh();
@@ -376,6 +389,12 @@ export function AdventCalendar() {
   const [swinging, setSwinging] = useState<number | null>(null);
   const swingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(swingTimer.current), []);
+  // a door open for one account is never left open for the next
+  useEffect(() => {
+    clearTimeout(swingTimer.current);
+    setSwinging(null);
+    setSheet(null);
+  }, [username]);
 
   const login = () => toggleUiProp("login");
 
@@ -397,22 +416,6 @@ export function AdventCalendar() {
       return;
     }
     setSheet(day);
-  };
-
-  const [reminding, setReminding] = useState(false);
-  const toggleReminders = async () => {
-    if (!username) return login();
-    if (status === "sign") return void signNow();
-    if (!me) return;
-    setReminding(true);
-    try {
-      await adventApi.reminders(!me.reminders);
-      await refresh();
-    } catch (e) {
-      if (e instanceof AdventError && e.status === 401) lost();
-    } finally {
-      setReminding(false);
-    }
   };
 
   // before the browser has said what day it is: the header only
@@ -442,12 +445,6 @@ export function AdventCalendar() {
 
   const controls = (
     <div className="adv-controls">
-      <Toggle
-        on={!!me?.reminders}
-        label={i18next.t("advent.remind")}
-        onClick={toggleReminders}
-        disabled={reminding || status === "signing"}
-      />
       <Toggle on={snow} label={i18next.t("advent.snow")} onClick={toggleSnow} />
     </div>
   );
@@ -528,6 +525,16 @@ export function AdventCalendar() {
       </Sky>
       <div className="adv-body">
         {phase === "teaser" && <Teaser />}
+        {isError && !data && (
+          <div className="adv-card" role="alert">
+            <div className="adv-row">
+              <span className="adv-muted">{i18next.t("advent.calendar-failed")}</span>
+              <button type="button" className="adv-btn ghost" onClick={() => void refetch()}>
+                {i18next.t("advent.try-again")}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="adv-grid">
           {Array.from({ length: ADVENT_DOORS }, (_, i) => {
             const day = i + 1;
@@ -543,7 +550,7 @@ export function AdventCalendar() {
       </div>
       {open && (
         <DoorSheet
-          key={open.day}
+          key={`${username ?? ""}:${open.day}`}
           door={open}
           me={me?.doors[open.day]}
           account={me?.account ?? (ready ? username : null)}
@@ -551,9 +558,9 @@ export function AdventCalendar() {
           snow={snow}
           onClose={() => setSheet(null)}
           onChanged={refresh}
-          onSessionLost={() => {
+          onSessionLost={(token) => {
             setSheet(null);
-            lost();
+            lost(token);
           }}
         />
       )}

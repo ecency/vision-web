@@ -55,8 +55,7 @@ export function createAdventApi(opts: AdventApiOptions) {
     // public and cached for a minute: never sent with a session
     result: (season: number, day: number) => call<DoorResult>("GET", `${door(season, day)}/result`, undefined, false),
     // public; 404 no_grand when the season has none
-    grand: (season: number) => call<GrandDraw>("GET", `/v1/advent/${season}/grand`, undefined, false),
-    reminders: (enabled: boolean) => call<{ ok: true; enabled: boolean }>("PUT", "/v1/advent/reminders", { enabled })
+    grand: (season: number) => call<GrandDraw>("GET", `/v1/advent/${season}/grand`, undefined, false)
   };
 }
 export type AdventApi = ReturnType<typeof createAdventApi>;

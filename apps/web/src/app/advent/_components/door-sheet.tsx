@@ -9,6 +9,7 @@ import { AdventError } from "@/features/advent/advent-api";
 import { markAnsweredToday } from "@/features/advent/advent-banner";
 import { useAdventWave } from "@/features/advent/use-advent-wave";
 import { sessionIsFor } from "@/features/advent/use-advent-session";
+import { loadSession } from "@/features/raidstead/client";
 import { waveText } from "@/features/advent/wave-text";
 import { ADVENT_SEASON, todayDoor } from "@/features/advent/season";
 import { Sky } from "@/features/advent/sky";
@@ -24,6 +25,19 @@ const ORNAMENTS = ["#d9a21f", "#8f9bab", "#b4683a"];
 const SKIP_CAUSES: Record<string, string> = { group: "advent.skip-group", cap: "advent.skip-limit", season_cap: "advent.skip-limit" };
 const fmt = (n: number) => n.toLocaleString();
 const when = (t: number) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
+/// Tells the games API which Wave belongs to the answer, trying a few times.
+async function linkWave(day: number, permlink: string): Promise<boolean> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      await adventApi.wave(ADVENT_SEASON, day, permlink);
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+    }
+  }
+  return false;
+}
 
 function closesIn(closeAt: string) {
   const ms = Date.parse(closeAt) - Date.now();
@@ -72,9 +86,9 @@ const SPARKS = Array.from({ length: 12 }, (_, i) => {
 interface AnswerProps {
   door: OpenedDoor;
   account: string;
-  onSessionLost: () => void;
+  onSessionLost: (token: string | null | undefined) => void;
   onAlready: () => void;
-  onDone: (answer: string | null, wave: string | null, late: boolean) => void;
+  onDone: (answer: string | null, wave: string | null, late: boolean, linked: boolean) => void;
 }
 
 function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerProps) {
@@ -91,7 +105,8 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
   const submit = async () => {
     if (!ready || busy) return;
     // the shared session may have been swapped for another account in another tab
-    if (!sessionIsFor(account)) return onSessionLost();
+    const token = loadSession()?.token;
+    if (!sessionIsFor(account)) return onSessionLost(token);
     setBusy(true);
     setError(null);
     let late = false;
@@ -99,7 +114,7 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
       late = (await adventApi.answer(ADVENT_SEASON, door.day, open ? { answer: text.trim() } : { choice: choice! })).late;
     } catch (e) {
       setBusy(false);
-      if (e instanceof AdventError && e.status === 401) return onSessionLost();
+      if (e instanceof AdventError && e.status === 401) return onSessionLost(token);
       // answered already (another tab or device): show that answer and its Wave
       if (e instanceof AdventError && e.code === "already_answered") return onAlready();
       setError(i18next.t("advent.answer-failed"));
@@ -109,10 +124,9 @@ function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerP
     // the answer counts already; the Wave is extra, and may be posted again later
     try {
       const permlink = await postWave(waveText(door, open ? text : undefined));
-      await adventApi.wave(ADVENT_SEASON, door.day, permlink).catch(() => undefined);
-      onDone(open ? text.trim() : null, permlink, late);
+      onDone(open ? text.trim() : null, permlink, late, await linkWave(door.day, permlink));
     } catch {
-      onDone(open ? text.trim() : null, null, late);
+      onDone(open ? text.trim() : null, null, late, true);
     }
   };
 
@@ -173,21 +187,23 @@ interface DoneProps {
   account: string;
   answer: string | null;
   wave: string | null;
+  /// The games API knows the Wave (false: it was posted but not yet linked).
+  linked: boolean;
   late: boolean;
-  onWave: (permlink: string) => void;
+  onWave: (permlink: string, linked: boolean) => void;
   onClose: () => void;
 }
 
-function Answered({ door, account, answer, wave, late, onWave, onClose }: DoneProps) {
+function Answered({ door, account, answer, wave, linked, late, onWave, onClose }: DoneProps) {
   const postWave = useAdventWave();
   const [posting, setPosting] = useState(false);
   const drawAt = Date.parse(door.closeAt) + DRAW_DELAY_MS;
   const retry = async () => {
     setPosting(true);
     try {
-      const permlink = await postWave(waveText(door, answer ?? undefined));
-      await adventApi.wave(ADVENT_SEASON, door.day, permlink).catch(() => undefined);
-      onWave(permlink);
+      // a Wave already posted is only linked again, never posted twice
+      const permlink = wave ?? (await postWave(waveText(door, answer ?? undefined)));
+      onWave(permlink, await linkWave(door.day, permlink));
     } catch {
       // the Waves composer already said why; the button stays
     } finally {
@@ -211,6 +227,11 @@ function Answered({ door, account, answer, wave, late, onWave, onClose }: DonePr
         {late ? i18next.t("advent.answered-late") : i18next.t("advent.answered-text", { time: when(drawAt) })}
       </p>
       <div className="adv-row" style={{ justifyContent: "center" }}>
+        {wave && !linked && (
+          <button type="button" className="adv-btn ghost" disabled={posting} onClick={retry}>
+            {i18next.t("advent.link-wave")}
+          </button>
+        )}
         {wave ? (
           <Link className="adv-btn ghost" href={`/@${account}/${wave}`}>
             {i18next.t("advent.view-wave")}
@@ -228,22 +249,32 @@ function Answered({ door, account, answer, wave, late, onWave, onClose }: DonePr
   );
 }
 
-function Result({ door, account, onAnswerLate }: { door: PublicDoor; account: string | null; onAnswerLate?: () => void }) {
-  const [result, setResult] = useState<DoorResult | null | "none">(null);
+interface ResultProps {
+  door: PublicDoor;
+  account: string | null;
+  onAnswerLate?: () => void;
+  /// The reader answered this door: their answer and its Wave stay reachable.
+  onMyAnswer?: () => void;
+}
+
+function Result({ door, account, onAnswerLate, onMyAnswer }: ResultProps) {
+  const [result, setResult] = useState<DoorResult | null | "none" | "error">(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     adventApi
       .result(ADVENT_SEASON, door.day)
       .then((r) => live && setResult(r))
-      .catch(() => live && setResult("none"));
+      // not drawn yet is one answer; anything else (offline, a server error) can be tried again
+      .catch((e) => live && setResult(e instanceof AdventError && e.code === "not_drawn" ? "none" : "error"));
     return () => {
       live = false;
     };
-  }, [door.day]);
+  }, [door.day, attempt]);
 
-  const total = result && result !== "none" && result.tallies ? result.tallies.reduce((s, n) => s + n, 0) : 0;
+  const total = result && result !== "none" && result !== "error" && result.tallies ? result.tallies.reduce((s, n) => s + n, 0) : 0;
   const eligibleList = useMemo(
-    () => (result && result !== "none" && result.eligible ? [...result.eligible].sort().join("\n") : ""),
+    () => (result && result !== "none" && result !== "error" && result.eligible ? [...result.eligible].sort().join("\n") : ""),
     [result]
   );
 
@@ -251,12 +282,27 @@ function Result({ door, account, onAnswerLate }: { door: PublicDoor; account: st
     <>
       {door.prompt && <p className="adv-prompt">{door.prompt}</p>}
       {result === null && <p className="adv-muted">{i18next.t("advent.loading")}</p>}
+      {result === "error" && (
+        <div className="adv-row">
+          <span className="adv-muted">{i18next.t("advent.load-failed")}</span>
+          <button
+            type="button"
+            className="adv-btn ghost"
+            onClick={() => {
+              setResult(null);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            {i18next.t("advent.try-again")}
+          </button>
+        </div>
+      )}
       {result === "none" && (
         <p className="adv-muted">
           {i18next.t("advent.not-drawn", { time: when(Date.parse(door.closeAt) + DRAW_DELAY_MS) })}
         </p>
       )}
-      {result && result !== "none" && (
+      {result && result !== "none" && result !== "error" && (
         <>
           <div className="adv-winners">
             {result.winners.map((w) => {
@@ -353,6 +399,14 @@ function Result({ door, account, onAnswerLate }: { door: PublicDoor; account: st
           )}
         </>
       )}
+      {onMyAnswer && (
+        <div className="adv-row">
+          <span className="adv-muted">{i18next.t("advent.your-answer-note")}</span>
+          <button type="button" className="adv-btn ghost" onClick={onMyAnswer}>
+            {i18next.t("advent.your-answer-open")}
+          </button>
+        </div>
+      )}
       {onAnswerLate && (
         <div className="adv-row">
           <span className="adv-muted">{i18next.t("advent.late-note")}</span>
@@ -373,13 +427,13 @@ interface Props {
   snow: boolean;
   onClose: () => void;
   onChanged: () => void;
-  onSessionLost: () => void;
+  onSessionLost: (token: string | null | undefined) => void;
 }
 
 type Mode =
   | { m: "loading" }
   | { m: "answer"; door: OpenedDoor }
-  | { m: "done"; answer: string | null; wave: string | null; late: boolean }
+  | { m: "done"; answer: string | null; wave: string | null; linked: boolean; late: boolean }
   | { m: "result" }
   | { m: "failed" };
 
@@ -392,17 +446,18 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
   );
 
   const load = () => {
+    const token = loadSession()?.token;
     setMode({ m: "loading" });
     adventApi
       .open(ADVENT_SEASON, door.day)
       .then((d) =>
         setMode(
           d.entry.answered
-            ? { m: "done", answer: d.entry.answer, wave: d.entry.wave, late: d.entry.late }
+            ? { m: "done", answer: d.entry.answer, wave: d.entry.wave, linked: true, late: d.entry.late }
             : { m: "answer", door: d }
         )
       )
-      .catch((e) => (e instanceof AdventError && e.status === 401 ? onSessionLost() : setMode({ m: "failed" })));
+      .catch((e) => (e instanceof AdventError && e.status === 401 ? onSessionLost(token) : setMode({ m: "failed" })));
   };
 
   useEffect(() => {
@@ -439,8 +494,8 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
                 account={account}
                 onSessionLost={onSessionLost}
                 onAlready={load}
-                onDone={(answer, wave, late) => {
-                  setMode({ m: "done", answer, wave, late });
+                onDone={(answer, wave, late, linked) => {
+                  setMode({ m: "done", answer, wave, linked, late });
                   onChanged();
                 }}
               />
@@ -451,8 +506,9 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
                 account={account}
                 answer={mode.answer}
                 wave={mode.wave}
+                linked={mode.linked}
                 late={mode.late}
-                onWave={(wave) => setMode({ ...mode, wave })}
+                onWave={(wave, linked) => setMode({ ...mode, wave, linked })}
                 onClose={onClose}
               />
             )}
@@ -461,6 +517,7 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
                 door={door}
                 account={account}
                 onAnswerLate={answerable && !me?.answered ? load : undefined}
+                onMyAnswer={answerable && me?.answered ? load : undefined}
               />
             )}
           </div>

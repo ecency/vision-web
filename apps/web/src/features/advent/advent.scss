@@ -800,7 +800,7 @@
     flex: none;
   }
 
-  &[aria-pressed="true"] {
+  &[aria-checked="true"] {
     border-color: var(--adv-berry);
     background: color-mix(in srgb, var(--adv-berry) 8%, var(--adv-ground));
 

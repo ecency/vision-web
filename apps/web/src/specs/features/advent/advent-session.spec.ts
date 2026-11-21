@@ -37,6 +37,7 @@ const live = (account: string, ecency = true) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   hydration.hydrated = false;
   rs.session = null;
 });
@@ -72,9 +73,34 @@ describe("advent game session", () => {
     expect(rs.signOut).toHaveBeenCalled();
   });
 
+  it("does not overwrite a session another tab saved meanwhile", async () => {
+    hydration.hydrated = true;
+    localStorage.setItem("ecency_active_user", JSON.stringify("maria"));
+    rs.signIn.mockImplementation(async () => {
+      rs.session = live("bob");
+      return live("maria");
+    });
+    const { result } = renderHook(() => useAdventSession("maria"));
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(rs.session?.account).toBe("bob");
+  });
+
+  it("drops only the session the server refused", async () => {
+    hydration.hydrated = true;
+    rs.session = live("maria");
+    const { result } = renderHook(() => useAdventSession("maria"));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    result.current.lost("an-older-token");
+    expect(rs.clearSession).not.toHaveBeenCalled();
+    result.current.lost("t-maria");
+    expect(rs.clearSession).toHaveBeenCalled();
+  });
+
   it("never uses a session for another account, and signs in as the reader", async () => {
     hydration.hydrated = true;
     rs.session = live("bob");
+    // the Ecency login every tab shares
+    localStorage.setItem("ecency_active_user", JSON.stringify("maria"));
     rs.signIn.mockResolvedValue(live("maria"));
     const { result } = renderHook(() => useAdventSession("maria"));
     await waitFor(() => expect(result.current.status).toBe("ready"));
