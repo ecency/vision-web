@@ -1,4 +1,5 @@
 import { EcencyConfigManager } from "@/config";
+import type { UploadOptions } from "tus-js-client";
 import * as ls from "@/utils/local-storage";
 import { ensureValidTokenWithin } from "@/utils/user-token";
 import { VideoUploadResult, ThreeSpeakEmbedVideo } from "./types";
@@ -194,6 +195,39 @@ export async function uploadVideoEmbed(
  */
 type TusAbortable = { abort: (shouldTerminate?: boolean) => Promise<void> };
 
+/**
+ * tus `onBeforeRequest` that refuses every request but the terminating DELETE
+ * once `signal` is aborted. tus sets an upload up asynchronously after
+ * start() and resets its own aborted flag on the way, and parallel parts are
+ * created after that, so abort() alone can land before any request exists and
+ * be undone. Parts inherit this option.
+ */
+function refuseRequestsOnceAborted(signal: AbortSignal | undefined) {
+  return (req: { getMethod: () => string }) => {
+    if (signal?.aborted && req.getMethod() !== "DELETE") throw abortReason(signal);
+  };
+}
+
+type TusShouldRetry = NonNullable<UploadOptions["onShouldRetry"]>;
+
+/**
+ * tus `onShouldRetry`: tus retries a refused request like a network failure,
+ * restarting the upload up to TUS_RETRY_DELAYS times, so once aborted only
+ * the terminating DELETE may retry. Otherwise tus's own rule applies. Without
+ * that rule to defer to, returns undefined: tus falls back to its built-in
+ * rule when the option is not a function.
+ */
+function noRetryOnceAborted(
+  signal: AbortSignal | undefined,
+  defaultShouldRetry: TusShouldRetry | null | undefined
+): TusShouldRetry | undefined {
+  if (!signal || !defaultShouldRetry) return undefined;
+  return (err, retryAttempt, options) => {
+    if (signal.aborted && err.originalRequest?.getMethod() !== "DELETE") return false;
+    return defaultShouldRetry(err, retryAttempt, options);
+  };
+}
+
 function abortOnSignal(
   upload: TusAbortable,
   signal: AbortSignal | undefined,
@@ -262,6 +296,8 @@ async function runTusUpload(
       retryDelays: TUS_RETRY_DELAYS,
       headers: { Authorization: `Bearer ${token}` },
       metadata: { filename: file.name },
+      onBeforeRequest: refuseRequestsOnceAborted(signal),
+      onShouldRetry: noRetryOnceAborted(signal, tus.defaultOptions?.onShouldRetry),
       onError(error: Error) {
         stopListening();
         upload.abort().catch(() => {});
@@ -307,6 +343,8 @@ async function uploadFromHeader(
       retryDelays: TUS_RETRY_DELAYS,
       headers: { Authorization: `Bearer ${token}` },
       metadata: { filename: file.name },
+      onBeforeRequest: refuseRequestsOnceAborted(signal),
+      onShouldRetry: noRetryOnceAborted(signal, tus.defaultOptions?.onShouldRetry),
       onError(error: Error) {
         // Cancel any in-progress retry before rejecting, mirroring runTusUpload.
         stopListening();

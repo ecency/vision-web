@@ -219,7 +219,9 @@ export function VideoUploadRecorder({
                 <Button
                   disabled={isLoading}
                   onClick={async () => {
-                    if (!recordedBlob || !activeUser) return;
+                    // isLoading disables the button only after a render, so
+                    // a second click in the same frame must not start another.
+                    if (!recordedBlob || !activeUser || uploadAbortRef.current) return;
 
                     const maxFileSizeBytes = 1 * 1024 * 1024 * 1024; // 1 GB
                     if (recordedBlob.size > maxFileSizeBytes) {
@@ -261,6 +263,9 @@ export function VideoUploadRecorder({
                         return;
                       }
                       if (isCurrent()) error(...formatError(e));
+                    } finally {
+                      // Settled: a retry after a failure may start again.
+                      uploadAbortRef.current = undefined;
                     }
                   }}
                 >

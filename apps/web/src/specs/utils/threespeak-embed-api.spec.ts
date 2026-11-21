@@ -16,21 +16,26 @@ vi.mock("@/utils/user-token", () => ({
 
 // Drive tus-js-client's upload callbacks deterministically. `runUpload` is set
 // per-test to simulate the sequence of onAfterResponse / onSuccess calls.
+type TusPart = { abort: (shouldTerminate?: boolean) => Promise<void> };
+type TusInstance = { _parallelUploads: TusPart[] | null };
+
 const tusMock = vi.hoisted(() => ({
   runUpload: (_options: any) => {},
   // The argument of every abort() call, in order.
   aborts: [] as Array<boolean | undefined>,
   starts: 0,
-  onStart: undefined as ((instance: any) => void) | undefined
+  onStart: undefined as ((instance: TusInstance) => void) | undefined
 }));
 
 vi.mock("tus-js-client", () => ({
+  // tus's default retry rule, which the upload defers to when not aborted.
+  defaultOptions: { onShouldRetry: () => false },
   Upload: class {
     options: any;
     constructor(_file: unknown, options: any) {
       this.options = options;
     }
-    _parallelUploads: any[] | null = null;
+    _parallelUploads: TusPart[] | null = null;
     start() {
       tusMock.starts += 1;
       tusMock.onStart?.(this);
@@ -314,7 +319,7 @@ describe("aborting an upload", () => {
     // tus keeps the parts of a parallel upload in _parallelUploads; its own
     // abort(true) drops the promise each part's DELETE returns.
     tusMock.runUpload = () => {};
-    tusMock.onStart = (instance: any) => {
+    tusMock.onStart = (instance) => {
       instance._parallelUploads = [0, 1, 2].map(() => ({
         abort: (shouldTerminate?: boolean) => {
           partAborts.push(shouldTerminate);
@@ -344,6 +349,55 @@ describe("aborting an upload", () => {
       process.off("unhandledRejection", unhandled);
       tusMock.onStart = undefined;
     }
+  });
+
+  // tus sets up asynchronously after start() (fingerprint, file read, part
+  // slicing) and resets its own aborted flag on the way, so an abort that lands
+  // in that window must still keep every request from going out.
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort during TUS start-up sends no upload request (%s)", async (_name, extra) => {
+    stubTokenResponse(extra);
+    let finishSetup: () => void = () => {};
+    const sent: string[] = [];
+    const request = (method: string) => ({ getMethod: () => method });
+    tusMock.runUpload = (options) => {
+      void new Promise<void>((resolve) => (finishSetup = resolve)).then(async () => {
+        // The create POST, then the termination DELETE tus may still send.
+        for (const method of ["POST", "DELETE"]) {
+          try {
+            await options.onBeforeRequest?.(request(method));
+            sent.push(method);
+          } catch (e) {
+            if (method === "POST") options.onError(e);
+          }
+        }
+      });
+    };
+    const controller = new AbortController();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const upload = uploadVideoEmbed(bigFile(), "a", false, () => {}, controller.signal);
+    await vi.waitFor(() => expect(tusMock.starts).toBe(1));
+
+    controller.abort();
+    finishSetup();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(sent).toEqual(["DELETE"]));
+  });
+
+  it("requests go out normally while the upload is not aborted", async () => {
+    stubTokenResponse({ permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" });
+    tusMock.runUpload = async (options) => {
+      await options.onBeforeRequest?.({ getMethod: () => "PATCH" });
+      options.onSuccess();
+    };
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+
+    await expect(
+      uploadVideoEmbed(smallFile(), "a", false, () => {}, new AbortController().signal)
+    ).resolves.toMatchObject({ permlink: "TOK12345" });
   });
 
   it("an already aborted signal requests no token and starts no upload", async () => {
