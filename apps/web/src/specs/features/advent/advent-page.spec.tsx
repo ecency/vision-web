@@ -17,8 +17,8 @@ const api = vi.hoisted(() => ({
 // next/font only runs inside the Next build
 vi.mock("@/features/advent/font", () => ({ adventFont: {} }));
 vi.mock("@/features/advent/client", () => ({ adventApi: api }));
-const session = vi.hoisted(() => ({ status: "ready", signNow: vi.fn() }));
-vi.mock("@/features/advent/use-advent-session", () => ({ useAdventSession: () => session }));
+const session = vi.hoisted(() => ({ status: "ready", signNow: vi.fn(), lost: vi.fn() }));
+vi.mock("@/features/advent/use-advent-session", () => ({ useAdventSession: () => session, sessionIsFor: () => true }));
 const postWave = vi.hoisted(() => vi.fn());
 vi.mock("@/features/advent/use-advent-wave", () => ({ useAdventWave: () => postWave }));
 
@@ -181,7 +181,7 @@ describe("Advent Calendar page", () => {
     api.answer.mockResolvedValue({ ok: true, late: false });
     api.wave.mockResolvedValue({ ok: true });
     postWave.mockResolvedValue("wave-p");
-    fireEvent.click(screen.getByRole("button", { name: "Decks" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Decks" }));
     fireEvent.click(screen.getByRole("button", { name: "advent.submit" }));
     await screen.findByText("advent.answered-title");
     expect(api.answer).toHaveBeenCalledWith(2026, 8, { choice: 1 });

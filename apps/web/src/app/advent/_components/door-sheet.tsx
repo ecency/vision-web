@@ -8,6 +8,7 @@ import { adventApi } from "@/features/advent/client";
 import { AdventError } from "@/features/advent/advent-api";
 import { markAnsweredToday } from "@/features/advent/advent-banner";
 import { useAdventWave } from "@/features/advent/use-advent-wave";
+import { sessionIsFor } from "@/features/advent/use-advent-session";
 import { waveText } from "@/features/advent/wave-text";
 import { ADVENT_SEASON, todayDoor } from "@/features/advent/season";
 import { Sky } from "@/features/advent/sky";
@@ -19,6 +20,8 @@ import { rewardIcon, rewardLabel } from "@/features/advent/reward";
 /// A door is drawn this long after it closes (games-api's DRAW_DELAY_MS).
 const DRAW_DELAY_MS = 2 * 3_600_000;
 const ORNAMENTS = ["#d9a21f", "#8f9bab", "#b4683a"];
+/// Why a qualifying account was passed over, in the published rule's words; any other cause is not shown.
+const SKIP_CAUSES: Record<string, string> = { group: "advent.skip-group", cap: "advent.skip-limit", season_cap: "advent.skip-limit" };
 const fmt = (n: number) => n.toLocaleString();
 const when = (t: number) => new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
@@ -68,10 +71,13 @@ const SPARKS = Array.from({ length: 12 }, (_, i) => {
 
 interface AnswerProps {
   door: OpenedDoor;
-  onDone: (answer: string | null, wave: string | null, waveFailed: boolean) => void;
+  account: string;
+  onSessionLost: () => void;
+  onAlready: () => void;
+  onDone: (answer: string | null, wave: string | null, late: boolean) => void;
 }
 
-function AnswerForm({ door, onDone }: AnswerProps) {
+function AnswerForm({ door, account, onSessionLost, onAlready, onDone }: AnswerProps) {
   const postWave = useAdventWave();
   const [text, setText] = useState("");
   const [choice, setChoice] = useState<number | null>(null);
@@ -84,13 +90,18 @@ function AnswerForm({ door, onDone }: AnswerProps) {
 
   const submit = async () => {
     if (!ready || busy) return;
+    // the shared session may have been swapped for another account in another tab
+    if (!sessionIsFor(account)) return onSessionLost();
     setBusy(true);
     setError(null);
+    let late = false;
     try {
-      await adventApi.answer(ADVENT_SEASON, door.day, open ? { answer: text.trim() } : { choice: choice! });
+      late = (await adventApi.answer(ADVENT_SEASON, door.day, open ? { answer: text.trim() } : { choice: choice! })).late;
     } catch (e) {
       setBusy(false);
-      if (e instanceof AdventError && e.code === "already_answered") return onDone(open ? text.trim() : null, null, true);
+      if (e instanceof AdventError && e.status === 401) return onSessionLost();
+      // answered already (another tab or device): show that answer and its Wave
+      if (e instanceof AdventError && e.code === "already_answered") return onAlready();
       setError(i18next.t("advent.answer-failed"));
       return;
     }
@@ -99,9 +110,9 @@ function AnswerForm({ door, onDone }: AnswerProps) {
     try {
       const permlink = await postWave(waveText(door, open ? text : undefined));
       await adventApi.wave(ADVENT_SEASON, door.day, permlink).catch(() => undefined);
-      onDone(open ? text.trim() : null, permlink, false);
+      onDone(open ? text.trim() : null, permlink, late);
     } catch {
-      onDone(open ? text.trim() : null, null, true);
+      onDone(open ? text.trim() : null, null, late);
     }
   };
 
@@ -126,9 +137,16 @@ function AnswerForm({ door, onDone }: AnswerProps) {
           </div>
         </>
       ) : (
-        <div className="adv-choices">
+        <div className="adv-choices" role="radiogroup" aria-label={door.prompt}>
           {(door.choices ?? []).map((c, i) => (
-            <button key={i} type="button" className="adv-choice" aria-pressed={choice === i} onClick={() => setChoice(i)}>
+            <button
+              key={i}
+              type="button"
+              role="radio"
+              className="adv-choice"
+              aria-checked={choice === i}
+              onClick={() => setChoice(i)}
+            >
               {c}
             </button>
           ))}
@@ -308,7 +326,8 @@ function Result({ door, account, onAnswerLate }: { door: PublicDoor; account: st
                     {i18next.t("advent.skipped")}{" "}
                     {result.skipped.map((s) => (
                       <code key={s.account}>
-                        @{s.account} ({s.cause})
+                        @{s.account}
+                        {SKIP_CAUSES[s.cause] ? ` (${i18next.t(SKIP_CAUSES[s.cause])})` : ""}
                       </code>
                     ))}
                   </span>
@@ -354,6 +373,7 @@ interface Props {
   snow: boolean;
   onClose: () => void;
   onChanged: () => void;
+  onSessionLost: () => void;
 }
 
 type Mode =
@@ -365,7 +385,7 @@ type Mode =
 
 /// One door, over the calendar: the answer form while it can be answered, the
 /// confirmation once answered, and the draw's result once drawn.
-export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChanged }: Props) {
+export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChanged, onSessionLost }: Props) {
   const answerable = canAnswer && !!account && door.status !== "locked";
   const [mode, setMode] = useState<Mode>(() =>
     door.status === "drawn" || !answerable ? { m: "result" } : { m: "loading" }
@@ -382,7 +402,7 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
             : { m: "answer", door: d }
         )
       )
-      .catch(() => setMode({ m: "failed" }));
+      .catch((e) => (e instanceof AdventError && e.status === 401 ? onSessionLost() : setMode({ m: "failed" })));
   };
 
   useEffect(() => {
@@ -416,8 +436,11 @@ export function DoorSheet({ door, me, account, canAnswer, snow, onClose, onChang
             {mode.m === "answer" && account && (
               <AnswerForm
                 door={mode.door}
-                onDone={(answer, wave) => {
-                  setMode({ m: "done", answer, wave, late: Date.now() > Date.parse(door.closeAt) });
+                account={account}
+                onSessionLost={onSessionLost}
+                onAlready={load}
+                onDone={(answer, wave, late) => {
+                  setMode({ m: "done", answer, wave, late });
                   onChanged();
                 }}
               />

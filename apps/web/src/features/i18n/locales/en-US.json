@@ -6034,6 +6034,8 @@
     "grand-title": "Grand draw",
     "grand-text": "Answer at least {{n}} doors on time to be in the grand draw on {{time}}.",
     "grand-progress": "{{n}} of {{of}} doors",
-    "grand-row": "Grand draw · place {{place}}"
+    "grand-row": "Grand draw · place {{place}}",
+    "skip-group": "same group as a winner",
+    "skip-limit": "season limit"
   }
 }

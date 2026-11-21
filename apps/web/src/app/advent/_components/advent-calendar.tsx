@@ -8,6 +8,7 @@ import { rewardIcon, rewardLabel } from "@/features/advent/reward";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useGlobalStore } from "@/core/global-store";
 import { adventApi } from "@/features/advent/client";
+import { AdventError } from "@/features/advent/advent-api";
 import { useAdventSession } from "@/features/advent/use-advent-session";
 import { doorView, type DoorView } from "@/features/advent/door-view";
 import {
@@ -26,9 +27,12 @@ const WRAPS = ["adv-w-red", "adv-w-green", "adv-w-snow", "adv-w-gold", "adv-w-bl
 const fmt = (n: number) => n.toLocaleString();
 
 /// The clock the page runs on, moved on every half minute.
+/// Null on the server and the first render: every date on the page is the
+/// reader's, decided in the browser.
 function useNow() {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
@@ -41,7 +45,7 @@ function Countdown({ to, now }: { to: number; now: number }) {
   const h = Math.floor(ms / 36e5) % 24;
   const m = Math.floor(ms / 6e4) % 60;
   return (
-    <div className="adv-count" aria-label={i18next.t("advent.countdown-label")}>
+    <div className="adv-count" role="timer" aria-label={i18next.t("advent.countdown-label")}>
       <div>
         <b>{d}</b>
         <span>{i18next.t("advent.days")}</span>
@@ -100,7 +104,7 @@ function DoorTile({ day, door, view, swinging, onOpen }: DoorTileProps) {
         {content}
       </button>
     ) : (
-      <div className={cls} data-look="locked" aria-label={label}>
+      <div className={cls} data-look="locked" role="img" aria-label={label}>
         {content}
       </div>
     );
@@ -334,10 +338,11 @@ export function AdventCalendar() {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username ?? null;
   const toggleUiProp = useGlobalStore((s) => s.toggleUiProp);
-  const { status, signNow } = useAdventSession(username);
-  const now = useNow();
-  const phase = adventPhase(now);
-  const today = todayDoor(now);
+  const { status, signNow, lost } = useAdventSession(username);
+  const clock = useNow();
+  const now = clock ?? 0;
+  const phase = clock === null ? "hidden" : adventPhase(now);
+  const today = clock === null ? null : todayDoor(now);
   const [snow, toggleSnow] = useSnowSwitch();
   const queryClient = useQueryClient();
   const ready = status === "ready";
@@ -357,8 +362,13 @@ export function AdventCalendar() {
     refetchInterval: 300_000
   });
   const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: ["advent", ADVENT_SEASON] }), [queryClient]);
+  // signed in: load the reader's own part now, not at the next minute
+  useEffect(() => {
+    if (ready) void refresh();
+  }, [ready, refresh]);
 
-  const me = ready ? data?.me : undefined;
+  // only the page's own reader: another tab may have swapped the shared session
+  const me = ready && data?.me?.account === username ? data.me : undefined;
   const signedIn = !!me;
   const byDay = useMemo(() => new Map((data?.doors ?? []).map((d) => [d.day, d])), [data]);
 
@@ -377,6 +387,7 @@ export function AdventCalendar() {
     if (answering && !username) return login();
     if (answering && status === "sign") return void signNow();
     if (answering && !ready) return;
+    clearTimeout(swingTimer.current);
     if (door.status === "open" && !me?.doors[day]?.answered && !reducedMotion()) {
       setSwinging(day);
       swingTimer.current = setTimeout(() => {
@@ -397,10 +408,28 @@ export function AdventCalendar() {
     try {
       await adventApi.reminders(!me.reminders);
       await refresh();
+    } catch (e) {
+      if (e instanceof AdventError && e.status === 401) lost();
     } finally {
       setReminding(false);
     }
   };
+
+  // before the browser has said what day it is: the header only
+  if (clock === null) {
+    return (
+      <div className="advent advent-page">
+        <Sky className="adv-hero" scene snow={false}>
+          <div className="adv-hero-row">
+            <div>
+              <div className="adv-kicker">{i18next.t("advent.kicker", { year: ADVENT_SEASON })}</div>
+              <h1 className="adv-title">{i18next.t("advent.title")}</h1>
+            </div>
+          </div>
+        </Sky>
+      </div>
+    );
+  }
 
   const heroTitle =
     phase === "teaser"
@@ -514,6 +543,7 @@ export function AdventCalendar() {
       </div>
       {open && (
         <DoorSheet
+          key={open.day}
           door={open}
           me={me?.doors[open.day]}
           account={me?.account ?? (ready ? username : null)}
@@ -521,6 +551,10 @@ export function AdventCalendar() {
           snow={snow}
           onClose={() => setSheet(null)}
           onChanged={refresh}
+          onSessionLost={() => {
+            setSheet(null);
+            lost();
+          }}
         />
       )}
     </div>
