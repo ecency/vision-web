@@ -21,6 +21,7 @@ interface Props {
   onEmbedUrlReady: (embedUrl: string, permlink: string, owner: string) => boolean;
   setSelectedFile: (v: string, mime: string) => void;
   onReset: () => void;
+  isCurrentSession?: (owner: string) => boolean;
   /**
    * 3Speak refused the upload over the free daily limit; the recording is kept.
    * `owner` is the account that uploaded, which may no longer be the active one.
@@ -34,6 +35,7 @@ export function VideoUploadRecorder({
   onReset,
   setSelectedFile,
   onLimitReached,
+  isCurrentSession,
   isShort
 }: Props) {
   const { activeUser } = useActiveAccount();
@@ -203,6 +205,8 @@ export function VideoUploadRecorder({
                     }
 
                     const owner = activeUser.username;
+                    const isCurrent = () =>
+                      isMounted() && (isCurrentSession?.(owner) ?? true);
                     try {
                       const mime = recordedBlob.type || "video/webm";
                       const ext = mime.includes("mp4") ? "mp4" : "webm";
@@ -212,11 +216,12 @@ export function VideoUploadRecorder({
                       const result = await uploadVideo({
                         file,
                         owner,
-                        isShort
+                        isShort,
+                        isCurrent
                       });
                       if (
                         result &&
-                        isMounted() &&
+                        isCurrent() &&
                         onEmbedUrlReady(result.embedUrl, result.permlink, owner)
                       ) {
                         if (selectedFileUrlRef.current) {
@@ -230,10 +235,10 @@ export function VideoUploadRecorder({
                       if (isThreeSpeakUploadLimitError(e)) {
                         // The recorder unmounts when the dialog closes, so a
                         // refusal that lands later belongs to no open dialog.
-                        if (isMounted()) onLimitReached?.(e.limit, owner);
+                        if (isCurrent()) onLimitReached?.(e.limit, owner);
                         return;
                       }
-                      error(...formatError(e));
+                      if (isCurrent()) error(...formatError(e));
                     }
                   }}
                 >

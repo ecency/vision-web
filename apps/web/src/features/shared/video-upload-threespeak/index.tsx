@@ -63,6 +63,8 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<string>("video/mp4");
   const [videoData, setVideoData] = useState<VideoData | null>(null);
+  const videoDataRef = useRef(videoData);
+  videoDataRef.current = videoData;
   const [showRecorder, setShowRecorder] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [isExtractingThumbnail, setIsExtractingThumbnail] = useState(false);
@@ -165,7 +167,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       selectedFileUrlRef.current === fileUrl;
 
     try {
-      const result = await uploadVideo({ file, owner, isShort: isShortResolved });
+      const result = await uploadVideo({ file, owner, isShort: isShortResolved, isCurrent });
       if (result && isCurrent()) {
         setVideoData({ embedUrl: result.embedUrl, permlink: result.permlink });
       }
@@ -289,23 +291,33 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const handleThumbnailChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !videoData?.permlink) return;
+    const permlink = videoData.permlink;
+    const owner = activeUser?.username;
+    const session = dialogSessionRef.current;
+    const isCurrent = () =>
+      dialogOpenRef.current &&
+      dialogSessionRef.current === session &&
+      activeUsernameRef.current === owner &&
+      videoDataRef.current?.permlink === permlink;
 
     // Set flag immediately to abort any running auto-extractor
     setHasManualThumbnail(true);
 
     try {
       const response = await uploadThumbnailImage({ file });
-      if (response?.url) {
+      if (response?.url && isCurrent()) {
         setThumbnailUrl(response.url);
         try {
-          await setVideoThumbnail(videoData.permlink, response.url);
+          await setVideoThumbnail(permlink, response.url);
         } catch {
           // Thumbnail image uploaded successfully but metadata persistence failed - non-critical
         }
       }
     } catch {
-      setHasManualThumbnail(false);
-      error(i18next.t("video-upload.thumbnail-upload-failed"));
+      if (isCurrent()) {
+        setHasManualThumbnail(false);
+        error(i18next.t("video-upload.thumbnail-upload-failed"));
+      }
     }
   };
 
@@ -352,6 +364,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
         <VideoUploadRecorder
           isShort={isShortResolved}
           onEmbedUrlReady={handleRecordedUpload}
+          isCurrentSession={(owner) => dialogOpenRef.current && activeUsernameRef.current === owner}
           onLimitReached={(limit, owner) => setLimitRefusal({ owner, limit })}
           setSelectedFile={(url, mime) => {
             setSelectedFile(url);

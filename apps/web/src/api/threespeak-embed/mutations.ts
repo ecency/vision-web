@@ -16,18 +16,22 @@ export function useThreeSpeakEmbedUpload() {
     mutationFn: async ({
       file,
       owner,
-      isShort = false
+      isShort = false,
+      isCurrent
     }: {
       file: File;
       owner: string;
       isShort?: boolean;
+      /** Whether this upload still belongs to the visible dialog session. */
+      isCurrent?: () => boolean;
     }): Promise<VideoUploadResult> => {
       try {
-        const result = await uploadVideoEmbed(file, owner, isShort, (percentage) =>
-          setCompleted(percentage)
-        );
+        const result = await uploadVideoEmbed(file, owner, isShort, (percentage) => {
+          if (isCurrent?.() ?? true) setCompleted(percentage);
+        });
         return result;
       } catch (e) {
+        if (isCurrent?.() === false) throw e;
         // TUS errors expose status via originalResponse; fetch errors via .status
         const status =
           (e as any)?.originalResponse?.getStatus?.() ??
@@ -55,7 +59,7 @@ export function useThreeSpeakEmbedUpload() {
         }
         throw e;
       } finally {
-        setCompleted(0);
+        if (isCurrent?.() ?? true) setCompleted(0);
       }
     }
   });

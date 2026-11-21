@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThreeSpeakUploadLimitError } from "@/api/threespeak-embed/upload-limits";
 
@@ -56,5 +56,47 @@ describe("useThreeSpeakEmbedUpload", () => {
 
     await expect(result.current.mutateAsync({ file: file(), owner: "alice" })).rejects.toBe(err);
     expect(mocks.toastError).toHaveBeenCalledWith("video-upload.error-too-many");
+  });
+
+  it("ignores progress, errors and final resets from an old account's upload", async () => {
+    const attempts: Array<{
+      progress: (percentage: number) => void;
+      resolve: (result: { embedUrl: string; permlink: string }) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    mocks.uploadVideoEmbed.mockImplementation(
+      (_file, _owner, _isShort, progress: (percentage: number) => void) =>
+        new Promise((resolve, reject) => attempts.push({ progress, resolve, reject }))
+    );
+    const result = setup();
+    let activeOwner = "alice";
+    const aliceUpload = result.current.mutateAsync({
+      file: file(), owner: "alice", isCurrent: () => activeOwner === "alice"
+    });
+    await waitFor(() => expect(attempts).toHaveLength(1));
+
+    activeOwner = "bob";
+    const bobUpload = result.current.mutateAsync({
+      file: file(), owner: "bob", isCurrent: () => activeOwner === "bob"
+    });
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    act(() => attempts[1].progress(30));
+    expect(result.current.completed).toBe(30);
+
+    act(() => attempts[0].progress(75));
+    expect(result.current.completed).toBe(30);
+    const oldError = new Error("old upload failed");
+    await act(async () => {
+      attempts[0].reject(oldError);
+      await expect(aliceUpload).rejects.toBe(oldError);
+    });
+    expect(result.current.completed).toBe(30);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+
+    await act(async () => {
+      attempts[1].resolve({ embedUrl: "https://play.3speak.tv/embed?v=bob/abc", permlink: "abc" });
+      await bobUpload;
+    });
+    expect(result.current.completed).toBe(0);
   });
 });
