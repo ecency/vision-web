@@ -4,10 +4,11 @@ import { scrubBreadcrumb, scrubSentryEvent, scrubUrlSecrets } from "@/utils/sent
 
 type Ev = Parameters<typeof beforeSend>[0];
 
-// Issue #1651: the image upload addresses the imagehoster as /hs/<access token>.
+// Issue #1651: the older imagehoster upload form carries the access token in the
+// path, /hs/<access token>. Older app versions and third-party tools still use it.
 const TOKEN = "eyJzaWduZWRfbWVzc2FnZSI6eyJ0eXBlIjoiY29kZSJ9fQ";
 const UPLOAD_URL = `https://i.ecency.com/hs/${TOKEN}`;
-// The app's own uploader uses defaults.imageServer, a different host.
+// The same path on another imagehoster host must be scrubbed too.
 const ALT_UPLOAD_URL = `https://images.ecency.com/hs/${TOKEN}`;
 const SCRUBBED = "https://i.ecency.com/hs/[Filtered]";
 
