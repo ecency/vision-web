@@ -17,7 +17,8 @@ import {
 } from "@/api/threespeak-embed/upload-limits";
 
 interface Props {
-  onEmbedUrlReady: (embedUrl: string, permlink: string) => void;
+  /** Returns false when the dialog no longer belongs to the uploading account. */
+  onEmbedUrlReady: (embedUrl: string, permlink: string, owner: string) => boolean;
   setSelectedFile: (v: string, mime: string) => void;
   onReset: () => void;
   /**
@@ -213,8 +214,11 @@ export function VideoUploadRecorder({
                         owner,
                         isShort
                       });
-                      if (result) {
-                        onEmbedUrlReady(result.embedUrl, result.permlink);
+                      if (
+                        result &&
+                        isMounted() &&
+                        onEmbedUrlReady(result.embedUrl, result.permlink, owner)
+                      ) {
                         if (selectedFileUrlRef.current) {
                           URL.revokeObjectURL(selectedFileUrlRef.current);
                         }

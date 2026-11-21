@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithQueryClient, setupModalContainers, cleanupModalContainers } from "@/specs/test-utils";
 import {
   ThreeSpeakUploadLimit,
@@ -206,6 +206,32 @@ describe("VideoUpload limit refusals stay with their account and dialog session"
     rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("a successful upload for the old account cannot enter the new account's dialog", async () => {
+    let resolveUpload: (result: { embedUrl: string; permlink: string }) => void = () => {};
+    mocks.uploadVideo.mockImplementation(
+      () => new Promise((resolve) => { resolveUpload = resolve; })
+    );
+    const onVideoUploaded = vi.fn();
+    const { rerender } = renderDialog({ onVideoUploaded });
+    pickFile();
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: "alice" })
+    ));
+
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "bob" }, username: "bob" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={onVideoUploaded} />);
+
+    await act(async () => {
+      resolveUpload({ embedUrl: "https://play.3speak.tv/embed?v=alice/abc", permlink: "abc" });
+    });
+
+    expect((screen.getByRole("button", { name: "video-upload.insert-video" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(document.getElementById("video-input")).not.toBeNull();
+    expect(onVideoUploaded).not.toHaveBeenCalled();
   });
 
   it("an upload refused after the dialog was closed and reopened leaves the new session alone", async () => {

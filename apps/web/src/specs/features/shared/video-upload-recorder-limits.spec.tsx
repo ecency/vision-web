@@ -144,6 +144,26 @@ describe("VideoUploadRecorder and the 3Speak daily upload limit", () => {
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
+  it("a successful upload that lands after the recorder closed is dropped", async () => {
+    let resolveUpload: (result: { embedUrl: string; permlink: string }) => void = () => {};
+    mocks.uploadVideo.mockImplementation(
+      () => new Promise((resolve) => { resolveUpload = resolve; })
+    );
+    const onEmbedUrlReady = vi.fn(() => true);
+    const setSelectedFile = vi.fn();
+    const { upload, unmount } = await renderWithRecording({ onEmbedUrlReady, setSelectedFile });
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => {
+      resolveUpload({ embedUrl: "https://play.3speak.tv/embed?v=alice/abc", permlink: "abc" });
+    });
+
+    expect(onEmbedUrlReady).not.toHaveBeenCalled();
+    expect(setSelectedFile).not.toHaveBeenCalled();
+  });
+
   it("any other failure still shows the error toast", async () => {
     mocks.uploadVideo.mockRejectedValue(new Error("network down"));
     const { upload, onLimitReached } = await renderWithRecording();

@@ -53,8 +53,11 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const selectedFileUrlRef = useRef<string | undefined>(undefined);
   const dialogOpenRef = useRef(false);
-  // Bumped whenever the dialog opens or closes, so an upload that settles after
-  // the dialog was closed (and maybe reopened) cannot touch the new session.
+  const activeUsernameRef = useRef(activeUser?.username);
+  activeUsernameRef.current = activeUser?.username;
+  const previousUsernameRef = useRef(activeUser?.username);
+  // Bumped when the dialog or account changes, so an older upload cannot
+  // touch the new session.
   const dialogSessionRef = useRef(0);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -102,15 +105,17 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
 
   const isMounted = useMountedState();
 
-  // A new session each time the dialog opens or closes, and only then.
+  // A new session whenever the dialog or its active account changes.
   useEffect(() => {
     dialogSessionRef.current += 1;
-  }, [props.show]);
+  }, [props.show, activeUser?.username]);
 
-  // Reset on dialog hide
+  // Reset on dialog hide or account switch.
   useEffect(() => {
     dialogOpenRef.current = props.show;
-    if (!props.show) {
+    const accountChanged = previousUsernameRef.current !== activeUser?.username;
+    previousUsernameRef.current = activeUser?.username;
+    if (!props.show || accountChanged) {
       if (selectedFileUrlRef.current) {
         URL.revokeObjectURL(selectedFileUrlRef.current);
         selectedFileUrlRef.current = undefined;
@@ -126,7 +131,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       setShortToggle(false);
       setLimitRefusal(null);
     }
-  }, [props.show, setVideoPercentage]);
+  }, [props.show, activeUser?.username, setVideoPercentage]);
 
   const maxFileSizeBytes = 1 * 1024 * 1024 * 1024; // 1 GB
 
@@ -156,6 +161,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
     const isCurrent = () =>
       dialogOpenRef.current &&
       dialogSessionRef.current === session &&
+      activeUsernameRef.current === owner &&
       selectedFileUrlRef.current === fileUrl;
 
     try {
@@ -175,8 +181,10 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
     }
   };
 
-  const handleRecordedUpload = (embedUrl: string, videoPermlink: string) => {
+  const handleRecordedUpload = (embedUrl: string, videoPermlink: string, owner: string) => {
+    if (!dialogOpenRef.current || activeUsernameRef.current !== owner) return false;
     setVideoData({ embedUrl, permlink: videoPermlink });
+    return true;
   };
 
   const extractFrameAsBlob = useCallback(
