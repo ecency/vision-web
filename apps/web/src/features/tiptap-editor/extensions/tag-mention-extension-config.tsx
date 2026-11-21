@@ -1,12 +1,12 @@
 import { getQueryClient } from "@/core/react-query";
 import { getTrendingTagsQueryOptions } from "@ecency/sdk";
-import { computePosition, flip } from "@floating-ui/dom";
 import { InfiniteData } from "@tanstack/react-query";
 import { PluginKey } from "@tiptap/pm/state";
 import { ReactRenderer } from "@tiptap/react";
 import { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import clsx from "clsx";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { positionSuggestionPopup } from "./position-suggestion-popup";
 
 export const TAG_MENTION_PURE_REGEX = /#\w+/gi;
 export const TAG_MENTION_SPAN_REGEX =
@@ -147,14 +147,7 @@ export const TagMentionExtensionConfig = {
         const element = reactRenderer.element as HTMLElement;
         placementArea?.appendChild(element);
 
-        computePosition(props.decorationNode as HTMLElement, element, {
-          middleware: [flip()]
-        }).then(({ x, y }) => {
-          Object.assign(element.style, {
-            left: `${x}px`,
-            top: `${y}px`
-          });
-        });
+        positionSuggestionPopup(props, element);
       },
 
       onUpdate(props: any) {
@@ -164,15 +157,7 @@ export const TagMentionExtensionConfig = {
 
         reactRenderer.updateProps(props);
 
-        const element = reactRenderer.element as HTMLElement;
-        computePosition(props.decorationNode as HTMLElement, element, {
-          middleware: [flip()]
-        }).then(({ x, y }) => {
-          Object.assign(element.style, {
-            left: `${x}px`,
-            top: `${y}px`
-          });
-        });
+        positionSuggestionPopup(props, reactRenderer.element as HTMLElement);
       },
 
       onKeyDown(props: any) {

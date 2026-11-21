@@ -1,11 +1,11 @@
 import { getQueryClient } from "@/core/react-query";
 import { UserAvatar } from "@/features/shared";
 import { getSearchAccountsByUsernameQueryOptions } from "@ecency/sdk";
-import { computePosition, flip } from "@floating-ui/dom";
 import { ReactRenderer } from "@tiptap/react";
 import { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import clsx from "clsx";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { positionSuggestionPopup, SuggestionPositionProps } from "./position-suggestion-popup";
 
 export const USER_MENTION_PURE_REGEX =
   /@(?=[a-zA-Z][a-zA-Z0-9.-]{1,15}\b)[a-zA-Z][a-zA-Z0-9-]{2,}(?:\.[a-zA-Z][a-zA-Z0-9-]{2,})*\b/gi;
@@ -123,21 +123,12 @@ export const UserMentionExtensionConfig = {
     const placementArea = document.querySelector("#popper-container");
     let reactRenderer: ReactRenderer<any> | null = null;
 
-    const updatePosition = (decorationNode: HTMLElement) => {
+    const updatePosition = (props: SuggestionPositionProps) => {
       if (!reactRenderer) {
         return;
       }
 
-      const element = reactRenderer.element as HTMLElement;
-
-      computePosition(decorationNode, element, {
-        middleware: [flip()]
-      }).then(({ x, y }) => {
-        Object.assign(element.style, {
-          left: `${x}px`,
-          top: `${y}px`
-        });
-      });
+      positionSuggestionPopup(props, reactRenderer.element as HTMLElement);
     };
 
     return {
@@ -154,7 +145,7 @@ export const UserMentionExtensionConfig = {
 
         placementArea?.appendChild(reactRenderer.element);
 
-        updatePosition(props.decorationNode as HTMLElement);
+        updatePosition(props);
       },
 
       onUpdate(props: any) {
@@ -164,7 +155,7 @@ export const UserMentionExtensionConfig = {
 
         reactRenderer.updateProps(props);
 
-        updatePosition(props.decorationNode as HTMLElement);
+        updatePosition(props);
       },
 
       onKeyDown(props: any) {
