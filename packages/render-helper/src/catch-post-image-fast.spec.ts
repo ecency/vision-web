@@ -449,22 +449,34 @@ describe('catchPostImage fast mode', () => {
         { length: count },
         (_, i) => `<a href="https://example.com/p${i}">https://files.peakd.com/x/t${i}.png</a>`
       ).join(' ')
-    const time = (text: string) => {
-      let best = Infinity
-      for (let run = 0; run < 3; run++) {
-        const started = performance.now()
-        expect(getEntryImageRawUrl(entry(text))).toBeNull()
-        expect(catchPostImage(entry(text), 0, 0, 'match', FAST)).toBeNull()
-        best = Math.min(best, performance.now() - started)
-      }
-      return best
+    const once = (text: string) => {
+      const started = performance.now()
+      expect(getEntryImageRawUrl(entry(text))).toBeNull()
+      expect(catchPostImage(entry(text), 0, 0, 'match', FAST)).toBeNull()
+      return performance.now() - started
     }
-    const small = body(2_500)
-    const large = body(20_000)
-    time(small) // warm the JIT before measuring
-    const ratio = time(large) / Math.max(time(small), 1)
-    // Measured 2026-11-19: 6-11 for this code, idle and with every core busy;
-    // 32 with a light per-anchor rescan from the start of the body.
+    // Sizes timed in turn, so a burst of load lands on both; the small one is
+    // big enough (tens of ms) that a scheduler hiccup is not most of it.
+    const ratioOf = (small: string, large: string) => {
+      let bestSmall = Infinity
+      let bestLarge = Infinity
+      for (let run = 0; run < 3; run++) {
+        bestSmall = Math.min(bestSmall, once(small))
+        bestLarge = Math.min(bestLarge, once(large))
+      }
+      return bestLarge / Math.max(bestSmall, 1)
+    }
+    const small = body(5_000)
+    const large = body(40_000)
+    once(small) // warm the JIT before measuring
+    // Load only ever inflates a ratio, a real regression inflates every one:
+    // the best of up to three attempts filters the noise and keeps the signal.
+    let ratio = Infinity
+    for (let attempt = 0; attempt < 3 && ratio >= 18; attempt++) {
+      ratio = Math.min(ratio, ratioOf(small, large))
+    }
+    // Measured 2026-11-21 (16 cores busy): 6-11 for this code; 30+ with a
+    // light per-anchor rescan of the body, which is what this guards against.
     expect(ratio).toBeLessThan(18)
   })
 
