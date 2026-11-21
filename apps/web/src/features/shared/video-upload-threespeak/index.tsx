@@ -59,6 +59,8 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   // Bumped when the dialog or account changes, so an older upload cannot
   // touch the new session.
   const dialogSessionRef = useRef(0);
+  // The picked file's upload in flight. Aborted when nobody will insert it.
+  const uploadAbortRef = useRef<AbortController | undefined>(undefined);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<string>("video/mp4");
@@ -107,10 +109,11 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
 
   const isMounted = useMountedState();
 
-  // Revoke the preview if the dialog goes away while still holding one.
+  // Revoke the preview and stop the upload if the dialog goes away mid-way.
   useEffect(
     () => () => {
       if (selectedFileUrlRef.current) URL.revokeObjectURL(selectedFileUrlRef.current);
+      uploadAbortRef.current?.abort();
     },
     []
   );
@@ -126,6 +129,10 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
     const accountChanged = previousUsernameRef.current !== activeUser?.username;
     previousUsernameRef.current = activeUser?.username;
     if (!props.show || accountChanged) {
+      // Stop an upload nobody will insert: it would keep sending bytes and
+      // count against the uploading account's daily limit.
+      uploadAbortRef.current?.abort();
+      uploadAbortRef.current = undefined;
       if (selectedFileUrlRef.current) {
         URL.revokeObjectURL(selectedFileUrlRef.current);
         selectedFileUrlRef.current = undefined;
@@ -164,6 +171,9 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
     setSelectedFile(fileUrl);
     setSelectedFileType(file.type || "video/mp4");
 
+    const abortController = new AbortController();
+    uploadAbortRef.current = abortController;
+
     const owner = activeUser.username;
     const session = dialogSessionRef.current;
     // Only the upload of the file on screen, in this opening of the dialog, may
@@ -175,7 +185,13 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       selectedFileUrlRef.current === fileUrl;
 
     try {
-      const result = await uploadVideo({ file, owner, isShort: isShortResolved, isCurrent });
+      const result = await uploadVideo({
+        file,
+        owner,
+        isShort: isShortResolved,
+        isCurrent,
+        signal: abortController.signal
+      });
       if (result && isCurrent()) {
         setVideoData({ embedUrl: result.embedUrl, permlink: result.permlink });
       }

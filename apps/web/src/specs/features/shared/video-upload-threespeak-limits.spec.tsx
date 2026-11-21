@@ -304,6 +304,68 @@ describe("VideoUpload limit refusals stay with their account and dialog session"
   });
 });
 
+// The dialog aborts an upload nobody will insert, so it stops sending bytes
+// and stops counting against the uploading account's daily limit.
+describe("VideoUpload aborts an abandoned upload", () => {
+  const signals: AbortSignal[] = [];
+
+  beforeEach(() => {
+    setupModalContainers();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "alice" }, username: "alice" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    signals.length = 0;
+    mocks.getUploadQuota.mockReset();
+    mocks.getUploadQuota.mockResolvedValue(null);
+    mocks.toastError.mockReset();
+    mocks.uploadVideo.mockReset();
+    mocks.uploadVideo.mockImplementation(({ signal }: { signal: AbortSignal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
+  });
+
+  afterEach(() => {
+    cleanupModalContainers();
+  });
+
+  const startUpload = async () => {
+    const view = renderDialog();
+    pickFile();
+    await waitFor(() => expect(signals).toHaveLength(1));
+    expect(signals[0].aborted).toBe(false);
+    return view;
+  };
+
+  it("closing the dialog mid-upload aborts it", async () => {
+    const { rerender } = await startUpload();
+
+    rerender(<VideoUpload show={false} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
+
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it("switching account mid-upload aborts it", async () => {
+    const { rerender } = await startUpload();
+
+    vi.mocked(useActiveAccount).mockImplementation(
+      () => ({ activeUser: { username: "bob" }, username: "bob" }) as unknown as ReturnType<typeof useActiveAccount>
+    );
+    rerender(<VideoUpload show={true} setShow={vi.fn()} onVideoUploaded={vi.fn()} />);
+
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it("unmounting the dialog mid-upload aborts it", async () => {
+    const { unmount } = await startUpload();
+
+    unmount();
+
+    expect(signals[0].aborted).toBe(true);
+  });
+});
+
 describe("getUploadLimitText", () => {
   it("says the limit is reached even when no next upload time is known", () => {
     const text = getUploadLimitText(refusal({ nextAt: null }));

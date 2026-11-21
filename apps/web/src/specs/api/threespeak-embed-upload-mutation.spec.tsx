@@ -99,4 +99,34 @@ describe("useThreeSpeakEmbedUpload", () => {
     });
     expect(result.current.completed).toBe(0);
   });
+
+  it("passes the abort signal to the upload, and an aborted upload rejects without a toast", async () => {
+    mocks.uploadVideoEmbed.mockImplementation(
+      (_file, _owner, _isShort, _progress, signal: AbortSignal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+        )
+    );
+    vi.mocked(console.error).mockClear();
+    const result = setup();
+    const controller = new AbortController();
+    const upload = result.current.mutateAsync({
+      file: file(),
+      owner: "alice",
+      signal: controller.signal
+    });
+    await waitFor(() => expect(mocks.uploadVideoEmbed).toHaveBeenCalledTimes(1));
+    expect(mocks.uploadVideoEmbed.mock.calls[0][4]).toBe(controller.signal);
+
+    await act(async () => {
+      controller.abort();
+      await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    });
+
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalledWith(
+      "[3Speak] Video upload failed:",
+      expect.anything()
+    );
+  });
 });

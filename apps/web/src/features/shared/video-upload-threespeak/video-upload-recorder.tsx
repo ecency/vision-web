@@ -54,6 +54,8 @@ export function VideoUploadRecorder({
   const streamRef = useRef<MediaStream | undefined>(undefined);
   // Bumped per camera request, so only the newest one may become the live stream.
   const streamRequestRef = useRef(0);
+  // The recording's upload in flight, aborted when the recorder closes.
+  const uploadAbortRef = useRef<AbortController | undefined>(undefined);
 
   const {
     mutateAsync: uploadVideo,
@@ -63,6 +65,8 @@ export function VideoUploadRecorder({
   } = useThreeSpeakEmbedUpload();
 
   useUnmount(() => {
+    // The dialog closed or the account switched: nobody will insert this upload.
+    uploadAbortRef.current?.abort();
     // Invalidate any camera request still in flight, so it neither retries nor goes live.
     streamRequestRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -223,6 +227,8 @@ export function VideoUploadRecorder({
                       return;
                     }
 
+                    const abortController = new AbortController();
+                    uploadAbortRef.current = abortController;
                     const owner = activeUser.username;
                     const isCurrent = () =>
                       isMounted() && (isCurrentSession?.(owner) ?? true);
@@ -236,7 +242,8 @@ export function VideoUploadRecorder({
                         file,
                         owner,
                         isShort,
-                        isCurrent
+                        isCurrent,
+                        signal: abortController.signal
                       });
                       if (
                         result &&

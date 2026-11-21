@@ -168,6 +168,22 @@ describe("VideoUploadRecorder and the 3Speak daily upload limit", () => {
     expect(setSelectedFile).not.toHaveBeenCalled();
   });
 
+  it("closing the recorder mid-upload aborts the upload", async () => {
+    let signal: AbortSignal | undefined;
+    mocks.uploadVideo.mockImplementation((args: { signal: AbortSignal }) => {
+      signal = args.signal;
+      return new Promise(() => {});
+    });
+    const { upload, unmount } = await renderWithRecording();
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    expect(signal?.aborted).toBe(false);
+    unmount();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
   it("any other failure still shows the error toast", async () => {
     mocks.uploadVideo.mockRejectedValue(new Error("network down"));
     const { upload, onLimitReached } = await renderWithRecording();

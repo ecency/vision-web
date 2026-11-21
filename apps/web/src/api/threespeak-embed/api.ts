@@ -50,13 +50,15 @@ async function getThreeSpeakAuthCode(): Promise<string> {
  */
 async function requestUploadToken(
   owner: string,
-  isShort: boolean
+  isShort: boolean,
+  signal?: AbortSignal
 ): Promise<{ token: string; upload_url: string; permlink?: string; embed_url?: string }> {
   const code = await getThreeSpeakAuthCode();
   const response = await fetch("/api/threespeak/upload-token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ owner, isShort, code })
+    body: JSON.stringify({ owner, isShort, code }),
+    signal
   });
 
   if (!response.ok) {
@@ -101,6 +103,14 @@ export function extractPermlink(embedUrl: string): string {
 
 const MB = 1024 * 1024;
 
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("The 3Speak upload was aborted", "AbortError");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
 /**
  * Choose chunk size and parallelism based on the file size.
  *
@@ -129,14 +139,24 @@ export function getUploadTuning(size: number): { chunkSize: number; parallelUplo
  * Against an older backend that doesn't return a permlink with the token, we
  * fall back to the proven sequential path and read the embed URL from the
  * header. Neither path ever re-uploads, so duplicates can't happen.
+ *
+ * Aborting `signal` stops the upload and asks the TUS server to delete the
+ * partial file, then rejects with the signal's reason (an AbortError). An
+ * abort after the upload settled does nothing, so a finished upload is kept.
  */
 export async function uploadVideoEmbed(
   file: File,
   owner: string,
   isShort: boolean,
-  progressCallback: (percentage: number) => void
+  progressCallback: (percentage: number) => void,
+  signal?: AbortSignal
 ): Promise<VideoUploadResult> {
-  const { token, upload_url, permlink, embed_url } = await requestUploadToken(owner, isShort);
+  throwIfAborted(signal);
+  const { token, upload_url, permlink, embed_url } = await requestUploadToken(
+    owner,
+    isShort,
+    signal
+  );
 
   // Fall back to config endpoint if upload_url not provided
   const endpoint = upload_url || `${getEmbedEndpoint()}/uploads`;
@@ -146,7 +166,15 @@ export async function uploadVideoEmbed(
   // URL on success — no header to capture, no re-upload.
   if (permlink && embed_url) {
     const { chunkSize, parallelUploads } = getUploadTuning(file.size);
-    await runTusUpload(file, token, endpoint, chunkSize, parallelUploads, progressCallback);
+    await runTusUpload(
+      file,
+      token,
+      endpoint,
+      chunkSize,
+      parallelUploads,
+      progressCallback,
+      signal
+    );
     return { embedUrl: embed_url, permlink };
   }
 
@@ -155,7 +183,40 @@ export async function uploadVideoEmbed(
   // reliable, and because it never re-uploads, a missing header surfaces as an
   // error instead of silently duplicating the upload.
   const { chunkSize } = getUploadTuning(file.size);
-  return uploadFromHeader(file, token, endpoint, chunkSize, progressCallback);
+  return uploadFromHeader(file, token, endpoint, chunkSize, progressCallback, signal);
+}
+
+/**
+ * Ties a started TUS upload to `signal`: an abort terminates it (abort(true)
+ * also deletes the partial upload on the server) and rejects. Returns the
+ * cleanup to run once the upload settles, so a later abort cannot delete a
+ * finished upload.
+ */
+type TusAbortable = { abort: (shouldTerminate?: boolean) => Promise<void> };
+
+function abortOnSignal(
+  upload: TusAbortable,
+  signal: AbortSignal | undefined,
+  reject: (reason: unknown) => void
+): () => void {
+  if (!signal) return () => {};
+  const onAbort = () => {
+    reject(abortReason(signal));
+    // tus-js-client's abort(true) terminates each part of a parallel upload
+    // but drops the promises, so a failed DELETE would be an unhandled
+    // rejection. Terminate the parts here, then stop the parent without one.
+    // `_parallelUploads` is private to tus-js-client (checked on 4.3.1); if it
+    // goes away, the else branch still aborts and terminates correctly.
+    const parts = (upload as { _parallelUploads?: TusAbortable[] | null })._parallelUploads;
+    if (parts?.length) {
+      for (const part of parts) part.abort(true).catch(() => {});
+      upload.abort(false).catch(() => {});
+    } else {
+      upload.abort(true).catch(() => {});
+    }
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
 }
 
 const TUS_RETRY_DELAYS = [0, 3000, 5000, 10000, 20000];
@@ -174,9 +235,9 @@ function toUploadLimitError(error: TusRefusalError): Error {
 }
 
 /**
- * Run a TUS upload to completion. Resolves on success, rejects on error.
- * Aborts in-flight parts on error so a failed parallel upload doesn't keep
- * pushing bytes in the background.
+ * Run a TUS upload to completion. Resolves on success, rejects on error or
+ * abort. Aborts in-flight parts on error so a failed parallel upload doesn't
+ * keep pushing bytes in the background.
  */
 async function runTusUpload(
   file: File,
@@ -184,12 +245,14 @@ async function runTusUpload(
   endpoint: string,
   chunkSize: number,
   parallelUploads: number,
-  progressCallback: (percentage: number) => void
+  progressCallback: (percentage: number) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   // Load TUS on demand: this module's playback helpers (getVideoMetadata,
   // extractPermlink, ...) are imported by the post renderer on read pages, and
   // a top-level import would drag the ~48 KB upload client onto every post.
   const tus = await import("tus-js-client");
+  throwIfAborted(signal);
 
   return new Promise<void>((resolve, reject) => {
     const upload = new tus.Upload(file, {
@@ -200,6 +263,7 @@ async function runTusUpload(
       headers: { Authorization: `Bearer ${token}` },
       metadata: { filename: file.name },
       onError(error: Error) {
+        stopListening();
         upload.abort().catch(() => {});
         reject(toUploadLimitError(error));
       },
@@ -207,9 +271,11 @@ async function runTusUpload(
         progressCallback(Number(((bytesUploaded / bytesTotal) * 100).toFixed(2)));
       },
       onSuccess() {
+        stopListening();
         resolve();
       }
     });
+    const stopListening = abortOnSignal(upload, signal, reject);
 
     upload.start();
   });
@@ -225,9 +291,11 @@ async function uploadFromHeader(
   token: string,
   endpoint: string,
   chunkSize: number,
-  progressCallback: (percentage: number) => void
+  progressCallback: (percentage: number) => void,
+  signal?: AbortSignal
 ): Promise<VideoUploadResult> {
   const tus = await import("tus-js-client");
+  throwIfAborted(signal);
 
   return new Promise<VideoUploadResult>((resolve, reject) => {
     let embedUrl = "";
@@ -241,6 +309,7 @@ async function uploadFromHeader(
       metadata: { filename: file.name },
       onError(error: Error) {
         // Cancel any in-progress retry before rejecting, mirroring runTusUpload.
+        stopListening();
         upload.abort().catch(() => {});
         reject(toUploadLimitError(error));
       },
@@ -248,6 +317,7 @@ async function uploadFromHeader(
         progressCallback(Number(((bytesUploaded / bytesTotal) * 100).toFixed(2)));
       },
       onSuccess() {
+        stopListening();
         if (!embedUrl) {
           reject(new Error("[3Speak Embed] Upload succeeded but no embed URL was returned"));
           return;
@@ -268,6 +338,7 @@ async function uploadFromHeader(
         }
       }
     });
+    const stopListening = abortOnSignal(upload, signal, reject);
 
     upload.start();
   });
