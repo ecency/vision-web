@@ -1,5 +1,12 @@
 import { useThreeSpeakEmbedUpload } from "@/api/threespeak-embed";
-import { setVideoThumbnail } from "@/api/threespeak-embed/api";
+import { getUploadQuota, setVideoThumbnail } from "@/api/threespeak-embed/api";
+import {
+  isThreeSpeakUploadLimitError,
+  quotaToThreeSpeakUploadLimit,
+  ThreeSpeakUploadLimit
+} from "@/api/threespeak-embed/upload-limits";
+import { QueryIdentifiers } from "@/core/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useUploadImageMutation } from "@/api/sdk-mutations";
 import { useGlobalStore } from "@/core/global-store";
 import { error } from "@/features/shared";
@@ -11,6 +18,7 @@ import React, { ChangeEvent, ReactNode, useCallback, useEffect, useRef, useState
 import useMountedState from "react-use/lib/useMountedState";
 import { VideoUploadItem } from "./video-upload-item";
 import { VideoUploadRecorder } from "./video-upload-recorder";
+import { VideoUploadLimitNotice } from "./video-upload-limit-notice";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 
 interface Props {
@@ -45,6 +53,9 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const selectedFileUrlRef = useRef<string | undefined>(undefined);
   const dialogOpenRef = useRef(false);
+  // Bumped whenever the dialog opens or closes, so an upload that settles after
+  // the dialog was closed (and maybe reopened) cannot touch the new session.
+  const dialogSessionRef = useRef(0);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<string>("video/mp4");
@@ -55,12 +66,46 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
   const [hasManualThumbnail, setHasManualThumbnail] = useState(false);
   // When isShort prop is undefined, let the user toggle; default to false (regular video)
   const [shortToggle, setShortToggle] = useState(false);
+  // 3Speak refused an upload over the free daily limit. Kept with the account
+  // that uploaded, so a switched account never sees someone else's refusal.
+  const [limitRefusal, setLimitRefusal] = useState<{
+    owner: string;
+    limit: ThreeSpeakUploadLimit;
+  } | null>(null);
 
   const isShortResolved = props.isShort ?? shortToggle;
+  const uploadKind = isShortResolved ? "short" : "video";
+
+  // The allowance, read when the dialog opens so a free account at its limit
+  // sees the notice before picking a file. Any failure resolves null (no limit
+  // known) and never blocks: the token request stays the source of truth.
+  const { data: uploadQuota } = useQuery({
+    queryKey: [QueryIdentifiers.THREE_SPEAK_UPLOAD_QUOTA, activeUser?.username],
+    queryFn: () => getUploadQuota(activeUser!.username),
+    enabled: props.show && !!activeUser?.username,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false
+  });
+
+  const refusalForThisAccount =
+    limitRefusal &&
+    limitRefusal.owner === activeUser?.username &&
+    (limitRefusal.limit.kind === null || limitRefusal.limit.kind === uploadKind)
+      ? limitRefusal.limit
+      : null;
+  const limitNotice =
+    refusalForThisAccount ?? quotaToThreeSpeakUploadLimit(uploadQuota, uploadKind);
   const showTypeSelector = props.isShort === undefined;
   const isUploading = videoPercentage > 0 && videoPercentage < 100;
 
   const isMounted = useMountedState();
+
+  // A new session each time the dialog opens or closes, and only then.
+  useEffect(() => {
+    dialogSessionRef.current += 1;
+  }, [props.show]);
 
   // Reset on dialog hide
   useEffect(() => {
@@ -79,6 +124,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
       setVideoPercentage(0);
       setShowRecorder(false);
       setShortToggle(false);
+      setLimitRefusal(null);
     }
   }, [props.show, setVideoPercentage]);
 
@@ -103,19 +149,27 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
     setSelectedFile(fileUrl);
     setSelectedFileType(file.type || "video/mp4");
 
+    const owner = activeUser.username;
+    const session = dialogSessionRef.current;
+    // Only the upload of the file on screen, in this opening of the dialog, may
+    // change the dialog: not one from before a close, nor an older pick.
+    const isCurrent = () =>
+      dialogOpenRef.current &&
+      dialogSessionRef.current === session &&
+      selectedFileUrlRef.current === fileUrl;
+
     try {
-      const result = await uploadVideo({
-        file,
-        owner: activeUser.username,
-        isShort: isShortResolved
-      });
-      if (result && dialogOpenRef.current) {
+      const result = await uploadVideo({ file, owner, isShort: isShortResolved });
+      if (result && isCurrent()) {
         setVideoData({ embedUrl: result.embedUrl, permlink: result.permlink });
       }
-    } catch {
-      // Error already shown by the mutation's error handler.
-      // Reset file state so the selector reappears and user can retry.
-      if (dialogOpenRef.current) {
+    } catch (err) {
+      // Error already shown by the mutation's error handler, or, for the daily
+      // limit, by the notice. Reset file state so the selector reappears.
+      if (isCurrent()) {
+        if (isThreeSpeakUploadLimitError(err)) {
+          setLimitRefusal({ owner, limit: err.limit });
+        }
         setSelectedFile(null);
       }
     }
@@ -290,6 +344,7 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
         <VideoUploadRecorder
           isShort={isShortResolved}
           onEmbedUrlReady={handleRecordedUpload}
+          onLimitReached={(limit, owner) => setLimitRefusal({ owner, limit })}
           setSelectedFile={(url, mime) => {
             setSelectedFile(url);
             setSelectedFileType(mime);
@@ -405,6 +460,9 @@ export const VideoUpload = (props: Props & React.HTMLAttributes<HTMLDivElement>)
           <ModalBody>
             <div className="dialog-content">
               {typeSelector}
+              {limitNotice && !videoData && (
+                <VideoUploadLimitNotice limit={limitNotice} username={activeUser?.username} />
+              )}
               {sourceSection}
               {previewSection}
               <Button

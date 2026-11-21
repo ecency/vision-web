@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { extractPermlink, getUploadTuning } from "@/api/threespeak-embed/api";
+import type { TusRefusalError } from "@/api/threespeak-embed/upload-limits";
 
 // The 3Speak proxy now requires a HiveSigner OAuth token resolved from
 // localStorage + user-token. These tests exercise fetch error propagation,
@@ -289,5 +290,136 @@ describe("3Speak auth code", () => {
   it("sends the stored token the renewal helper falls back to", async () => {
     tokens.fresh = "stored-token";
     expect(await sentCode()).toBe("stored-token");
+  });
+});
+
+// 3Speak daily upload limits for free accounts: the token route answers 429
+// with code "daily_upload_limit". The client must stop there, with the
+// refusal attached, and never start a TUS upload or try another path.
+describe("daily upload limit", () => {
+  const LIMIT_BODY = {
+    error: "Daily video upload limit reached",
+    code: "daily_upload_limit",
+    kind: "video",
+    limit: 1,
+    used: 1,
+    next_at: "2026-11-21T14:32:00Z",
+    retry_after_seconds: 52320,
+    message: "Free accounts can upload 1 video per 24 hours.",
+    upgrade_url: "https://3speak.tv/wallet/a#pro"
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    tokens.fresh = "valid-hs-token";
+  });
+
+  it("a 429 from the token route throws the limit and starts no upload", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: () => Promise.resolve(JSON.stringify(LIMIT_BODY))
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    let tusStarts = 0;
+    tusMock.runUpload = () => {
+      tusStarts += 1;
+    };
+
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const { isThreeSpeakUploadLimitError } = await import("@/api/threespeak-embed/upload-limits");
+
+    const err = await uploadVideoEmbed(smallFile(), "a", false, () => {}).catch((e) => e);
+    expect(isThreeSpeakUploadLimitError(err)).toBe(true);
+    expect(err.status).toBe(429);
+    expect(err.limit).toMatchObject({
+      kind: "video",
+      limit: 1,
+      nextAt: "2026-11-21T14:32:00Z",
+      message: LIMIT_BODY.message,
+      upgradeUrl: "https://3speak.tv/wallet/a#pro"
+    });
+    // One token request, no TUS upload, no fallback request.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(tusStarts).toBe(0);
+  });
+
+  it("a 429 without the limit code stays a plain error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve('{"error":"Too many requests"}')
+      })
+    );
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const { isThreeSpeakUploadLimitError } = await import("@/api/threespeak-embed/upload-limits");
+
+    const err = await uploadVideoEmbed(smallFile(), "a", false, () => {}).catch((e) => e);
+    expect(isThreeSpeakUploadLimitError(err)).toBe(false);
+    expect(err.status).toBe(429);
+  });
+
+  it("a TUS create refused over the limit throws the limit, once", async () => {
+    stubTokenResponse({
+      permlink: "TOK12345",
+      embed_url: "https://play.3speak.tv/embed?v=a/TOK12345"
+    });
+    let attempts = 0;
+    tusMock.runUpload = (options) => {
+      attempts += 1;
+      const tusError: TusRefusalError = new Error("tus: unexpected response while creating upload");
+      tusError.originalResponse = {
+        getStatus: () => 429,
+        getBody: () => JSON.stringify({ ...LIMIT_BODY, kind: "short", limit: 3, used: 3 })
+      };
+      options.onError(tusError);
+    };
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const { isThreeSpeakUploadLimitError } = await import("@/api/threespeak-embed/upload-limits");
+
+    const err = await uploadVideoEmbed(bigFile(), "a", true, () => {}).catch((e) => e);
+    expect(isThreeSpeakUploadLimitError(err)).toBe(true);
+    expect(err.limit).toMatchObject({ kind: "short", limit: 3 });
+    expect(attempts).toBe(1);
+  });
+});
+
+describe("getUploadQuota", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    tokens.fresh = "valid-hs-token";
+  });
+
+  it("returns the parsed quota", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            enabled: true,
+            exempt: false,
+            video: { limit: 1, used: 1, remaining: 0, next_at: "2026-11-21T14:32:00Z" },
+            short: { limit: 3, used: 0, remaining: 3, next_at: null }
+          })
+      })
+    );
+    const { getUploadQuota } = await import("@/api/threespeak-embed/api");
+    await expect(getUploadQuota("a")).resolves.toMatchObject({
+      enabled: true,
+      exempt: false,
+      video: { remaining: 0, nextAt: "2026-11-21T14:32:00Z" }
+    });
+  });
+
+  it("a 404 or a network failure means no limit is known", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    const { getUploadQuota } = await import("@/api/threespeak-embed/api");
+    await expect(getUploadQuota("a")).resolves.toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(getUploadQuota("a")).resolves.toBeNull();
   });
 });

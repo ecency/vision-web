@@ -2130,7 +2130,14 @@
     "video-attached": "Video attached",
     "video-type": "Video type",
     "type-video": "Video",
-    "type-short": "Short"
+    "type-short": "Short",
+    "limit-video_one": "Free 3Speak accounts can upload {{count}} video per 24 hours.",
+    "limit-video_other": "Free 3Speak accounts can upload {{count}} videos per 24 hours.",
+    "limit-short_one": "Free 3Speak accounts can upload {{count}} short per 24 hours.",
+    "limit-short_other": "Free 3Speak accounts can upload {{count}} shorts per 24 hours.",
+    "limit-reached": "You have reached the daily 3Speak upload limit for free accounts.",
+    "limit-next": "Your next upload is possible on {{time}}.",
+    "limit-upgrade": "Get 3Speak Pro to remove this limit"
   },
   "tag-selector": {
     "placeholder-empty": "Tags. First tag is main category. Sortable.",

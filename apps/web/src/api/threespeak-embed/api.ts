@@ -2,6 +2,13 @@ import { EcencyConfigManager } from "@/config";
 import * as ls from "@/utils/local-storage";
 import { ensureValidTokenWithin } from "@/utils/user-token";
 import { VideoUploadResult, ThreeSpeakEmbedVideo } from "./types";
+import {
+  parseThreeSpeakUploadLimitText,
+  parseThreeSpeakUploadQuota,
+  ThreeSpeakUploadLimitError,
+  ThreeSpeakUploadQuota,
+  TusRefusalError
+} from "./upload-limits";
 
 function getEmbedEndpoint(): string {
   return EcencyConfigManager.getConfigValue(
@@ -54,6 +61,12 @@ async function requestUploadToken(
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
+    // Over the free daily limit: stop here. No retry and no other upload
+    // path, 3Speak refuses those too.
+    const limit = response.status === 429 ? parseThreeSpeakUploadLimitText(text) : null;
+    if (limit) {
+      throw new ThreeSpeakUploadLimitError(limit);
+    }
     const err = new Error(`[3Speak Embed] Failed to get upload token: ${response.status} ${text}`);
     (err as any).status = response.status;
     throw err;
@@ -148,6 +161,19 @@ export async function uploadVideoEmbed(
 const TUS_RETRY_DELAYS = [0, 3000, 5000, 10000, 20000];
 
 /**
+ * A TUS create can be refused over the daily limit too (3Speak checks again
+ * when the upload is created). tus-js-client does not retry a 4xx other than
+ * 409/423, so this only turns the refusal into the same error the token
+ * request throws.
+ */
+function toUploadLimitError(error: TusRefusalError): Error {
+  const res = error.originalResponse;
+  if (!res || res.getStatus() !== 429) return error;
+  const limit = parseThreeSpeakUploadLimitText(res.getBody());
+  return limit ? new ThreeSpeakUploadLimitError(limit) : error;
+}
+
+/**
  * Run a TUS upload to completion. Resolves on success, rejects on error.
  * Aborts in-flight parts on error so a failed parallel upload doesn't keep
  * pushing bytes in the background.
@@ -175,7 +201,7 @@ async function runTusUpload(
       metadata: { filename: file.name },
       onError(error: Error) {
         upload.abort().catch(() => {});
-        reject(error);
+        reject(toUploadLimitError(error));
       },
       onProgress(bytesUploaded: number, bytesTotal: number) {
         progressCallback(Number(((bytesUploaded / bytesTotal) * 100).toFixed(2)));
@@ -216,7 +242,7 @@ async function uploadFromHeader(
       onError(error: Error) {
         // Cancel any in-progress retry before rejecting, mirroring runTusUpload.
         upload.abort().catch(() => {});
-        reject(error);
+        reject(toUploadLimitError(error));
       },
       onProgress(bytesUploaded: number, bytesTotal: number) {
         progressCallback(Number(((bytesUploaded / bytesTotal) * 100).toFixed(2)));
@@ -245,6 +271,27 @@ async function uploadFromHeader(
 
     upload.start();
   });
+}
+
+/**
+ * The active user's 3Speak daily upload allowance, via our backend proxy.
+ * Resolves null on any failure (a 3Speak server without limits answers 404,
+ * no login, network error): the quota only drives an early notice and must
+ * never block an upload.
+ */
+export async function getUploadQuota(owner: string): Promise<ThreeSpeakUploadQuota | null> {
+  try {
+    const code = await getThreeSpeakAuthCode();
+    const response = await fetch("/api/threespeak/upload-quota", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, code })
+    });
+    if (!response.ok) return null;
+    return parseThreeSpeakUploadQuota(await response.json());
+  } catch {
+    return null;
+  }
 }
 
 /**

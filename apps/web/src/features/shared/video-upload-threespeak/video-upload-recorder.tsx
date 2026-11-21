@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import useMount from "react-use/lib/useMount";
+import useMountedState from "react-use/lib/useMountedState";
 import { VideoUploadRecorderActions } from "./video-upload-recorder-actions";
 import { VideoUploadRecorderNoPermission } from "./video-upload-recorder-no-permission";
 import { error } from "../feedback";
@@ -10,16 +11,32 @@ import { useThreeSpeakEmbedUpload } from "@/api/threespeak-embed";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import i18next from "i18next";
 import { formatError } from "@/api/format-error";
+import {
+  isThreeSpeakUploadLimitError,
+  ThreeSpeakUploadLimit
+} from "@/api/threespeak-embed/upload-limits";
 
 interface Props {
   onEmbedUrlReady: (embedUrl: string, permlink: string) => void;
   setSelectedFile: (v: string, mime: string) => void;
   onReset: () => void;
+  /**
+   * 3Speak refused the upload over the free daily limit; the recording is kept.
+   * `owner` is the account that uploaded, which may no longer be the active one.
+   */
+  onLimitReached?: (limit: ThreeSpeakUploadLimit, owner: string) => void;
   isShort?: boolean;
 }
 
-export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile, isShort }: Props) {
+export function VideoUploadRecorder({
+  onEmbedUrlReady,
+  onReset,
+  setSelectedFile,
+  onLimitReached,
+  isShort
+}: Props) {
   const { activeUser } = useActiveAccount();
+  const isMounted = useMountedState();
   const [stream, setStream] = useState<MediaStream>();
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder>();
   const [recordedVideoSrc, setRecordedVideoSrc] = useState<string>();
@@ -184,6 +201,7 @@ export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile,
                       return;
                     }
 
+                    const owner = activeUser.username;
                     try {
                       const mime = recordedBlob.type || "video/webm";
                       const ext = mime.includes("mp4") ? "mp4" : "webm";
@@ -192,7 +210,7 @@ export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile,
                       });
                       const result = await uploadVideo({
                         file,
-                        owner: activeUser.username,
+                        owner,
                         isShort
                       });
                       if (result) {
@@ -205,6 +223,12 @@ export function VideoUploadRecorder({ onEmbedUrlReady, onReset, setSelectedFile,
                         setSelectedFile(fileUrl, mime);
                       }
                     } catch (e) {
+                      if (isThreeSpeakUploadLimitError(e)) {
+                        // The recorder unmounts when the dialog closes, so a
+                        // refusal that lands later belongs to no open dialog.
+                        if (isMounted()) onLimitReached?.(e.limit, owner);
+                        return;
+                      }
                       error(...formatError(e));
                     }
                   }}
