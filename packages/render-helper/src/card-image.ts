@@ -335,6 +335,14 @@ function stripHiddenRegions(text: string): string {
 // backslash escape is one character, so `\\[` and `\\]` are not brackets.
 const MD_IMAGE_RE = /!\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n)|\[(?:[^[\]\n\\]|\\[^\n]|\\(?=\n)|\n(?! *\n))*\])*\])*\]\( *(?:\n *)?(?:<((?:[^<>\n\\]|\\[^\n]){1,2048})>|((?:[^)\\\u0000-\u0020\u007f]|\\[\s\S]){1,2048}))(?:(?= |\n) *(?:\n *)?(?:"(?:[^"\n]|\n(?! *\n))*"|'(?:[^'\n]|\n(?! *\n))*'))? *(?:\n *)?\)/
 
+// Whether the character at `pos` is backslash-escaped: an odd run of
+// backslashes right before it.
+function escapedAt(text: string, pos: number): boolean {
+  let k = pos - 1
+  while (k >= 0 && text.charCodeAt(k) === 0x5c) k--
+  return (pos - 1 - k) % 2 === 1
+}
+
 // A `%` that starts no percent escape.
 const STRAY_PCT_RE = /%(?![\da-f]{2})/i
 
@@ -1097,6 +1105,9 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
       !SAFE_URL_RE.test(url) ||
       (mdMatch[1] === undefined && url.includes('(')) ||
       opensBlockInside(mdMatch[0]) ||
+      // An escaped `!` (an odd run of backslashes before it) makes a link,
+      // not an image (#2179).
+      escapedAt(cleaned, mdMatch.index ?? 0) ||
       // A backslash before whitespace escapes nothing in a plain destination.
       (mdMatch[2] !== undefined && /\\[\u0000-\u0020]/.test(mdMatch[2])) ||
       // With a `%` that starts no escape, the render normalises the escaped

@@ -167,6 +167,12 @@ describe('every image form: card and render agree on parser-rewritten input', ()
     '![a [b [c]] d](https://e.com/a.png) <img src="https://e.com/b.png">',
     '![a [b [c [d]]] e](https://e.com/a.png)\n\n![y](https://e.com/b.png)',
     '![a [b [c [d]]] e](https://e.com/a.png) <img src="https://e.com/b.png">',
+    // An escaped `!` makes a link, not an image (#2179).
+    '\\![a](https://e.com/a.png) ![c](https://e.com/b.png)',
+    '\\![a [b] c](https://e.com/a.png) ![d](https://e.com/b.png)',
+    '\\![a \\[b](https://e.com/a.png) ![d](https://e.com/b.png)',
+    'x \\![a [b] c](https://e.com/a.png)\n\n![d](https://e.com/b.png)',
+    '\\\\![a [b] c](https://e.com/a.png) ![d](https://e.com/b.png)',
     // An escaped bracket is not a bracket: the label ends elsewhere.
     '![\\[1] my photo](https://e.com/page)\n\n![d](https://e.com/b.png)',
     '![a \\[b] c](https://e.com/page) ![d](https://e.com/b.png)',
