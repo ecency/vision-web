@@ -16,20 +16,35 @@ vi.mock("@/utils/user-token", () => ({
 
 // Drive tus-js-client's upload callbacks deterministically. `runUpload` is set
 // per-test to simulate the sequence of onAfterResponse / onSuccess calls.
+type TusPart = { abort: (shouldTerminate?: boolean) => Promise<void> };
+type TusInstance = { _parallelUploads: TusPart[] | null };
+
 const tusMock = vi.hoisted(() => ({
-  runUpload: (_options: any) => {}
+  runUpload: (_options: any) => {},
+  // The argument of every abort() call, in order.
+  aborts: [] as Array<boolean | undefined>,
+  starts: 0,
+  onStart: undefined as ((instance: TusInstance) => void) | undefined
 }));
 
 vi.mock("tus-js-client", () => ({
+  // tus's default retry rule, which the upload defers to when not aborted.
+  defaultOptions: { onShouldRetry: () => false },
   Upload: class {
     options: any;
     constructor(_file: unknown, options: any) {
       this.options = options;
     }
+    _parallelUploads: TusPart[] | null = null;
     start() {
+      tusMock.starts += 1;
+      tusMock.onStart?.(this);
       tusMock.runUpload(this.options);
     }
-    abort() {
+    abort(shouldTerminate?: boolean) {
+      tusMock.aborts.push(shouldTerminate);
+      // Like tus: the parent aborts each part and drops the returned promises.
+      for (const part of this._parallelUploads ?? []) part.abort(shouldTerminate);
       return Promise.resolve();
     }
   }
@@ -258,6 +273,217 @@ describe("uploadVideoEmbed against a legacy backend (header fallback)", () => {
     };
     const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
     await expect(uploadVideoEmbed(smallFile(), "a", false, () => {})).rejects.toThrow(/network down/);
+  });
+});
+
+// Closing the dialog or switching account aborts the upload: the TUS upload
+// stops and asks the server to delete the partial file (abort(true)).
+describe("aborting an upload", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    tusMock.aborts = [];
+    tusMock.starts = 0;
+  });
+
+  // Never finishes on its own, like a large file still in flight.
+  const hang = () => {
+    tusMock.runUpload = () => {};
+  };
+
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort mid-upload terminates the TUS upload and rejects (%s)", async (_name, extra) => {
+    stubTokenResponse(extra);
+    hang();
+    const controller = new AbortController();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const upload = uploadVideoEmbed(bigFile(), "a", false, () => {}, controller.signal);
+    await vi.waitFor(() => expect(tusMock.starts).toBe(1));
+
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(tusMock.aborts).toEqual([true]);
+  });
+
+  it("a failed DELETE of a parallel part does not surface as an unhandled rejection", async () => {
+    stubTokenResponse({ permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" });
+    const partAborts: Array<boolean | undefined> = [];
+    // A plain function: vi.fn would attach its own handler to the promise it returns.
+    let terminations = 0;
+    const failedTerminate = () => {
+      terminations += 1;
+      return Promise.reject(new Error("tus: failed to terminate upload"));
+    };
+    // tus keeps the parts of a parallel upload in _parallelUploads; its own
+    // abort(true) drops the promise each part's DELETE returns.
+    tusMock.runUpload = () => {};
+    tusMock.onStart = (instance) => {
+      instance._parallelUploads = [0, 1, 2].map(() => ({
+        abort: (shouldTerminate?: boolean) => {
+          partAborts.push(shouldTerminate);
+          return shouldTerminate ? failedTerminate() : Promise.resolve();
+        }
+      }));
+    };
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const controller = new AbortController();
+      const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+      const upload = uploadVideoEmbed(bigFile(), "a", false, () => {}, controller.signal);
+      await vi.waitFor(() => expect(tusMock.starts).toBe(1));
+
+      controller.abort();
+
+      await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+      await new Promise((r) => setTimeout(r, 10));
+      // Every part is terminated, and every failure is handled.
+      expect(terminations).toBe(3);
+      expect(partAborts.filter((t) => t === true)).toHaveLength(3);
+      // The parent only stops; it has no upload of its own to delete yet.
+      expect(tusMock.aborts).toEqual([false]);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      tusMock.onStart = undefined;
+    }
+  });
+
+  // tus sets up asynchronously after start() (fingerprint, file read, part
+  // slicing) and resets its own aborted flag on the way, so an abort that lands
+  // in that window must still keep every request from going out.
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort during TUS start-up sends no upload request (%s)", async (_name, extra) => {
+    stubTokenResponse(extra);
+    let finishSetup: () => void = () => {};
+    const sent: string[] = [];
+    const request = (method: string) => ({ getMethod: () => method });
+    tusMock.runUpload = (options) => {
+      void new Promise<void>((resolve) => (finishSetup = resolve)).then(async () => {
+        // The create POST, then the termination DELETE tus may still send.
+        for (const method of ["POST", "DELETE"]) {
+          try {
+            await options.onBeforeRequest?.(request(method));
+            sent.push(method);
+          } catch (e) {
+            if (method === "POST") options.onError(e);
+          }
+        }
+      });
+    };
+    const controller = new AbortController();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const upload = uploadVideoEmbed(bigFile(), "a", false, () => {}, controller.signal);
+    await vi.waitFor(() => expect(tusMock.starts).toBe(1));
+
+    controller.abort();
+    finishSetup();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(sent).toEqual(["DELETE"]));
+  });
+
+  it("requests go out normally while the upload is not aborted", async () => {
+    stubTokenResponse({ permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" });
+    tusMock.runUpload = async (options) => {
+      await options.onBeforeRequest?.({ getMethod: () => "PATCH" });
+      options.onSuccess();
+    };
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+
+    await expect(
+      uploadVideoEmbed(smallFile(), "a", false, () => {}, new AbortController().signal)
+    ).resolves.toMatchObject({ permlink: "TOK12345" });
+  });
+
+  it("an already aborted signal requests no token and starts no upload", async () => {
+    stubTokenResponse({ permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" });
+    const controller = new AbortController();
+    controller.abort();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+
+    await expect(
+      uploadVideoEmbed(smallFile(), "a", false, () => {}, controller.signal)
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(tusMock.starts).toBe(0);
+  });
+
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort while the token is being issued starts no upload (%s)", async (_name, extra) => {
+    const controller = new AbortController();
+    let answerToken: () => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            answerToken = () =>
+              resolve({
+                ok: true,
+                json: () =>
+                  Promise.resolve({ token: "tok", upload_url: "https://embed.example/uploads", ...extra })
+              });
+          })
+      )
+    );
+    hang();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+    const upload = uploadVideoEmbed(smallFile(), "a", false, () => {}, controller.signal);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    // The signal reaches the token request.
+    expect(vi.mocked(fetch).mock.calls[0][1]?.signal).toBe(controller.signal);
+
+    controller.abort();
+    // A fetch that answers anyway (the abort raced the response) is still ignored.
+    answerToken();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(tusMock.starts).toBe(0);
+  });
+
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort after the upload finished does not delete it (%s)", async (_name, extra) => {
+    stubTokenResponse(extra);
+    tusMock.runUpload = (options) => {
+      options.onAfterResponse?.(mockReq(), mockRes("https://play.3speak.tv/embed?v=a/TOK12345"));
+      options.onSuccess();
+    };
+    const controller = new AbortController();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+
+    await expect(
+      uploadVideoEmbed(smallFile(), "a", false, () => {}, controller.signal)
+    ).resolves.toMatchObject({ permlink: "TOK12345" });
+    controller.abort();
+
+    expect(tusMock.aborts).toEqual([]);
+  });
+
+  it.each([
+    ["preferred path", { permlink: "TOK12345", embed_url: "https://play.3speak.tv/embed?v=a/TOK12345" }],
+    ["legacy header path", {}]
+  ])("an abort after a failed upload does not terminate it a second time (%s)", async (_name, extra) => {
+    stubTokenResponse(extra);
+    tusMock.runUpload = (options) => options.onError(new Error("network down"));
+    const controller = new AbortController();
+    const { uploadVideoEmbed } = await import("@/api/threespeak-embed/api");
+
+    await expect(
+      uploadVideoEmbed(smallFile(), "a", false, () => {}, controller.signal)
+    ).rejects.toThrow(/network down/);
+    controller.abort();
+
+    // Only the error path's own abort(), which keeps the partial upload resumable.
+    expect(tusMock.aborts).toEqual([undefined]);
   });
 });
 

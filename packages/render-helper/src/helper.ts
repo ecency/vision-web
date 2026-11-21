@@ -706,5 +706,59 @@ export function isValidUsername(username: string): boolean {
   });
 }
 
+// Destination normalisation shared by the render (markdown-to-html.method.ts)
+// and the card scanner (card-image.ts), so both name an image by the same URL:
+// the card and LCP preload proxy what the body shows only while they agree
+// (#2156, #2169, #2176). Kept here because the light card bundle may import
+// this file but never the renderer.
 
+/** Lone surrogates as U+FFFD, as a browser reads them; encodeURI throws on one. */
+export function withoutLoneSurrogates(text: string): string {
+  return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, (c) => (c.length === 2 ? c : '\ufffd'))
+}
 
+/** A URL as Remarkable's normalizeLink writes it: decodeURI, then encodeURI. */
+export function uriNormalized(url: string): string {
+  try {
+    url = decodeURI(url)
+  } catch {
+    // Remarkable keeps a malformed URI as it is too.
+  }
+  return encodeURI(url)
+}
+
+// Whitespace, controls and the ASCII encodeURI encodes.
+const PLAIN_UNSAFE = /[\s\u0000-\u001f\u007f"<>[\\\]^`{|}]/
+const PLAIN_UNSAFE_ALL = new RegExp(PLAIN_UNSAFE.source, 'g')
+
+/**
+ * A destination as Remarkable normalises it (encodeURI) but for `%` and
+ * non-ASCII, which stay as written: those are what the plain form keeps, so
+ * the two forms of one URL name it alike (#2158: `<https://e.com/é>` is
+ * `https://e.com/é`, as `https://e.com/é` is). The ASCII characters encodeURI
+ * encodes (whitespace, controls, `\`, quotes, brackets) are still encoded: a
+ * browser reads a raw `\` as `/`.
+ */
+export function plainDestination(url: string): string {
+  if (!PLAIN_UNSAFE.test(url)) return url
+  // A `%` that starts no escape cannot stay raw next to new escapes
+  // (`50%%20off`): such a URL is normalised as Remarkable normalises it.
+  if (/%(?![\da-f]{2})/i.test(url)) return uriNormalized(url)
+  return url.replace(PLAIN_UNSAFE_ALL, (c) => encodeURIComponent(c))
+}
+
+// leofinance.io and inleo.io post and thread links, internalised as the render
+// does before it parses (`https://inleo.io/posts/` is `/@`). Shared with the
+// card scanner, which must read the text the parser reads (#2176).
+const LEO_LINK_PREFIXES = [
+  'https://leofinance.io/threads/view/',
+  'https://leofinance.io/posts/',
+  'https://leofinance.io/threads/',
+  'https://inleo.io/threads/view/',
+  'https://inleo.io/posts/',
+  'https://inleo.io/threads/'
+]
+export function internalizeLeoLinks(input: string): string {
+  for (const prefix of LEO_LINK_PREFIXES) input = input.split(prefix).join('/@')
+  return input
+}

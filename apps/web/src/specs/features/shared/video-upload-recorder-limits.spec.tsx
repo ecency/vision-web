@@ -168,6 +168,47 @@ describe("VideoUploadRecorder and the 3Speak daily upload limit", () => {
     expect(setSelectedFile).not.toHaveBeenCalled();
   });
 
+  it("closing the recorder mid-upload aborts the upload", async () => {
+    let signal: AbortSignal | undefined;
+    mocks.uploadVideo.mockImplementation((args: { signal: AbortSignal }) => {
+      signal = args.signal;
+      return new Promise(() => {});
+    });
+    const { upload, unmount } = await renderWithRecording();
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    expect(signal?.aborted).toBe(false);
+    unmount();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("a second click before the button disables starts no second upload", async () => {
+    mocks.uploadVideo.mockImplementation(() => new Promise(() => {}));
+    const { upload } = await renderWithRecording();
+
+    // The mocked hook never reports isPending, like two clicks in one frame.
+    fireEvent.click(upload);
+    fireEvent.click(upload);
+
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.uploadVideo).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a failed upload the recording can be uploaded again", async () => {
+    mocks.uploadVideo.mockRejectedValueOnce(new Error("network down"));
+    mocks.uploadVideo.mockImplementationOnce(() => new Promise(() => {}));
+    const { upload } = await renderWithRecording();
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+    fireEvent.click(upload);
+
+    await waitFor(() => expect(mocks.uploadVideo).toHaveBeenCalledTimes(2));
+  });
+
   it("any other failure still shows the error toast", async () => {
     mocks.uploadVideo.mockRejectedValue(new Error("network down"));
     const { upload, onLimitReached } = await renderWithRecording();

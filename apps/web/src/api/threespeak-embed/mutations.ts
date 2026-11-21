@@ -17,21 +17,31 @@ export function useThreeSpeakEmbedUpload() {
       file,
       owner,
       isShort = false,
-      isCurrent
+      isCurrent,
+      signal
     }: {
       file: File;
       owner: string;
       isShort?: boolean;
       /** Whether this upload still belongs to the visible dialog session. */
       isCurrent?: () => boolean;
+      /** Aborting it stops the upload and deletes the partial file on 3Speak. */
+      signal?: AbortSignal;
     }): Promise<VideoUploadResult> => {
       try {
-        const result = await uploadVideoEmbed(file, owner, isShort, (percentage) => {
-          if (isCurrent?.() ?? true) setCompleted(percentage);
-        });
+        const result = await uploadVideoEmbed(
+          file,
+          owner,
+          isShort,
+          (percentage) => {
+            if (isCurrent?.() ?? true) setCompleted(percentage);
+          },
+          signal
+        );
         return result;
       } catch (e) {
-        if (isCurrent?.() === false) throw e;
+        // An aborted upload was abandoned on purpose: nothing to report.
+        if (signal?.aborted || isCurrent?.() === false) throw e;
         // TUS errors expose status via originalResponse; fetch errors via .status
         const status =
           (e as any)?.originalResponse?.getStatus?.() ??
