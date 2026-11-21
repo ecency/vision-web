@@ -10,6 +10,7 @@ import { classNameObject } from "@ui/util";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useHydrated } from "@/api/queries";
 import { isPathInSection } from "@/utils/path-section";
+import { useAdventVisible } from "@/features/advent/use-advent-visible";
 
 export function NavbarTextMenu() {
   const pathname = usePathname();
@@ -20,8 +21,15 @@ export function NavbarTextMenu() {
   // see Communities (a content-rich discovery surface) in that slot instead.
   // Gate on `hydrated` so server and first client render agree (no mismatch).
   const isLoggedIn = hydrated && !!activeUser;
+  // the Advent Calendar shows itself by date, first so it is never clipped
+  const advent = useAdventVisible();
 
   const ITEMS = [
+    {
+      link: "/advent",
+      label: i18next.t("navbar.advent"),
+      show: advent
+    },
     {
       link: "/discover",
       label: i18next.t("navbar.discover"),
