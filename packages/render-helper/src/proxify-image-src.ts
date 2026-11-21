@@ -91,7 +91,7 @@ export function isValidUrl(url: string): boolean {
  * the encoder is quadratic, so this bounds per-render CPU on user-authored
  * input. Observed maximum in real post bodies is ~234 characters.
  */
-const MAX_PROXIED_URL_LENGTH = 2048
+export const MAX_PROXIED_URL_LENGTH = 2048
 
 /**
  * A legacy foreign SIZED proxy URL: `images.hive.blog/<WxH>/<inner>` or the

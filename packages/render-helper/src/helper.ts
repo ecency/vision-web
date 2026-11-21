@@ -73,7 +73,10 @@ export function decodeImageSrc(src: string): string {
 const LEGACY_ENCODED_INNER_RE =
   /^https?:\/\/(?:images\.hive\.blog|steemitimages\.com|images\.ecency\.com|i\.ecency\.com)\/\d+x\d+\/https?(?::%2F%2F|%3A%2F%2F|%3A\/\/)/i
 
-export function decodeDomImageSrc(src: string): string {
+export function decodeDomImageSrc(raw: string): string {
+  // Trimmed first: the legacy branch is chosen on the URL itself, so
+  // surrounding spaces must not hide it (#2183).
+  const src = raw.trim()
   try {
     const full = decodeURIComponent(src)
     // A legacy sized proxy path with an encoded inner URL
@@ -178,9 +181,16 @@ export function hasAmpSentinel(body: string): boolean {
 // Remarkable's backslash escapes (unescapeMd).
 const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
 
+// A markdown destination's backslash escapes resolved as Remarkable resolves
+// them; an escaped `&` is a literal one (`&amp;`) when ampEscapes.
+export function unescapeDestination(src: string, ampEscapes = true): string {
+  return src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
+}
+
 /**
  * A body image URL taken from the raw post body (the LCP preload's scan),
- * decoded the way the render reads it, then percent-encoding.
+ * with its references decoded the way the render's DOM holds it; the
+ * percent-encoding is left for decodeDomImageSrc.
  * A markdown destination (`destination`) is unescaped as Remarkable does, an
  * escaped `&` (`\\&`) staying a literal ampersand unless the body turns that
  * off (hasAmpSentinel), and its complete references are decoded once (#2092).
@@ -188,17 +198,11 @@ const MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g
  * Raw HTML differs only for a legacy name without `;` before a
  * non-alphanumeric character, which an HTML attribute decodes.
  */
-// A markdown destination's backslash escapes resolved as Remarkable resolves
-// them; an escaped `&` is a literal one (`&amp;`) when ampEscapes.
-export function unescapeDestination(src: string, ampEscapes = true): string {
-  return src.replace(MD_ESCAPE_RE, (_m, c: string) => (c === '&' && ampEscapes ? '&amp;' : c))
-}
-
-export function decodeRawBodyImageSrc(src: string, destination = false, ampEscapes = true): string {
+export function rawBodySource(src: string, destination = false, ampEscapes = true): string {
   const unescaped = destination
     ? unescapeDestination(src, ampEscapes)
     : src.replace(/\\&/g, '&amp;')
-  return decodeDomImageSrc(decodeCompleteReferences(unescaped))
+  return decodeCompleteReferences(unescaped)
 }
 
 /**

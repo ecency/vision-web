@@ -1,5 +1,6 @@
 import { Remarkable } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
+import { linearLinkify } from './linear-linkify'
 import { sanitizeHtml } from './sanitize-html.method'
 import { withoutLoneSurrogates } from '../helper'
 
@@ -11,7 +12,7 @@ function getMd(): Remarkable {
       html: true,
       breaks: true,
       typographer: false
-    }).use(linkify)
+    }).use(linkify).use(linearLinkify)
   }
   return mdInstance
 }

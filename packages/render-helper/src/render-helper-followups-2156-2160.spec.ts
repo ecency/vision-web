@@ -113,8 +113,13 @@ describe('#2156-#2160 review round', () => {
     expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
   })
 
-  it.each(['https://h.example/p.jpg[^1]', 'https://h.example/p.jpg[x](https://e.com)', 'https://h.example/p.jpg![x](https://e.com/q.png)'])('the card leaves a following construct out (%j)', (body) => {
+  it.each(['https://h.example/p.jpg[^1]', 'https://h.example/p.jpg[x](https://e.com)'])('the card leaves a following construct out (%j)', (body) => {
     expect(getEntryCardImageRawUrl(entry(body))).toBe('https://h.example/p.jpg')
+  })
+
+  // A markdown image after a bare URL: the render's to read (#2180).
+  it('defers on a bare URL with a markdown image after it', () => {
+    expect(getEntryCardImageRawUrl(entry('https://h.example/p.jpg![x](https://e.com/q.png)'))).toBeNull()
   })
 
   it('an underscore host is a host', () => {

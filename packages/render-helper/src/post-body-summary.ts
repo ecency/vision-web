@@ -1,4 +1,4 @@
-import { decodeEntities, makeEntryCacheKey, stripHtmlTags } from './helper'
+import { decodeEntities, makeEntryCacheKey, stripHtmlTags, withoutLoneSurrogates } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { cleanReply } from './methods'
@@ -81,7 +81,9 @@ function postBodySummary(entryBody: string, length: number = 200, platform:'ios'
   // Convert markdown to html
   let text = '';
   try {
-    text = summaryRenderer.render(entryBody)
+    // A lone surrogate throws in the link normaliser (URI malformed); the body
+    // render reads it as U+FFFD, so the summary does too (#2182).
+    text = summaryRenderer.render(withoutLoneSurrogates(entryBody))
   } catch (err) {
     // Log error with context for debugging
     console.error('[postBodySummary] Failed to render markdown:', {

@@ -1,6 +1,6 @@
-import { getProxyBase, proxifyImageSrc } from './proxify-image-src'
+import { getProxyBase, MAX_PROXIED_URL_LENGTH, proxifyImageSrc } from './proxify-image-src'
 import { cleanReply } from './methods/clean-reply.method'
-import { hasAmpSentinel, imageUrlEnd, internalizeLeoLinks, plainDestination, unescapeDestination, withoutLoneSurrogates, makeEntryCacheKey, decodeImageSrc, decodeRawBodyImageSrc, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
+import { hasAmpSentinel, imageUrlEnd, internalizeLeoLinks, plainDestination, unescapeDestination, withoutLoneSurrogates, makeEntryCacheKey, decodeImageSrc, rawBodySource, decodeDomImageSrc, decodeAttributeEntities, decodeEntities, decodeCompleteReferences, stripHtmlTags } from './helper'
 import { entryMemoGet, entryMemoSet, MEMO_MISS } from './cache'
 import { Entry } from './types'
 import { regexMatches } from './regex-matches'
@@ -390,7 +390,7 @@ function parserInput(raw: string): string {
 // A markdown image whose URL exceeds MD_IMAGE_RE's length bound (or whose syntax is broken)
 // isn't captured by it — leaving `mdMatch` null, or (MD_IMAGE_RE is unanchored) matching a
 // *later* image instead. This linear detector (no closing `)` required; a label opening a
-// nested `[` counts, #2179) still spots the uncaptured image so findFirstImageUrl can bail
+// nested `[` counts, #2179) still spots the uncaptured image so the lookups can bail
 // to the full parser rather than promoting a later HTML/bare/markdown candidate over it.
 // A line inside an image that may open a block as the parser reads one: a
 // heading, quote, list item, fence, thematic break, setext underline, table
@@ -432,6 +432,103 @@ function escapedLabelHoldsUrl(match: string): boolean {
   return match.slice(0, close === -1 ? match.length : close).includes('://')
 }
 const MD_IMAGE_RE_G = new RegExp(MD_IMAGE_RE.source, 'g')
+
+// A markdown image's head, `![label](`, read with MD_IMAGE_RE's own label
+// grammar, so its last `]` is the one that closes the label.
+const MD_IMAGE_HEAD_RE = new RegExp(MD_IMAGE_RE.source.slice(0, MD_IMAGE_RE.source.indexOf('\\]\\(') + 4), 'y')
+
+/**
+ * The offset of every `]` that closes the label of a link or image the scans
+ * can read, so a URL after a `](` can be told apart from one the render reads
+ * as text (#2180). A label closed by an escaped `]`, or opened by an escaped
+ * `[`, is text.
+ */
+function knownLabelCloses(cleaned: string): { closes: Set<number>; untrusted: Array<[number, number]> } {
+  const closes = new Set<number>()
+  // The destinations of links the parser may read otherwise, in source order.
+  const untrusted: Array<[number, number]> = []
+  for (const m of regexMatches(cleaned, MD_IMAGE_RE_G)) {
+    // An escaped `!` makes a link, which the loop below reads.
+    if (escapedAt(cleaned, m.index ?? 0)) continue
+    MD_IMAGE_HEAD_RE.lastIndex = m.index ?? 0
+    if (MD_IMAGE_HEAD_RE.exec(cleaned)) closes.add(MD_IMAGE_HEAD_RE.lastIndex - 2)
+  }
+  for (const m of regexMatches(cleaned, MD_LINK_RE)) {
+    const open = m.index ?? 0
+    const close = open + 1 + m[1].length
+    if (escapedAt(cleaned, open) || escapedAt(cleaned, close)) continue
+    if (
+      // The pattern is looser than the parser: a blank line ends the
+      // paragraph, `[x][y](url)` is a reference link followed by text, an
+      // angle destination must end the destination, and a `(` in a plain one
+      // may be one the parser balances further on.
+      /\n[ \t]*\n/.test(m[0]) ||
+      cleaned[open - 1] === ']' ||
+      (/[<>]/.test(m[2]) && !/^<[^<>]*>$/.test(m[2])) ||
+      (!m[2].startsWith('<') && m[2].includes('('))
+    ) {
+      untrusted.push([close + 2, open + m[0].length])
+      continue
+    }
+    closes.add(close)
+  }
+  return { closes, untrusted }
+}
+
+/**
+ * The `]` of a `](` that the URL at `idx` follows as a destination would
+ * (spaces, at most one line break and an angle bracket between), or -1.
+ */
+function labelCloseBefore(text: string, idx: number): number {
+  let k = idx - 1
+  if (text[k] === '<') k--
+  while (k >= 0 && text[k] === ' ') k--
+  if (text[k] === '\n') {
+    k--
+    while (k >= 0 && text[k] === ' ') k--
+  }
+  return text[k] === '(' && text[k - 1] === ']' ? k - 1 : -1
+}
+
+// An image the render leaves without a src: a plain label and a plain URL the
+// proxy refuses for its length, with nothing in it that the render would
+// shorten (a reference, an escape, a percent escape). Sticky, at a `![`.
+const DROPPED_IMAGE_RE = /!\[[^[\]\n\\`<>]*\]\((https?:\/\/[^\s()<>[\]\\`&%"']+)\)/y
+
+// The end of the image at `pos` when the render drops it (#2182), else -1.
+function droppedImageEnd(text: string, pos: number): number {
+  DROPPED_IMAGE_RE.lastIndex = pos
+  const m = DROPPED_IMAGE_RE.exec(text)
+  return m && m[1].length > MAX_PROXIED_URL_LENGTH ? DROPPED_IMAGE_RE.lastIndex : -1
+}
+
+const DROPPED_IMAGE_G = new RegExp(DROPPED_IMAGE_RE.source, 'g')
+
+// Whether `text` before `pos` is only images the render drops and whitespace
+// (a shorter image there would itself be the first image).
+function onlyDroppedBefore(text: string, pos: number): boolean {
+  return !text.slice(0, pos).replace(DROPPED_IMAGE_G, '').trim()
+}
+
+// Whether `text` holds a markdown image the scans cannot read (see
+// firstUnescapedImage), skipping one the render drops for its length (#2182);
+// `dropped` is set when one was skipped.
+function hasUndecidedImage(text: string, seen: { dropped: boolean }): boolean {
+  const re = MD_IMAGE_PRESENT_RE
+  re.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (escapedAt(text, m.index) && !escapedLabelHoldsUrl(m[0])) {
+      re.lastIndex = m.index + 2
+      continue
+    }
+    const end = droppedImageEnd(text, m.index)
+    if (end === -1) return true
+    seen.dropped = true
+    re.lastIndex = end
+  }
+  return false
+}
 const HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i
 // A standalone (auto-linkified) image URL the renderer turns into an <img> via
 // text.method / linkify (IMG_REGEX). Required to sit at a line start or after
@@ -579,10 +676,6 @@ function* standaloneMatches(
   }
 }
 
-function firstStandalone(scan: ScanText, classify: (token: string) => string | null): { url: string; pos: number } | null {
-  for (const hit of standaloneMatches(scan, classify)) return hit
-  return null
-}
 // The href of an anchor's opening tag, quoted either way or bare. Preceded by
 // whitespace, never by `-`: `data-href` is not the href.
 const HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i
@@ -633,22 +726,6 @@ const SAFE_URL_RE = /^https?:\/\//i
 const IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i
 const isImageHref = (href: string): boolean =>
   SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1
-
-/**
- * Fast-path: extract the first image URL from raw markdown without rendering
- * the whole post. Returns null if nothing matches *unambiguously* — when in
- * doubt, the caller falls back to the full markdown2Html → DOM parse path.
- *
- * @param includeBareUrls when true (only getEntryImageRawUrl, for the LCP
- *   preload), also consider standalone bare image URLs the renderer
- *   auto-linkifies into images — so a post whose first body image is a bare URL
- *   (and which has no json_metadata.image thumbnail) is still discovered. The
- *   default (false) keeps catchPostImage / getImage / og-image behavior
- *   byte-identical.
- */
-function findFirstImageUrl(body: string, includeBareUrls = false): string | null {
-  return findFirstImageCandidate(prepareBody(parserInput(body)), includeBareUrls).candidate?.url ?? null
-}
 
 /**
  * Whether the render turns `[label](href)` into an image: a.method compares
@@ -805,7 +882,7 @@ function htmlTextImageUrl(body: string, pos: number): string | null {
   const token = HTML_TEXT_URL_RE.exec(decodeHtmlText(body.slice(pos, end)))?.[0]
   if (!token) return null
   const urlEnd = imageUrlEnd(token)
-  return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd))
+  return urlEnd === -1 ? null : token.slice(0, urlEnd)
 }
 
 // The first body image as the render will proxy it: decoded by where it came
@@ -878,12 +955,27 @@ function strayHashBefore(body: string, pos: number): boolean {
 function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   const candidate = findFirstImageCandidate(prepared, true).candidate
   if (!candidate) return null
-  if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url))
+  const source = candidateSource(body, candidate)
+  if (source === null) return null
+  const url = decodeDomImageSrc(source)
+  if (url.length > MAX_PROXIED_URL_LENGTH) return null
+  // A control character a destination decodes to (`&Tab;`, `%0A`): the render
+  // reads it its own way, and a guessed preload is a wasted download.
+  return candidate.destination && CONTROL_CHAR_RE.test(url) ? null : url
+}
+
+/**
+ * A candidate's URL as the render's DOM holds it: references decoded by where
+ * it came from, an HTML attribute, a markdown destination, HTML block text or
+ * markdown text (#2092, #2098), percent-encoding still as written. Every
+ * lookup reads a candidate through this, so the card, the fast card and the
+ * LCP preload name one URL (#2183). Null rather than a guess where the render
+ * differs.
+ */
+function candidateSource(body: string, candidate: ImageCandidate): string | null {
+  if (candidate.html) return decodeAttributeEntities(candidate.url)
   const ampEscapes = !hasAmpSentinel(body)
-  if (candidate.destination) {
-    const url = decodeRawBodyImageSrc(candidate.url, true, ampEscapes)
-    return CONTROL_CHAR_RE.test(url) ? null : url
-  }
+  if (candidate.destination) return rawBodySource(candidate.url, true, ampEscapes)
   // A bare URL: raw text of an HTML block, or markdown text. Lines are read
   // with code already blanked (a `<div>` inside a fence opens no block); the
   // blanking keeps every offset.
@@ -891,13 +983,20 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   // Develop's reading: the URL token up to a parenthesis, bracket or quote,
   // without trailing sentence punctuation.
   const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4)
+  // The token stops before a `;` that may close a reference (`.png&quot;`)
+  // or be punctuation after literal text (`&foo;`, `\&amp;`): the render's.
+  if (after.startsWith(';') && /&#?[a-z\d]+$/i.test(candidate.url)) return null
   // A lone surrogate reads as U+FFFD in the render now (#2158), which ends
   // the URL there.
   const loneAt = loneSurrogateAt(candidate.url)
   const token = loneAt === -1 ? candidate.url : candidate.url.slice(0, loneAt)
   const tokenUrl = (): string | null => {
     const url = withoutTrailingPunctuation(token, loneAt === -1 ? after : '')
-    return imageUrlEnd(url) === -1 ? null : decodeRawBodyImageSrc(url, false, ampEscapes)
+    return imageUrlEnd(url) === -1 ? null : rawBodySource(url, false, ampEscapes)
+  }
+  // An autolink is its whole URL; one holding a reference is left to the render.
+  if (body[candidate.pos - 1] === '<' && after.startsWith('>')) {
+    return loneAt !== -1 || token.includes('&') ? null : token
   }
   // A raw anchor's text and a reference definition's destination are not
   // autolinked.
@@ -922,7 +1021,7 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
     !strayHashBefore(body, candidate.pos)
   if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl()
   const url = span.slice(0, autolinkUrlEnd(span))
-  return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url)
+  return imageUrlEnd(url) === -1 ? null : url
 }
 
 // Fenced blocks and inline code blanked, offsets kept, nothing else touched:
@@ -1016,6 +1115,8 @@ interface ScanText {
  * lookup; every scan below works on these.
  */
 interface PreparedBody {
+  /** The body as written, same offsets as `cleaned`. */
+  source: string
   cleaned: string
   image: ScanText
   video: ScanText
@@ -1025,10 +1126,11 @@ const EMPTY_SCAN: ScanText = { text: '', inTag: new Uint8Array(0) }
 
 function prepareBody(body: string): PreparedBody {
   const cleaned = body ? stripCodeRegions(body) : ''
-  if (!cleaned) return { cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN }
+  if (!cleaned) return { source: body, cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN }
   const imageText = blankUnequalAnchors(cleaned, false)
   const videoText = blankUnequalAnchors(cleaned, true)
   return {
+    source: body,
     cleaned,
     image: { text: imageText, inTag: markInsideTags(imageText) },
     video: { text: videoText, inTag: markInsideTags(videoText) }
@@ -1046,6 +1148,8 @@ interface ImageCandidate {
   html?: boolean
   /** A markdown destination (`![](url)`, `[url](url)`): unescaped as Remarkable does. */
   destination?: boolean
+  /** A markdown image (`![](url)`), as opposed to a link the render promotes. */
+  md?: boolean
 }
 
 /**
@@ -1143,29 +1247,62 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
   // parser so it resolves the true first image rather than promoting a later HTML/bare/markdown
   // candidate.
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned
-  if (firstUnescapedImage(priorRegion, MD_IMAGE_PRESENT_RE)) {
+  const seen = { dropped: false }
+  if (hasUndecidedImage(priorRegion, seen)) {
     return AMBIGUOUS
   }
 
   // Collect valid candidates with their source position; the rendered document
   // surfaces whichever image appears first in source order.
   const candidates: ImageCandidate[] = []
-  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true })
-  if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
+  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true, md: true })
+  // `data-src`, `x-src`: the pattern reads a name that only ends in `src`,
+  // so which attribute the render takes is its own to say.
+  // Only where it may come first: an image before it wins on source order.
+  const dashSrc = !!htmlMatch && /-src\s*=\s*["'][^"']*["']$/i.test(htmlMatch[0])
+  if (dashSrc && !(mdMatch && mdUrl && (mdMatch.index ?? 0) < (htmlMatch.index ?? 0))) {
+    return AMBIGUOUS
+  }
+  if (htmlMatch && !dashSrc && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
     candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true })
   }
-  if (includeBareUrls) {
-    const bareMatch = firstStandalone(prepared.image, imageToken)
-    if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
-      candidates.push(bareMatch)
+  // A URL after a `](` that closes no label the scans read is text the render
+  // linkifies, maybe into an image (#2180): only the parser reads it, so the
+  // first one defers when it comes before every candidate.
+  const scan = prepared.image
+  const { closes, untrusted } = knownLabelCloses(cleaned)
+  let undecidedAt = -1
+  let range = 0
+  for (const m of regexMatches(scan.text, URL_TOKEN_RE)) {
+    const idx = m.index ?? 0
+    if (scan.inTag[idx]) continue
+    const url = imageToken(m[0])
+    if (url === null) continue
+    // Inside a destination the parser may read otherwise: only it knows.
+    while (range < untrusted.length && untrusted[range][1] <= idx) range++
+    if (range < untrusted.length && untrusted[range][0] <= idx) {
+      undecidedAt = idx
+      break
     }
+    const close = labelCloseBefore(cleaned, idx)
+    if (close !== -1) {
+      if (closes.has(close)) continue
+      undecidedAt = idx
+      break
+    }
+    if (!includeBareUrls || !isStandalone(scan, idx) || !SAFE_URL_RE.test(url)) continue
+    candidates.push({ url, pos: idx })
+    break
+  }
+  if (includeBareUrls) {
     // `[url](url)` image-link form: a markdown link the renderer promotes to an
     // image (a.method) — href is an image URL and the label text equals it.
     // Skip `![...]()` images (preceding `!`). Take the earliest such link.
     for (const m of regexMatches(cleaned, MD_LINK_RE)) {
       const idx = m.index ?? 0
       if (idx > 0 && cleaned[idx - 1] === '!') continue // it's an image ![](), handled above
-      const href = m[2]
+      // An angle destination is the URL inside the brackets.
+      const href = /^<[^<>]*>$/.test(m[2]) ? m[2].slice(1, -1) : m[2]
       if (href && isImageHref(href) && promotesToImage(m[1], href)) {
         candidates.push({ url: href, pos: idx, destination: true })
         break
@@ -1173,9 +1310,26 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
     }
   }
 
-  if (candidates.length === 0) return NONE
+  if (undecidedAt !== -1 && candidates.every((c) => undecidedAt < c.pos)) {
+    return AMBIGUOUS
+  }
   candidates.sort((a, b) => a.pos - b.pos)
-  return { candidate: candidates[0], ambiguous: false }
+  const first = candidates[0]
+  // Past a dropped image only the plain case is read (#2182): dropped images
+  // and whitespace, then a markdown image. Anything else there may hold what
+  // the scans misread, so the render reads it.
+  // Read as written: the code blanking can hide text there.
+  if (seen.dropped && !(first?.md && onlyDroppedBefore(prepared.source, first.pos))) {
+    return AMBIGUOUS
+  }
+  if (!first) return NONE
+  // The bare scans also take URLs the render shows as no image (a reference
+  // definition, a link's title or text): one first is the render's to read
+  // when a markdown or HTML image follows it.
+  if (!(first.html || first.md) && candidates.some((c) => c.html || c.md)) {
+    return AMBIGUOUS
+  }
+  return { candidate: first, ambiguous: false }
 }
 
 /**
@@ -1187,32 +1341,36 @@ function findFirstImageCandidate(prepared: PreparedBody, includeBareUrls = false
 function fastBodyImage(raw: string, width: number, height: number, format: string): string | null {
   const body = parserInput(raw)
   const prepared = prepareBody(body)
-  // Same precedence as the full lookup: a markdown or HTML image found by the
-  // regex wins outright, because the full lookup returns it before it would
-  // ever render the markdown and notice an earlier poster or bare URL.
-  const strict = findFirstImageCandidate(prepared, false)
-  if (strict.candidate) {
-    return proxifyFound(strict.candidate.url, width, height, format)
-  }
+  const found = findFirstImageCandidate(prepared, true)
   // A markdown image the regex could not decide on: the full render would
   // resolve it, and it may well come first. Nothing else may stand in for it.
-  if (strict.ambiguous) {
+  if (found.ambiguous) {
     return null
   }
+  const first = found.candidate
+  // Same precedence as the full lookup: a markdown or HTML image that comes
+  // first wins outright, because the full lookup returns it before it would
+  // ever render the markdown and notice an earlier poster.
+  if (first && (first.html || first.md)) {
+    const source = candidateSource(body, first)
+    return source === null ? null : proxifySource(source, width, height, format) || null
+  }
   // Otherwise the full lookup would render and take the first <img> in source
-  // order, which is a bare image URL or a video poster.
-  const bare = findFirstImageCandidate(prepared, true).candidate
+  // order, which is a bare image URL, a promoted link or a video poster.
   const poster = findFirstVideoPoster(prepared)
   // The render ends a bare URL at a lone surrogate (#2158), which the full
   // lookup reads its own way: give up rather than name another URL (#2179),
   // unless a poster comes first and wins on source order anyway.
-  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1 && !(poster && poster.pos < bare.pos)) return null
-  if (poster && (!bare || poster.pos < bare.pos)) {
+  if (first && !first.destination && loneSurrogateAt(first.url) !== -1 && !(poster && poster.pos < first.pos)) return null
+  if (poster && (!first || poster.pos < first.pos)) {
     // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at
     // the requested size is exactly what the full render path does with it.
     return proxifyFound(proxifyImageSrc(poster.url, 0, 0, 'match'), width, height, format)
   }
-  return bare ? proxifyFound(bare.url, width, height, format) : null
+  if (!first) return null
+  const source = candidateSource(body, first)
+  // A URL the proxy refuses is one the render drops.
+  return source === null ? null : proxifySource(source, width, height, format) || null
 }
 
 // json_metadata is whatever the publishing client wrote: `thumbnails` has been
@@ -1258,9 +1416,29 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
 // /p/ hash keeps it as written: decoded, a `%20` or `%0A` would become raw
 // whitespace in it.
 function proxifyFound(src: string, width: number, height: number, format: string): string {
-  const entityDecoded = decodeEntities(src)
-  const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format)
-  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(entityDecoded, width, height, format)
+  return proxifySource(decodeEntities(src), width, height, format)
+}
+
+// proxifyFound for a URL whose references are already decoded (candidateSource).
+function proxifySource(source: string, width: number, height: number, format: string): string {
+  const proxied = proxifyImageSrc(decodeDomImageSrc(source), width, height, format)
+  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(source, width, height, format)
+}
+
+/**
+ * The full lookup's regex tier: the first body image when it is a markdown or
+ * HTML image the scans read, proxied, or null to leave the body to the render.
+ * A bare URL or a promoted link that comes first is the render's to read
+ * (#2180), and so is an image the proxy refuses, which the render drops
+ * (#2182).
+ */
+function regexTierImage(raw: string, width: number, height: number, format: string): string | null {
+  // '' (a URL the proxy refuses) is falsy at both callers, which then render.
+  const body = parserInput(raw)
+  const found = findFirstImageCandidate(prepareBody(body), true).candidate
+  if (!found || !(found.html || found.md)) return null
+  const source = candidateSource(body, found)
+  return source === null ? null : proxifySource(source, width, height, format)
 }
 
 function getImage(entry: Entry, width: number, height: number, format: string, renderFirstImage: RenderFirstImage | null): string | null {
@@ -1316,9 +1494,9 @@ function getImage(entry: Entry, width: number, height: number, format: string, r
 
   // Fast-path: try to find the first image with a regex over the raw body.
   // Avoids the cost of full markdown2Html + DOM parsing for the common case.
-  const fast = findFirstImageUrl(entry.body)
+  const fast = regexTierImage(entry.body, width, height, format)
   if (fast) {
-    return proxifyFound(fast, width, height, format)
+    return fast
   }
 
   // Fall back to the full markdown render (handles edge cases the regex missed)
@@ -1459,9 +1637,9 @@ export function lookupPostImage(
       return fastBodyImage(obj, width, height, format)
     }
     // Fast-path: regex over raw markdown
-    const fast = findFirstImageUrl(obj)
+    const fast = regexTierImage(obj, width, height, format)
     if (fast) {
-      return proxifyFound(fast, width, height, format)
+      return fast
     }
     const src = renderFirstImage(obj)
     return src ? proxifyFound(src, width, height, format) : null
