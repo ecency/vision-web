@@ -1,9 +1,8 @@
 import { Button } from "@/features/ui";
 import { UilBars } from "@tooni/iconscout-unicons-react";
 import i18next from "i18next";
-import Image from "next/image";
 import { IntentLink } from "@/features/shared/intent-link";
-import defaults from "@/defaults";
+import { SeasonalLogo } from "@/features/seasonal-logo/seasonal-logo";
 
 interface Props {
   onClick: () => void;
@@ -20,8 +19,7 @@ export function NavbarMainSidebarToggle({ onClick }: Props) {
           computing viewport intersection, so it popped in well after first
           paint (#1664).
         */}
-        <Image
-          src={defaults.logo}
+        <SeasonalLogo
           className="logo relative min-w-[40px] max-w-[40px]"
           alt="Logo"
           width={40}
