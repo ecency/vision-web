@@ -150,7 +150,9 @@ describe('getEntryImageRawUrl', () => {
     expect(getEntryImageRawUrl(entry)).toBe('https://files.peakd.com/x/cover.png')
   })
 
-  it('picks the earliest image in source order (bare-text before markdown)', () => {
+  // A bare URL on a line of its own before a markdown image is the first
+  // image the render shows (#2185).
+  it('names a bare URL that comes before a markdown image', () => {
     const entry = {
       author: 'a', permlink: 'p', last_update: '2019-05-10T09:15:21',
       body: 'https://files.peakd.com/x/first.png\n\n![a](https://files.peakd.com/x/second.png)',
@@ -528,8 +530,9 @@ describe('markdown image/link scan is linear (ReDoS regression)', () => {
       `<img src="https://files.peakd.com/x/later-html.png">\n\n` +
       `![later-md](https://files.peakd.com/x/later-md.png)`
     expect(getEntryImageRawUrl(body)).toBeNull()
+    // The render drops an image the proxy refuses for its length and shows the
+    // next one (#2182): the card names that one, never the later markdown.
     const cp = catchPostImage(body) ?? ''
-    expect(cp).not.toContain('later-html.png')
-    expect(cp).not.toContain('later-md.png')
+    expect(cp).toBe(proxifyImageSrc('https://files.peakd.com/x/later-html.png', 0, 0, 'match'))
   })
 })

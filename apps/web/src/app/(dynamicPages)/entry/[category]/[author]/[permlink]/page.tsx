@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { prefetchQuery, getQueryClient } from "@/core/react-query";
 import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
-import { buildPictureSources, buildSrcSet, IMAGE_SIZES } from "@ecency/render-helper";
+import { buildPictureSources, IMAGE_SIZES } from "@ecency/render-helper";
 import { entryLcpMatch, entryLcpPreload } from "@/app/(dynamicPages)/entry/_helpers/entry-lcp-match";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { EntryPageContentClient } from "@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/entry-page-content-client";
@@ -227,7 +227,6 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const { rawCover, posterHref } = entryLcpPreload(entry);
   const coverPicture = rawCover ? buildPictureSources(rawCover) : null;
   const lcpMatch = entryLcpMatch(rawCover);
-  const lcpMatchSrcSet = lcpMatch ? buildSrcSet(lcpMatch) : "";
 
   // Structured data: only top-level posts get Article + breadcrumb. Comments
   // carry no headline of their own and would emit an invalid Article.
@@ -270,14 +269,14 @@ export default async function EntryPage({ params, searchParams }: Props) {
         />
       ) : rawCover && lcpMatch ? (
         // Ineligible cover with a resolved raw URL → the body renders a bare
-        // format=match <img>; preload the matching rendition. (When rawCover is
-        // null we intentionally emit nothing — see the comment above.)
+        // format=match <img>; preload its own src and srcset (#2191). (When
+        // rawCover is null we intentionally emit nothing — see the comment above.)
         <link
           rel="preload"
           as="image"
-          href={lcpMatch}
-          imageSrcSet={lcpMatchSrcSet || undefined}
-          imageSizes={lcpMatchSrcSet ? IMAGE_SIZES : undefined}
+          href={lcpMatch.src}
+          imageSrcSet={lcpMatch.srcSet ?? undefined}
+          imageSizes={lcpMatch.srcSet ? IMAGE_SIZES : undefined}
           fetchPriority="high"
         />
       ) : posterHref ? (

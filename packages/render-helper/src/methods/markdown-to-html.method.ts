@@ -8,6 +8,7 @@ import { regexMatches } from '../regex-matches'
 import { DOMParser, XMLSerializer, ENTITY_REGEX, PLACEHOLDER_DELIMITERS, PRIVATE_DELIMITERS_FROM, PRIVATE_DELIMITERS_TO } from '../consts'
 import { Remarkable, utils } from 'remarkable'
 import { linkify } from 'remarkable/linkify'
+import { linearLinkify } from './linear-linkify'
 import * as htmlparser2 from 'htmlparser2'
 import * as domSerializerModule from 'dom-serializer'
 import { RenderOptions, SeoContext } from '../types'
@@ -795,7 +796,7 @@ export function markdownToHTML(input: string, forApp: boolean, parentDomain: str
 
       return ''
     }
-  }).use(linkify)
+  }).use(linkify).use(linearLinkify)
   // Before linkify, so every link and image token here was written as
   // markdown (linkify's hrefs come from text, already decoded).
   md.core.ruler.before('linkify', 'decode_destinations', decodeDestinations, {})

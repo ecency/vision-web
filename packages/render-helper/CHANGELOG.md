@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.58
+
+### Patch Changes
+
+- fix(render-helper): card lookups name the image the body shows, or defer (#2186)
+
 ## 2.5.57
 
 ### Patch Changes

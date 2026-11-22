@@ -194,7 +194,21 @@ describe('every image form: card and render agree on parser-rewritten input', ()
     '- item\n  - ![a\n    ===\n    b](<https://e.com/a b.png>)',
     '1. - ![a|b\n     -|-\n     c](<https://e.com/a b.png>)',
     // cleanReply drops a platform byline line before the render.
-    '![x](https://e.com/a.png) Posted using [LeoFinance](https://leofinance.io)\n\n![y](https://e.com/b.png)'
+    '![x](https://e.com/a.png) Posted using [LeoFinance](https://leofinance.io)\n\n![y](https://e.com/b.png)',
+    // #2180: a URL after a `](` that opens no destination is bare text, which
+    // the render linkifies into an image ahead of later ones.
+    '![x]](https://e.com/a.png)\n\n![y](https://e.com/b.png)',
+    '![]](https://e.com/a.png) <img src="https://e.com/c.png">',
+    '![\\]](https://e.com/a.png) <img src="https://e.com/c.png">',
+    '![a]\\(https://e.com/a.png) ![c](https://e.com/b.png)',
+    '![\\\\\\\\]](https://e.com/a.png) ![d](https://e.com/b.png)',
+    '![a `[` b] c](https://e.com/a.png) ![d](https://e.com/b.png)',
+    '\\[x](https://e.com/a.png) ![d](https://e.com/b.png)',
+    '\\![a [b] c](https://e.com/a.png) ![d](https://e.com/b.png)',
+    '[x\\](https://e.com/a.png) ![d](https://e.com/b.png)',
+    // A bare image URL before a markdown or HTML image comes first in the body.
+    'https://e.com/a.png ![c](https://e.com/b.png)',
+    '(https://e.com/a.png) <img src="https://e.com/b.png">'
   ])('%j', (body) => {
     const rendered = shown(body)
     expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(rendered)
@@ -247,7 +261,12 @@ describe('a lone surrogate in a bare URL beside a video poster', () => {
 describe('a later image after a fragment that is not an image', () => {
   it.each([
     '\\![a [b\n\n![c](https://e.com/b.png)',
-    '\\![a [b] c](x) ![d](https://e.com/b.png)'
+    '\\![a [b] c](x) ![d](https://e.com/b.png)',
+    // #2180: the URL is a link's destination, not text, so the next image is
+    // the first one shown.
+    '[x](<https://e.com/a.png>) ![d](https://e.com/b.png)',
+    '[x]( https://e.com/a.png) ![d](https://e.com/b.png)',
+    '[x](\nhttps://e.com/a.png) ![d](https://e.com/b.png)'
   ])('%j', (body) => {
     const rendered = shown(body)
     expect(rendered).not.toBeNull()

@@ -5,7 +5,7 @@ import { getPostBodyText } from './post-body-text'
 import { getPostBodySummary as postBodySummary } from './post-body-summary'
 import { setProxyBase, proxifyImageSrc, buildSrcSet, buildSrcSetForFormat, buildPictureSources, isPictureEligibleRawUrl, isLegacySizedProxyUrl } from './proxify-image-src'
 import type { ProxifyOptions } from './proxify-image-src'
-import { IMAGE_SIZES } from './methods/img.method'
+import { IMAGE_SIZES, bodyImageSources } from './methods/img.method'
 import { setCacheSize } from './cache'
 import { SECTION_LIST, isAllowedEmbedSrc } from './consts'
 import { isValidPermlink } from "./helper";
@@ -30,6 +30,7 @@ export {
   buildPictureSources,
   isPictureEligibleRawUrl,
   IMAGE_SIZES,
+  bodyImageSources,
   setProxyBase,
   setCacheSize,
   setSlowRenderThresholdMs,

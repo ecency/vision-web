@@ -11,8 +11,14 @@ function firstRenderedImageSrc(obj: Entry | string): string | null {
   if (!doc) {
     return null
   }
+  // The render leaves an image whose URL the proxy refuses without a src
+  // (#2182): it shows nothing, so the first image shown is the next one.
   const imgEls = doc.getElementsByTagName('img')
-  return imgEls.length >= 1 ? imgEls[0].getAttribute('src') || null : null
+  for (let i = 0; i < imgEls.length; i++) {
+    const src = imgEls[i].getAttribute('src')
+    if (src) return src
+  }
+  return null
 }
 
 export interface CatchPostImageOptions {

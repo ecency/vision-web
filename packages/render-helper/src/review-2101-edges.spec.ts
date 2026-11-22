@@ -273,12 +273,22 @@ describe('backslash runs before & in a destination', () => {
   })
 })
 
+// A reference image is the render's to read: the scans do not resolve
+// definitions (#2185), so the preload names it or nothing.
+describe('a reference image is preloaded as rendered, or not at all', () => {
+  it.each(['![x][r]\n\n[r]:\n  https://e.com/i.png?q=\\&copy;', '[r]: https://e.com/a.png?x=1&copy;\n\n![][r]'])('%j', (body) => {
+    const img = firstImg(render(body, false))
+    expect(img).toBeTruthy()
+    const pre = getEntryImageRawUrl(body)
+    if (pre) expect(proxyOf(pre)).toBe(img)
+  })
+})
+
 describe('preload and render read an escaped & the same way', () => {
   it.each([
     '![x](\nhttps://e.com/i.png?a=1\\&copy;b=2)',
     `x ${PUA}\n\n![](https://e.com/i.png?q=\\&copy;)`,
     `![](${' '.repeat(40)}https://e.com/i.png?q=\\&copy;)`,
-    '![x][r]\n\n[r]:\n  https://e.com/i.png?q=\\&copy;',
     '![](https://e.com/i.png?q=\\&copy;)'
   ])('%j', (body) => {
     sameOrBothAbsent(body)

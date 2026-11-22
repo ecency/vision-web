@@ -1,27 +1,26 @@
-import { getEntryLcpImage, proxifyImageSrc } from "@ecency/render-helper";
+import { bodyImageSources, getEntryLcpImage, proxifyImageSrc } from "@ecency/render-helper";
 import type { Entry } from "@/entities";
 
 /**
- * The format=match preload URL for a cover the entry page cannot preload as a
- * <picture> (gif, svg, extensionless, already-proxified). It is derived from
- * the SAME raw cover the page renders (getEntryImageRawUrl: metadata image,
- * then the first body image), never from catchPostImage, which prefers an
- * explicit json_metadata.thumbnails entry. A thumbnail is a card concern; the
- * post body does not render it, so preloading it would be a wasted request
- * and would cost the real cover its head start.
- *
- * Sizing follows what the body renders for that cover: a gif stays unsized so
- * the proxy does not flatten the animation, everything else is requested at
- * the thumbnail size the body's <img> uses.
+ * The format=match preload for a cover the entry page cannot preload as a
+ * <picture> (gif, svg, extensionless, already-proxified): exactly the src and
+ * srcset the body gives that image, from the one function the body builds
+ * them with (bodyImageSources, #2191), so the preload is the request the body
+ * makes and never a second download. It is derived from the SAME raw cover the
+ * page renders (getEntryImageRawUrl: metadata image, then the first body
+ * image), never from catchPostImage, which prefers an explicit
+ * json_metadata.thumbnails entry. A thumbnail is a card concern; the post body
+ * does not render it, so preloading it would be a wasted request and would
+ * cost the real cover its head start.
  */
-export function entryLcpMatch(rawCover: string | null | undefined): string | null {
+export function entryLcpMatch(
+  rawCover: string | null | undefined
+): { src: string; srcSet: string | null } | null {
   if (!rawCover) {
     return null;
   }
-  const proxied = /\.gif$/i.test(rawCover)
-    ? proxifyImageSrc(rawCover, 0, 0, "match")
-    : proxifyImageSrc(rawCover, 600, 500, "match");
-  return proxied || null;
+  const sources = bodyImageSources(rawCover);
+  return sources ? { src: sources.src, srcSet: sources.srcSet || null } : null;
 }
 
 /**

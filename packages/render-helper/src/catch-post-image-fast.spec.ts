@@ -132,12 +132,11 @@ describe('catchPostImage fast mode', () => {
     }
   })
 
-  it('keeps the full lookup precedence: a markdown image wins over an earlier video', () => {
-    // The full lookup returns the regex-found image before it would ever render
-    // the markdown and see the poster. Fast mode mirrors that, not source order.
+  it('takes a video poster before a markdown image, as the render does (#2185)', () => {
     const r = both('https://www.youtube.com/watch?v=dQw4w9WgXcQ\n\n![pic](https://images.hive.blog/later.png)')
+    expect(r.full).toContain('/p/')
+    expect(r.full).not.toBe(proxifyImageSrc('https://images.hive.blog/later.png', 600, 500, 'match'))
     expect(r.fast).toBe(r.full)
-    expect(r.fast).toBe(proxifyImageSrc('https://images.hive.blog/later.png', 600, 500, 'match'))
   })
 
   it('keeps the full lookup precedence: a markdown image before the video', () => {
