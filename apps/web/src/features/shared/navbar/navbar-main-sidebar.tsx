@@ -24,10 +24,9 @@ import { closeSvg, WavyDashIcon } from "@ui/svg";
 import { SwitchLang } from "@/features/shared/switch-lang";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { ModalSidebar } from "@ui/modal/modal-sidebar";
 import { EcencyConfigManager } from "@/config";
-import defaults from "@/defaults";
+import { SeasonalLogo } from "@/features/seasonal-logo/seasonal-logo";
 import { useHydrated } from "@/api/queries";
 import { useMattermostUnread } from "@/features/chat/mattermost-api";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -74,8 +73,7 @@ export function NavbarMainSidebar({ show, setShow, setStepOne }: Props) {
       <div className="px-4 py-3 mt-[2px] flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-[40px] w-[40px] shrink-0 cursor-pointer">
-            <Image
-              src={defaults.logo}
+            <SeasonalLogo
               alt="Logo"
               className="h-[40px] w-[40px]"
               onClick={onLogoClick}

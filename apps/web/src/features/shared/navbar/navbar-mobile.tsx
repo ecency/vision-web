@@ -16,11 +16,10 @@ import { UilBars, UilComment, UilHomeAlt, UilLock, UilPen } from "@tooni/iconsco
 import { Button } from "@ui/button";
 import clsx from "clsx";
 import i18next from "i18next";
-import Image from "next/image";
 import { IntentLink } from "@/features/shared/intent-link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import defaults from "@/defaults";
+import { SeasonalLogo } from "@/features/seasonal-logo/seasonal-logo";
 import dynamic from "next/dynamic";
 
 // The full search experience (input + suggester); loaded only when the user
@@ -135,7 +134,7 @@ export function NavbarMobile({
               <IntentLink href="/" className="flex items-center">
                 {/* The image alt provides the link's accessible name (brand/home),
                     distinct from the "Home" feed tab below. */}
-                <Image src={defaults.logo} alt="Ecency" width={30} height={30} className="rounded" />
+                <SeasonalLogo alt="Ecency" width={30} height={30} className="rounded" />
               </IntentLink>
             </div>
             <Button
