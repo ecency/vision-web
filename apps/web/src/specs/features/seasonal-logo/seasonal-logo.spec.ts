@@ -3,8 +3,13 @@ import {
   FIRST_YEAR,
   LAST_YEAR,
   ICONS,
+  LANGUAGES,
   pickIcon,
+  reaches,
+  REGION_ORDER,
+  REGIONS,
   windows,
+  ymd,
   type DayRange,
   type SeasonalIcon,
   type SeasonalOverride
@@ -123,5 +128,42 @@ describe("seasonal logo rule", () => {
     expect(windows(2028).find((x) => x.icon === "Holi")!.range).toEqual(range("2028-03-10", "2028-03-11"));
     expect(windows(2029).find((x) => x.icon === "MidAutumn")!.range).toEqual(range("2029-09-21", "2029-09-23"));
     expect(windows(LAST_YEAR + 1).some((x) => x.icon === "RamadanEid")).toBe(false);
+  });
+});
+
+// Pins on the tables themselves, checked against the mobile app's SeasonalIcons.kt
+// when they were written: a date or a code dropped or moved here fails, and
+// the snapshot is updated only together with the mobile table.
+describe("seasonal tables", () => {
+  it("has every celebration's days for 2026 to 2029", () => {
+    const table = Object.fromEntries(
+      [2026, 2027, 2028, 2029].map((y) => [y, windows(y).map((w) => `${w.icon} ${w.range.start}..${w.range.end}`)])
+    );
+    expect(table).toMatchSnapshot();
+  });
+
+  it("reaches each region and language listed for a regional celebration", () => {
+    const regional = ICONS.filter((i) => i !== "Default" && !reaches(i, null, null));
+    const regions = [...new Set(Object.values(REGIONS).flatMap((s) => [...s!]))].sort();
+    const languages = [...new Set(Object.values(LANGUAGES).flatMap((s) => [...s!]))].sort();
+    const matrix = {
+      regions: Object.fromEntries(regions.map((r) => [r, regional.filter((i) => reaches(i, r, null)).join(" ")])),
+      languages: Object.fromEntries(languages.map((l) => [l, regional.filter((i) => reaches(i, null, l)).join(" ")]))
+    };
+    expect(matrix).toMatchSnapshot();
+  });
+
+  it("keeps each region's own order", () => {
+    const runs = (region: string) => {
+      const out: string[] = [];
+      for (let t = Date.UTC(2026, 0, 1); t <= Date.UTC(2029, 11, 31); t += 86_400_000) {
+        const d = new Date(t);
+        const icon = pickIcon(ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()), region, null);
+        const last = out[out.length - 1];
+        if (!last || !last.startsWith(icon + " ")) out.push(`${icon} ${d.toISOString().slice(0, 10)}`);
+      }
+      return out.filter((r) => !r.startsWith("Default"));
+    };
+    expect(Object.fromEntries(Object.keys(REGION_ORDER).map((r) => [r, runs(r)]))).toMatchSnapshot();
   });
 });

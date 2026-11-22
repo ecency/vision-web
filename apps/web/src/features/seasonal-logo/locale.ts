@@ -8,8 +8,10 @@ export function readLocale(languages: readonly string[] | undefined): { region: 
   const language = normLanguage(list[0]);
   let region: string | null = null;
   for (const tag of list) {
+    // up to the first one-letter subtag: what follows is an extension (-u-ca-gregory)
     const parts = tag.split(/[-_]/).slice(1);
-    region = parts.map((p) => normRegion(p)).find((r) => r !== null) ?? null;
+    const end = parts.findIndex((p) => p.length === 1);
+    region = (end < 0 ? parts : parts.slice(0, end)).map((p) => normRegion(p)).find((r) => r !== null) ?? null;
     if (region) break;
   }
   return { region, language };

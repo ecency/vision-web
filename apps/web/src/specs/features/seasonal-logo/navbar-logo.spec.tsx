@@ -7,6 +7,7 @@ import { join } from "node:path";
 import defaults from "@/defaults";
 import { ICONS } from "@/features/seasonal-logo/seasonal";
 import { NavbarMainSidebarToggle } from "@/features/shared/navbar/navbar-main-sidebar-toggle";
+import { useSeasonalLogo } from "@/features/seasonal-logo/seasonal-logo";
 
 const ASSETS = join(__dirname, "../../../../public/assets/seasonal-logo");
 const languages = (list: string[]) => vi.spyOn(navigator, "languages", "get").mockReturnValue(list);
@@ -18,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("the navbar logo's seasonal skin", () => {
@@ -64,5 +66,47 @@ describe("the navbar logo's seasonal skin", () => {
     const skins = ICONS.filter((i) => i !== "Default");
     for (const icon of skins) expect(existsSync(join(ASSETS, `${icon}.svg`)), icon).toBe(true);
     expect(readdirSync(ASSETS).sort()).toEqual(skins.map((i) => `${i}.svg`).sort());
+  });
+
+  it("does not flash the everyday logo when the navbar mounts again on a celebration day", () => {
+    vi.setSystemTime(new Date(2026, 10, 27, 9));
+    languages(["en-US"]);
+    const first = render(<NavbarMainSidebarToggle onClick={vi.fn()} />);
+    expect(logo(first.container)).toBe("/assets/seasonal-logo/BlackFriday.svg");
+    // the sidebar opening mounts another logo: its very first paint is already the skin
+    const seen: (string | null)[] = [];
+    const Probe = () => {
+      const src = useSeasonalLogo();
+      seen.push(src);
+      return null;
+    };
+    render(<Probe />);
+    expect(seen[0]).toBe("/assets/seasonal-logo/BlackFriday.svg");
+  });
+
+  it("catches up when a tab comes back after the computer slept past midnight", () => {
+    vi.setSystemTime(new Date(2026, 10, 26, 22));
+    languages(["en-US"]);
+    const { container } = render(<NavbarMainSidebarToggle onClick={vi.fn()} />);
+    expect(logo(container)).toBe(defaults.logo);
+    // asleep: the clock moves on, no timer has fired
+    vi.setSystemTime(new Date(2026, 10, 27, 8));
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(logo(container)).toBe("/assets/seasonal-logo/BlackFriday.svg");
+  });
+
+  it("never dresses up a deployment's own logo", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_LOGO", "/my-blog-logo.png");
+    vi.setSystemTime(new Date(2027, 0, 1, 10));
+    languages(["en-US"]);
+    const seen: string[] = [];
+    const Probe = () => {
+      seen.push(useSeasonalLogo());
+      return null;
+    };
+    render(<Probe />);
+    expect(seen.at(-1)).not.toContain("seasonal-logo");
   });
 });

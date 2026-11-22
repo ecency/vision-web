@@ -127,7 +127,7 @@ export function windows(year: number): SeasonalWindow[] {
 }
 
 const codes = (s: string) => new Set(s.split(" ").filter(Boolean));
-const REGIONS: Partial<Record<SeasonalIcon, Set<string>>> = {
+export const REGIONS: Partial<Record<SeasonalIcon, Set<string>>> = {
   LunarNewYear: codes("CN TW HK MO SG MY VN KR"),
   MidAutumn: codes("CN TW HK MO SG MY VN"),
   RamadanEid: codes(
@@ -146,7 +146,7 @@ const REGIONS: Partial<Record<SeasonalIcon, Set<string>>> = {
       "AU NZ PG FJ WS TO PH TL ZA NA BW ZM ZW MW AO CD CG CM RW BI UG KE TZ GH LS SZ MG"
   )
 };
-const LANGUAGES: Partial<Record<SeasonalIcon, Set<string>>> = {
+export const LANGUAGES: Partial<Record<SeasonalIcon, Set<string>>> = {
   LunarNewYear: codes("zh vi ko"),
   MidAutumn: codes("zh vi"),
   RamadanEid: codes("ar ms id tr ur"),
@@ -166,7 +166,7 @@ const DEFAULT_ORDER: SeasonalIcon[] = [
   "BlackFriday"
 ];
 /// Singapore keeps Lunar New Year first; in Iran, Afghanistan and Tajikistan Nowruz wins.
-const REGION_ORDER: Record<string, SeasonalIcon[]> = {
+export const REGION_ORDER: Record<string, SeasonalIcon[]> = {
   SG: ["LunarNewYear", "MidAutumn"],
   IR: ["Nowruz"],
   AF: ["Nowruz"],
@@ -184,7 +184,7 @@ export function normRegion(code: string | null | undefined): string | null {
   return r && /^[A-Z]{2}$/.test(r) ? r : null;
 }
 
-function reaches(icon: SeasonalIcon, region: string | null, language: string | null) {
+export function reaches(icon: SeasonalIcon, region: string | null, language: string | null) {
   if (icon === "Default") return false;
   if (!REGIONAL.has(icon)) return true;
   const r = normRegion(region);

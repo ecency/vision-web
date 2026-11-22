@@ -21,4 +21,10 @@ describe("seasonal logo locale", () => {
   it("ignores a numeric region such as es-419", () => {
     expect(readLocale(["es-419"])).toEqual({ region: null, language: "es" });
   });
+
+  it("never reads an extension's subtags as a region", () => {
+    // -u-ca-gregory: the Gregorian calendar, not Canada
+    expect(readLocale(["en-u-ca-gregory"])).toEqual({ region: null, language: "en" });
+    expect(readLocale(["de-DE-u-co-phonebk"]).region).toBe("DE");
+  });
 });
