@@ -6,6 +6,8 @@ import { ProfileFilter } from "@/enums";
 import i18next from "i18next";
 import { error } from "@/features/shared";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
+import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { useWavesApi } from "./use-waves-api";
 import { useCommunityApi } from "./use-community-api";
 import { ECENCY_WAVES_HOSTS, isEcencyWavesHost } from "@/features/waves/enums/wave-hosts";
@@ -14,6 +16,7 @@ import { DecentMemesPayload } from "@/api/decentmemes";
 
 export function useWaveCreate() {
   const queryClient = useQueryClient();
+  const username = useActiveUsername();
 
   const { mutateAsync: generalApiRequest } = useWavesApi();
   const { mutateAsync: communityBasedApiRequest } = useCommunityApi();
@@ -143,6 +146,9 @@ export function useWaveCreate() {
         prependToFirstPage
       );
     },
-    onError: (e) => error(...formatError(e))
+    onError: (e) => {
+      reportRcRejection(e, "comment", username);
+      error(...formatError(e));
+    }
   });
 }

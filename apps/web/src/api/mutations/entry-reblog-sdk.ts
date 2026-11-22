@@ -8,6 +8,7 @@ import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { QueryKeys } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useReblogMutation } from "@/api/sdk-mutations";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { scheduleQuestsRefresh } from "@/utils/refresh-quests";
 
 /**
@@ -88,6 +89,7 @@ export function useEntryReblog(entry: Entry) {
       );
     },
     onError: (e) => {
+      reportRcRejection(e, "reblog", activeUser?.username);
       error(i18next.t("g.server-error"));
       console.error("[EntryReblog]", e);
     },

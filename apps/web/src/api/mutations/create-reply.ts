@@ -1,6 +1,7 @@
 // src/api/mutations/create-reply.ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatError } from "../format-error";
+import { reportRcRejection } from "../rc-shortfall-report";
 import { Entry, FullAccount, MetaData, CommentOptions } from "@/entities";
 import { isBlankBody, makeCommentOptions, tempEntry } from "@/utils";
 import { SortOrder } from "@/enums";
@@ -204,6 +205,7 @@ export function useCreateReply(
           });
         }, 0);
 
+        reportRcRejection(err, "comment", activeUser.username);
         const [errorMsg, errorType] = formatError(err);
 
         if (errorType === ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS) {
@@ -266,6 +268,7 @@ export function useCreateReply(
         );
       }
 
+      reportRcRejection(err, "comment", activeUser?.username);
       error(...formatError(err));
     }
   });

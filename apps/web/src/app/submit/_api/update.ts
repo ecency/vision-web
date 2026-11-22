@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { useCommentMutation } from "@/api/sdk-mutations";
 import dayjs from "@/utils/dayjs";
 import { EntryBodyManagement, EntryMetadataManagement } from "@/features/entry-management";
@@ -103,6 +104,7 @@ export function useUpdateApi(onClear: () => void) {
         const newLoc = makeEntryPath(category, author, permlink);
         router.push(newLoc);
       } catch (e) {
+        reportRcRejection(e, "post", username ?? undefined);
         error(...formatError(e));
       }
     }

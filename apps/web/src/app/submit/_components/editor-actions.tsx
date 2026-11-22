@@ -112,7 +112,7 @@ export function EditorActions({
   ) : (
     <>
       {editingEntry === null && (
-        <RcPrecheckBanner operation="comment_operation" className="mx-2 mt-2" />
+        <RcPrecheckBanner operation="comment_operation" rcOp="post" className="mx-2 mt-2" />
       )}
       <div className="flex items-center justify-end border-b border-[--border-color] gap-2 p-2">
         {editingEntry === null && (

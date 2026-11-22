@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { enforceThreeSpeakBeneficiary, linkThreeSpeakEmbed } from "@/api/threespeak-embed";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { useCommentMutation, useReblogMutation } from "@/api/sdk-mutations";
 import { useContext } from "react";
 import { PollsContext } from "@/app/submit/_hooks/polls-manager";
@@ -200,6 +201,7 @@ export function usePublishApi(onClear: () => void) {
 
         return [entry as Entry, activePoll] as const;
       } catch (e) {
+        reportRcRejection(e, "post", username ?? undefined);
         error(...formatError(e));
         throw e;
       }

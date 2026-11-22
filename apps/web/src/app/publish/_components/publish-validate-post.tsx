@@ -5,6 +5,7 @@ import { TagSelector, sanitizeTagInput } from "@/app/submit/_components";
 import { getTagsWarning, validateTags } from "@/app/submit/_utils/tags";
 import { Alert, Button, FormControl } from "@/features/ui";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { isShortfallStillRelevant, resolveRcShortfall, type RcShortfall } from "../_utils/rc-shortfall";
 import { useRcTopupAction } from "@/features/shared/rc-topup/use-rc-topup-action";
 import { PointsTopupCta } from "@/features/shared/points-topup-cta";
@@ -251,6 +252,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
       // Resource Credits." with no way to act on it, when the feedback toast
       // already knows how to offer an account boost for exactly that type.
       const [message, errorType] = formatError(err);
+      reportRcRejection(err, "post", activeUser?.username);
       // A toast disappears; running out of RC is a blocking condition the user
       // has to act on, so it also stays on the page next to the button that
       // failed, with a route to top up. Bound to the account that failed, and
@@ -402,7 +404,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
 
           {activeUser?.username && (
             <div className="w-full flex flex-col gap-2">
-              <RcPrecheckBanner operation="comment_operation" payload={rcPayload} />
+              <RcPrecheckBanner operation="comment_operation" payload={rcPayload} rcOp="post" />
               <AvailableCredits
                 username={activeUser.username}
                 operation="comment_operation"

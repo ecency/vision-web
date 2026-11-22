@@ -4,6 +4,7 @@ import { Entry } from "@/entities";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useVoteMutation } from "@/api/sdk-mutations";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { deriveOptimisticVote } from "./derive-optimistic-vote";
 import { useQueryClient } from "@tanstack/react-query";
 import { ObserverVote } from "@/entities";
@@ -50,12 +51,17 @@ export function useEntryVote(entry?: Entry | null) {
       if (!activeUser) throw new Error("Active user not provided");
 
       // Broadcast vote via SDK (SDK updates its own cache optimistically)
-      await sdkMutation.mutateAsync({
-        author: entry.author,
-        permlink: entry.permlink,
-        weight,
-        estimated,
-      });
+      try {
+        await sdkMutation.mutateAsync({
+          author: entry.author,
+          permlink: entry.permlink,
+          weight,
+          estimated,
+        });
+      } catch (e) {
+        reportRcRejection(e, "vote", activeUser.username);
+        throw e;
+      }
 
       // Optimistically reflect the vote on the web cache key: the user's
       // observer_vote, the count and the payout. Derived from the entry cached
