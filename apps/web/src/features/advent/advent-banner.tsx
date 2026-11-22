@@ -20,7 +20,7 @@ export function markAnsweredToday() {
   ls.set(ANSWERED_KEY, utcDay(Date.now()));
 }
 
-/// An invitation at the top of the feed, from 29 November to 31 December. It
+/// An invitation at the top of the feed, from 25 November to 31 December. It
 /// shows once a day until the reader closes it or answers that day's door.
 export function AdventBanner() {
   // decided in the browser: the date is the reader's now, never a cached page's

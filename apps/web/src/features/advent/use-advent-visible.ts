@@ -10,7 +10,7 @@ export function msToNextChange(now: number): number | null {
   return next === undefined ? null : next - now;
 }
 
-/// Whether the Advent Calendar is on today (29 November to 31 December, UTC).
+/// Whether the Advent Calendar is on today (25 November to 31 December, UTC).
 /// Decided in the browser after it mounts, so a page cached on another day
 /// still shows the right thing, and checked again right at the moment it shows
 /// or hides itself while the tab stays open.

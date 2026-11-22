@@ -41,7 +41,7 @@ function useNow() {
   return now;
 }
 
-function Countdown({ to, now }: { to: number; now: number }) {
+export function Countdown({ to, now }: { to: number; now: number }) {
   const ms = Math.max(0, to - now);
   const d = Math.floor(ms / 864e5);
   const h = Math.floor(ms / 36e5) % 24;
@@ -50,7 +50,7 @@ function Countdown({ to, now }: { to: number; now: number }) {
     <div className="adv-count" role="timer" aria-label={i18next.t("advent.countdown-label")}>
       <div>
         <b>{d}</b>
-        <span>{i18next.t("advent.days")}</span>
+        <span>{i18next.t("advent.days", { count: d })}</span>
       </div>
       <div>
         <b>{String(h).padStart(2, "0")}</b>
