@@ -372,18 +372,23 @@ var IMG_OPEN_RE = /<img\b/gi;
 var ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y;
 var ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y;
 var TAG_END_RE = /\/?>/y;
-function hasBlankLine(text, from, to) {
-  let lineOpen = false;
+var BLOCK_START_CHARS = "-*_=#>+|<`~:[0123456789";
+function tagBreaksParagraph(text, from, to, footnotes) {
+  let multiline = false;
   for (let k = from; k < to; k++) {
     const c = text[k];
-    if (c === "\n") {
-      if (lineOpen) return true;
-      lineOpen = true;
-    } else if (c !== " " && c !== "	" && c !== "\r") {
-      lineOpen = false;
-    }
+    if (c !== "\n" && !(c === "\r" && text[k + 1] !== "\n")) continue;
+    multiline = true;
+    let j = k + 1;
+    while (j < to && (text[j] === " " || text[j] === "	")) j++;
+    if (j >= to || text[j] === "\n" || text[j] === "\r" || BLOCK_START_CHARS.includes(text[j])) return true;
+    k = j - 1;
   }
-  return false;
+  if (!multiline) return false;
+  if (footnotes) return true;
+  let lineStart = from;
+  while (lineStart > 0 && text[lineStart - 1] !== "\n" && text[lineStart - 1] !== "\r") lineStart--;
+  return /[#|[]/.test(text.slice(lineStart, from));
 }
 var SPACE_CHARS = " 	\n\r\f";
 function skipSpaces(text, i) {
@@ -391,6 +396,7 @@ function skipSpaces(text, i) {
   return i;
 }
 function matchHtmlImage(text) {
+  const footnotes = text.includes("[^");
   IMG_OPEN_RE.lastIndex = 0;
   let m;
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
@@ -427,7 +433,7 @@ function matchHtmlImage(text) {
         found = { index: start, src: value, dashed: true };
       }
     }
-    if (hasBlankLine(text, start, i)) return null;
+    if (tagBreaksParagraph(text, start, i, footnotes)) return null;
     if (found) return found;
     IMG_OPEN_RE.lastIndex = i;
   }
@@ -1279,5 +1285,5 @@ function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
 }
 
 export { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, lookupPostImage };
-//# sourceMappingURL=chunk-PQCJOCHG.js.map
-//# sourceMappingURL=chunk-PQCJOCHG.js.map
+//# sourceMappingURL=chunk-CWRMQWVG.js.map
+//# sourceMappingURL=chunk-CWRMQWVG.js.map

@@ -12076,18 +12076,23 @@ var IMG_OPEN_RE = /<img\b/gi;
 var ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y;
 var ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y;
 var TAG_END_RE = /\/?>/y;
-function hasBlankLine(text3, from, to) {
-  let lineOpen = false;
+var BLOCK_START_CHARS = "-*_=#>+|<`~:[0123456789";
+function tagBreaksParagraph(text3, from, to, footnotes) {
+  let multiline = false;
   for (let k = from; k < to; k++) {
     const c = text3[k];
-    if (c === "\n") {
-      if (lineOpen) return true;
-      lineOpen = true;
-    } else if (c !== " " && c !== "	" && c !== "\r") {
-      lineOpen = false;
-    }
+    if (c !== "\n" && !(c === "\r" && text3[k + 1] !== "\n")) continue;
+    multiline = true;
+    let j = k + 1;
+    while (j < to && (text3[j] === " " || text3[j] === "	")) j++;
+    if (j >= to || text3[j] === "\n" || text3[j] === "\r" || BLOCK_START_CHARS.includes(text3[j])) return true;
+    k = j - 1;
   }
-  return false;
+  if (!multiline) return false;
+  if (footnotes) return true;
+  let lineStart = from;
+  while (lineStart > 0 && text3[lineStart - 1] !== "\n" && text3[lineStart - 1] !== "\r") lineStart--;
+  return /[#|[]/.test(text3.slice(lineStart, from));
 }
 var SPACE_CHARS = " 	\n\r\f";
 function skipSpaces3(text3, i2) {
@@ -12095,6 +12100,7 @@ function skipSpaces3(text3, i2) {
   return i2;
 }
 function matchHtmlImage(text3) {
+  const footnotes = text3.includes("[^");
   IMG_OPEN_RE.lastIndex = 0;
   let m;
   while ((m = IMG_OPEN_RE.exec(text3)) !== null) {
@@ -12131,7 +12137,7 @@ function matchHtmlImage(text3) {
         found = { index: start, src: value, dashed: true };
       }
     }
-    if (hasBlankLine(text3, start, i2)) return null;
+    if (tagBreaksParagraph(text3, start, i2, footnotes)) return null;
     if (found) return found;
     IMG_OPEN_RE.lastIndex = i2;
   }

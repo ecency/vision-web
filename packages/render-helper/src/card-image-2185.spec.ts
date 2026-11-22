@@ -139,6 +139,36 @@ describe('a lookup names the image the body shows, or defers (#2185)', () => {
     `<img alt="a\n\nb" src="${A}">\n\n![d](${B})`,
     `<img\n\nsrc="${A}">\n\n![d](${B})`,
     `<img alt="x"\n  \n src="${A}">\n\n![d](${B})`,
+    // A line inside a tag that starts a block ends the paragraph (#2194).
+    `<img alt="a\n---\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n===\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n# h\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n* x\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n> x\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n<div>\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n<table>\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n\`\`\`\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `> <img alt="a\n>\n> b" src="https://e.com/cover">\n\n![d](${B})`,
+    `> <img alt="a\n> \n> b" src="https://e.com/cover">\n\n![d](${B})`,
+    // A tag on a line that is a block of one line (heading, table row,
+    // footnote) ends at its line break.
+    `# <img alt="a\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `## <img alt="a\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `| h |\n|---|\n| <img alt="a\nb" src="https://e.com/cover"> |\n\n![d](${B})`,
+    `[^1]: <img alt="a\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    // A definition, delimiter row or footnote line inside a tag.
+    `<img alt="a\n: b" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="x"\n:\n src="https://e.com/cover">\n\n![d](${B})`,
+    `<img\n: src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a | c\n:--|--:\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `x | <img alt="a\n:--|--:\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n[^1]: x\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    // Inside a footnote definition, a tag across any line break.
+    `[^1]: <img alt="a\rb" src="https://e.com/cover">\n\n![d](${B})`,
+    `[^1]: <img alt="a\r\rb" src="https://e.com/cover">\n\n![d](${B})`,
+    `[^1]: <img alt="a\rb" src="https://e.com/cover"> ![d](${B})`,
+    `[^1]: x\n<img alt="a\nb" src="https://e.com/cover">\n\n![d](${B})`,
+    `[^1]: x\n  <img alt="a\nb" src="https://e.com/cover">\n\n![d](${B})`,
     // A fence marker with text after it closes nothing.
     `\`\`\`\n\`\`\` not a closer\n![x](${A})\n\`\`\`\n\n![d](${B})`,
     `~~~\n~~~ x\n![x](${A})\n~~~\n\n![d](${B})`,
@@ -361,6 +391,9 @@ describe('a bare URL in a plain line is named by every lookup (#2185)', () => {
     `<img src=" ${A} ">\n\n![x](${B})`,
     `<img alt="x src='${B}'" src="${A}">\n\n![x](${B})`,
     `<img xsrc="${B}" src="${A}">\n\n![x](${B})`,
+    // A tag across lines that start nothing is read (real posts write these).
+    `<img \nsrc="${A}">\n\n![x](${B})`,
+    `<img \n src="${A}"/>\n\n![x](${B})`,
     // Code before the paragraph, or fenced in it, is not the URL's code.
     `\`x\`\n\n${A}\n\n![x](${B})`,
     `\`\`\`\nx\n\`\`\`\n${A}\n\n![x](${B})`,
@@ -425,7 +458,7 @@ describe('the <img scan is linear (#2185)', () => {
 })
 
 describe('a gallery of closed <img> tags without a src is read once (#2185)', () => {
-  it.each(['<img>', '<img alt="x">'])('%j repeated, then an image', (unit) => {
+  it.each(['<img>', '<img alt="x">', '<img alt="a\rb">'])('%j repeated, then an image', (unit) => {
     const once = (text: string) => {
       getEntryImageRawUrl(entry(text))
       catchPostImage(entry(text), 0, 0, 'match', FAST)
