@@ -10,6 +10,7 @@ import type * as Sentry from "@sentry/nextjs";
 import appPackage from "./package.json";
 import { beforeSend } from "./src/utils/sentry-before-send";
 import { scrubBreadcrumb } from "./src/utils/sentry-scrub";
+import { clientIntegrations } from "./src/utils/sentry-dedupe";
 import { configureLazySentry } from "./src/core/sentry/lazy-sentry";
 
 const SENTRY_CONFIG: Sentry.BrowserOptions = {
@@ -40,7 +41,9 @@ const SENTRY_CONFIG: Sentry.BrowserOptions = {
   // properties, so an Axios error would ship `config.url` and `config.headers`,
   // which can carry an access token in a `/hs/<token>` path or an
   // Authorization header (issue #1651).
-  integrations: (defaults) => defaults.filter((i) => i.name !== "BrowserTracing"),
+  // Dedupe keeps working for errors but lets RC shortfall telemetry through,
+  // see src/utils/sentry-dedupe (#2196).
+  integrations: (defaults) => clientIntegrations(defaults),
 
   debug: false,
   ignoreErrors: [

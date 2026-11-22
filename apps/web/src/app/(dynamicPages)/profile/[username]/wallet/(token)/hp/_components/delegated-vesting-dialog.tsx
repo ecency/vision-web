@@ -1,6 +1,7 @@
 import { useDelegateVestingSharesMutation } from "@/api/sdk-mutations";
 import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
-import { LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
+import { error, LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
+import { formatError } from "@/api/format-error";
 import { List, ListItem } from "@/features/ui/list";
 import { formattedNumber, parseAsset, vestsToHp } from "@/utils";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
@@ -12,6 +13,7 @@ import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
 import { useEffect, useMemo, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 
 interface Props {
   username: string;
@@ -122,7 +124,9 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                           )}
                         </span>
                       </Tooltip>
-                      {activeUser && activeUser.username === x.delegatee && (
+                      {/* These rows are delegations BY the profile owner, so only the
+                          owner (the delegator) can undelegate them (#2197). */}
+                      {activeUser && activeUser.username === username && (
                         <a
                           href="#"
                           className="undelegate"
@@ -131,6 +135,10 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                             delegate({
                               delegatee: x.delegatee,
                               vestingShares: "0.000000 VESTS"
+                            }).catch((err) => {
+                              // Was an unhandled rejection with no feedback at all.
+                              reportRcRejection(err, "transfer", activeUser.username);
+                              error(...formatError(err));
                             });
                           }}
                         >

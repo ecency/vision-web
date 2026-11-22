@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { useCommentMutation } from "@/api/sdk-mutations";
 import dayjs from "@/utils/dayjs";
 import { EntryBodyManagement, EntryMetadataManagement } from "@/features/entry-management";
@@ -101,6 +102,7 @@ export function usePostEdit(entry: Entry | undefined) {
       router.push(newLoc);
     },
     onError: (e) => {
+      reportRcRejection(e, "post", activeUser?.username);
       error(...formatError(e));
     }
   });

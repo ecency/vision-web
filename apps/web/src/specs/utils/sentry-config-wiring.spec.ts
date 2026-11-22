@@ -44,6 +44,26 @@ describe("Sentry config wiring to the URL scrubber", () => {
     expect(crumbUrl(opts)).toBe(SCRUBBED);
   });
 
+  // #2196: the client config must use the Dedupe that exempts RC telemetry,
+  // or a second account's identical RC rejection is silently dropped.
+  it("client: Dedupe lets consecutive identical RC events from different users through", async () => {
+    const { dedupeIntegration } = await import("@sentry/core");
+    await import("../../../sentry.client.config");
+    const opts = configureLazySentry.mock.calls[0][0] as {
+      integrations: (d: { name: string }[]) => { name: string; processEvent?: (...a: unknown[]) => unknown }[];
+    };
+    const list = opts.integrations([{ name: "BrowserTracing" }, dedupeIntegration()]);
+    expect(list.map((i) => i.name)).toEqual(["Dedupe"]);
+    const event = (username: string) => ({
+      message: "rc-shortfall: rejected/post",
+      fingerprint: ["rc-shortfall"],
+      user: { username }
+    });
+    const dedupe = list[0];
+    expect(dedupe.processEvent!(event("alice"), {}, {})).not.toBeNull();
+    expect(dedupe.processEvent!(event("bob"), {}, {})).not.toBeNull();
+  });
+
   it.each([
     ["server", () => import("../../../sentry.server.config")],
     ["edge", () => import("../../../sentry.edge.config")]

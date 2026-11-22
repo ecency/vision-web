@@ -9,6 +9,7 @@ import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { invalidateWalletQueries } from "@/features/wallet/utils/invalidate-wallet-queries";
 import { getLoginType } from "@/utils/user-token";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import {
   useTransferMutation,
   useTransferPointMutation,
@@ -108,53 +109,58 @@ export function useSignTransfer(mode: TransferMode, asset: TransferAsset) {
       const fullAmount = `${(+amount).toFixed(3)} ${effectiveAsset}`;
       const requestId = Date.now() >>> 0;
 
-      switch (mode) {
-        case "transfer":
-          if (effectiveAsset === "POINT") {
-            await transferPoint.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
-          } else if (effectiveAsset !== "HIVE" && effectiveAsset !== "HBD") {
-            // Hive Engine token
-            await transferEngine.mutateAsync({ to, quantity: amount, symbol: effectiveAsset, memo: processedMemo });
-          } else {
-            await transfer.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
+      try {
+        switch (mode) {
+          case "transfer":
+            if (effectiveAsset === "POINT") {
+              await transferPoint.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
+            } else if (effectiveAsset !== "HIVE" && effectiveAsset !== "HBD") {
+              // Hive Engine token
+              await transferEngine.mutateAsync({ to, quantity: amount, symbol: effectiveAsset, memo: processedMemo });
+            } else {
+              await transfer.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
+            }
+            break;
+
+          case "transfer-saving":
+            await toSavings.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
+            break;
+
+          case "withdraw-saving":
+            await fromSavings.mutateAsync({ to, amount: fullAmount, memo: processedMemo, requestId });
+            break;
+
+          case "convert":
+            await convert.mutateAsync({
+              amount: fullAmount,
+              requestId,
+              collateralized: effectiveAsset === "HIVE",
+            });
+            break;
+
+          case "claim-interest":
+            await claimInterest.mutateAsync({ to, amount: fullAmount, memo: processedMemo, requestId });
+            break;
+
+          case "power-up":
+            await toVesting.mutateAsync({ to, amount: fullAmount });
+            break;
+
+          case "power-down": {
+            const vests = hpToVests(Number(amount), hivePerMVests);
+            await withdrawVesting.mutateAsync({ vestingShares: vests });
+            break;
           }
-          break;
 
-        case "transfer-saving":
-          await toSavings.mutateAsync({ to, amount: fullAmount, memo: processedMemo });
-          break;
-
-        case "withdraw-saving":
-          await fromSavings.mutateAsync({ to, amount: fullAmount, memo: processedMemo, requestId });
-          break;
-
-        case "convert":
-          await convert.mutateAsync({
-            amount: fullAmount,
-            requestId,
-            collateralized: effectiveAsset === "HIVE",
-          });
-          break;
-
-        case "claim-interest":
-          await claimInterest.mutateAsync({ to, amount: fullAmount, memo: processedMemo, requestId });
-          break;
-
-        case "power-up":
-          await toVesting.mutateAsync({ to, amount: fullAmount });
-          break;
-
-        case "power-down": {
-          const vests = hpToVests(Number(amount), hivePerMVests);
-          await withdrawVesting.mutateAsync({ vestingShares: vests });
-          break;
+          case "delegate": {
+            const vests = hpToVests(Number(amount), hivePerMVests);
+            await delegate.mutateAsync({ delegatee: to, vestingShares: vests });
+            break;
+          }
         }
-
-        case "delegate": {
-          const vests = hpToVests(Number(amount), hivePerMVests);
-          await delegate.mutateAsync({ delegatee: to, vestingShares: vests });
-          break;
-        }
+      } catch (e) {
+        reportRcRejection(e, "transfer", activeUser?.username);
+        throw e;
       }
 
       // Invalidate wallet caches after successful transaction

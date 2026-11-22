@@ -6,6 +6,8 @@ import { ProfileFilter } from "@/enums";
 import i18next from "i18next";
 import { error } from "@/features/shared";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
+import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { useWavesApi } from "./use-waves-api";
 import { useCommunityApi } from "./use-community-api";
 import { ECENCY_WAVES_HOSTS, isEcencyWavesHost } from "@/features/waves/enums/wave-hosts";
@@ -14,6 +16,7 @@ import { DecentMemesPayload } from "@/api/decentmemes";
 
 export function useWaveCreate() {
   const queryClient = useQueryClient();
+  const username = useActiveUsername();
 
   const { mutateAsync: generalApiRequest } = useWavesApi();
   const { mutateAsync: communityBasedApiRequest } = useCommunityApi();
@@ -102,6 +105,9 @@ export function useWaveCreate() {
         isEditing: !!editingEntry
       };
     },
+    // The account that submitted, kept for the error: the active account can
+    // be switched while the broadcast is pending.
+    onMutate: () => ({ username }),
     onSuccess: ({ host, entry, isEditing }) => {
       if (isEditing) {
         return;
@@ -143,6 +149,10 @@ export function useWaveCreate() {
         prependToFirstPage
       );
     },
-    onError: (e) => error(...formatError(e))
+    onError: (e, { host }, context) => {
+      // dbuzz waves are root posts; every other host takes a reply.
+      reportRcRejection(e, host === "dbuzz" ? "post" : "comment", context?.username);
+      error(...formatError(e));
+    }
   });
 }

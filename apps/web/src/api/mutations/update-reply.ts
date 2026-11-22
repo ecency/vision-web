@@ -5,6 +5,7 @@ import { isBlankBody } from "@/utils";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { CommentOptions, Entry, MetaData } from "@/entities";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { error, success } from "@/features/shared";
 import { ErrorTypes } from "@/enums";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -106,6 +107,7 @@ export function useUpdateReply(
         }
 
         // Keep draft for retry
+        reportRcRejection(err, entry.parent_author ? "comment" : "post", activeUser.username);
         const [errorMsg, errorType] = formatError(err);
 
         if (errorType === ErrorTypes.INSUFFICIENT_RESOURCE_CREDITS) {
@@ -127,6 +129,7 @@ export function useUpdateReply(
         updateEntryQueryData([entry]);
         restoreEntryInCache(entry.author, entry.permlink, entry as any);
       }
+      reportRcRejection(e, entry?.parent_author ? "comment" : "post", activeUser?.username);
       error(...formatError(e));
     }
   });

@@ -84,6 +84,13 @@ vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>(
     "../../../../packages/sdk/src/modules/communities/types/subscription"
   )),
+  // RC classification: pure, and the out-of-RC telemetry reads it on every
+  // failed broadcast.
+  isResourceCreditsError: (
+    await vi.importActual<{ isResourceCreditsError: (error: unknown) => boolean }>(
+      "../../../../packages/sdk/src/modules/core/errors/chain-errors"
+    )
+  ).isResourceCreditsError,
   // Registers a vote the client just cast (SDK holds it over lagging lookups).
   recordOptimisticVote: vi.fn(),
   // One account's vote lookup. Answers "not voted" by default; specs override

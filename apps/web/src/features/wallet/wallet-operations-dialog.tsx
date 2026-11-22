@@ -17,6 +17,7 @@ import {
   WalletOperationWithdrawRoutesForm
 } from "./operations";
 import i18next from "i18next";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { getWalletOperationTitleKeys } from "./wallet-operation-title-keys";
 import { MarketSwapForm } from "../market";
 
@@ -198,6 +199,7 @@ export function WalletOperationsDialog({
             operation={operation}
             onSignSuccess={() => setStep("success")}
             onSignError={(error) => {
+              reportRcRejection(error, "transfer", data.from as string);
               setStep("error");
               setSignError(error);
             }}

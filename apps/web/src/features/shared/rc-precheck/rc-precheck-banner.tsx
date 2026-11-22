@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import i18next from "i18next";
 import { Button } from "@ui/button";
 
@@ -8,6 +9,7 @@ import { useRcPrecheck } from "./use-rc-precheck";
 import { useRcTopupAction } from "@/features/shared/rc-topup/use-rc-topup-action";
 import type { RcPrecheckOperation, RcPrecheckPayload } from "@ecency/sdk";
 import { alertCircleSvg } from "@ui/svg";
+import { reportRcPrecheck, type RcShortfallOp } from "@/api/rc-shortfall-report";
 
 interface Props {
   operation?: RcPrecheckOperation;
@@ -19,6 +21,26 @@ interface Props {
   /** Renders a single-line, tighter version for small surfaces (e.g. the vote popover). */
   compact?: boolean;
   className?: string;
+  /** The action reported to telemetry; derived from `operation` when omitted. */
+  rcOp?: RcShortfallOp;
+  /**
+   * Whether a shown warning may be reported to telemetry. A banner that is up
+   * before the user has started (an empty reply box) passes false until they do.
+   */
+  reportWhen?: boolean;
+}
+
+function rcOpOf(operation: RcPrecheckOperation): RcShortfallOp {
+  switch (operation) {
+    case "comment_operation":
+      return "comment";
+    case "vote_operation":
+      return "vote";
+    case "transfer_operation":
+      return "transfer";
+    default:
+      return "other";
+  }
 }
 
 /**
@@ -34,14 +56,24 @@ export function RcPrecheckBanner({
   operation = "comment_operation",
   payload,
   compact = false,
-  className
+  className,
+  rcOp,
+  reportWhen = true
 }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
   const { ready, willLikelyFail } = useRcPrecheck(username, operation, payload);
   const { openTopup: onTopUp, dialog } = useRcTopupAction(username);
+  const shown = !!username && ready && willLikelyFail;
+  const reportOp = rcOp ?? rcOpOf(operation);
 
-  if (!username || !ready || !willLikelyFail) {
+  useEffect(() => {
+    if (shown && reportWhen) {
+      reportRcPrecheck(username, reportOp);
+    }
+  }, [shown, reportWhen, username, reportOp]);
+
+  if (!shown) {
     return null;
   }
 

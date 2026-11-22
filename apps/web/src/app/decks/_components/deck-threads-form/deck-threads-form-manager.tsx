@@ -8,6 +8,8 @@ import { ProfileFilter } from "@/enums";
 import i18next from "i18next";
 import { error } from "@/features/shared";
 import { formatError } from "@/api/format-error";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
+import { useActiveUsername } from "@/core/hooks/use-active-username";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface Context {
@@ -33,6 +35,7 @@ export const DeckThreadsFormManager = ({ children }: Props) => {
   const { request: communityBasedApiRequest } = useCommunityApi();
   const queryClient = useQueryClient();
   const dataLimit = useDataLimit();
+  const username = useActiveUsername();
 
   const [show, setShow] = useState(false);
 
@@ -53,6 +56,8 @@ export const DeckThreadsFormManager = ({ children }: Props) => {
       const entry = hostEntries[0];
       return await generalApiRequest(entry, raw, editingEntry);
     } catch (e) {
+      // dbuzz threads are root posts; every other host takes a reply.
+      reportRcRejection(e, host === "dbuzz" ? "post" : "comment", username);
       error(...formatError(e));
       throw e;
     }
@@ -62,6 +67,7 @@ export const DeckThreadsFormManager = ({ children }: Props) => {
     try {
       return await generalApiRequest(parent, raw, editingEntry);
     } catch (e) {
+      reportRcRejection(e, "comment", username);
       error(...formatError(e));
       throw e;
     }
