@@ -17,7 +17,7 @@ describe("reportRcRejection", () => {
     reportRcRejection(rcRejection(), "post", "alice");
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/post", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "rejected", "rc.op": "post" },
@@ -98,7 +98,7 @@ describe("reportRcPrecheck", () => {
     reportRcPrecheck("dave", "comment");
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(3);
-    expect(sentry.captureMessage).toHaveBeenNthCalledWith(2, "rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenNthCalledWith(2, "rc-shortfall: precheck/vote", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "precheck", "rc.op": "vote" },

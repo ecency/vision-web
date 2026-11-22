@@ -105,6 +105,9 @@ export function useWaveCreate() {
         isEditing: !!editingEntry
       };
     },
+    // The account that submitted, kept for the error: the active account can
+    // be switched while the broadcast is pending.
+    onMutate: () => ({ username }),
     onSuccess: ({ host, entry, isEditing }) => {
       if (isEditing) {
         return;
@@ -146,8 +149,9 @@ export function useWaveCreate() {
         prependToFirstPage
       );
     },
-    onError: (e) => {
-      reportRcRejection(e, "comment", username);
+    onError: (e, { host }, context) => {
+      // dbuzz waves are root posts; every other host takes a reply.
+      reportRcRejection(e, host === "dbuzz" ? "post" : "comment", context?.username);
       error(...formatError(e));
     }
   });

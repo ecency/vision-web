@@ -56,7 +56,8 @@ export const DeckThreadsFormManager = ({ children }: Props) => {
       const entry = hostEntries[0];
       return await generalApiRequest(entry, raw, editingEntry);
     } catch (e) {
-      reportRcRejection(e, "comment", username);
+      // dbuzz threads are root posts; every other host takes a reply.
+      reportRcRejection(e, host === "dbuzz" ? "post" : "comment", username);
       error(...formatError(e));
       throw e;
     }

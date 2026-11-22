@@ -92,7 +92,7 @@ const rcRejection = () =>
 
 function expectOneReport(op: string) {
   expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-  expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+  expect(sentry.captureMessage).toHaveBeenCalledWith(`rc-shortfall: rejected/${op}`, {
     level: "info",
     fingerprint: ["rc-shortfall"],
     tags: { "rc.stage": "rejected", "rc.op": op },

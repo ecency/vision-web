@@ -35,9 +35,12 @@ export function useWaveCreateReply() {
         decentMemes,
         isReply: true
       }),
+    // The account that submitted, kept for the error: the active account can
+    // be switched while the broadcast is pending.
+    onMutate: () => ({ username }),
     onSuccess: () => success(i18next.t("waves.success-reply")),
-    onError: (e) => {
-      reportRcRejection(e, "comment", username);
+    onError: (e, _variables, context) => {
+      reportRcRejection(e, "comment", context?.username);
       error(...formatError(e));
     }
   });

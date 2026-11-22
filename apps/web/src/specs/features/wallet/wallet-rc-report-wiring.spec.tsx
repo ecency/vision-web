@@ -77,7 +77,7 @@ function renderWithClient(ui: React.ReactElement) {
 
 function expectOneTransferReport() {
   expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-  expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+  expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/transfer", {
     level: "info",
     fingerprint: ["rc-shortfall"],
     tags: { "rc.stage": "rejected", "rc.op": "transfer" },

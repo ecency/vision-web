@@ -10,10 +10,12 @@ vi.mock("@/utils", async () => ({
 vi.mock("@/app/publish/_hooks", async () =>
   vi.importActual("@/app/publish/_hooks/use-publish-state")
 );
-const publishApi = vi.hoisted(() => ({ publish: vi.fn() }));
+// Stable across renders, as react-query's mutateAsync is, so a stale callback
+// is not hidden by a mock that changes identity every render.
+const publishApi = vi.hoisted(() => ({ publish: vi.fn(), schedule: vi.fn() }));
 vi.mock("@/app/publish/_api", () => ({
   usePublishApi: () => ({ mutateAsync: publishApi.publish, isPending: false }),
-  useScheduleApi: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useScheduleApi: () => ({ mutateAsync: publishApi.schedule, isPending: false }),
   useSaveDraftApi: () => ({ mutateAsync: vi.fn() }),
   useSaveTemplateApi: () => ({ mutateAsync: vi.fn(), isPending: false })
 }));
@@ -63,12 +65,14 @@ import { PublishStateProvider, usePublishState } from "@/app/publish/_hooks/use-
 import { PublishValidatePost } from "@/app/publish/_components/publish-validate-post";
 import { renderWithQueryClient } from "@/specs/test-utils";
 
+const noop = () => {};
+
 function openValidationStep() {
   const state: { current: ReturnType<typeof usePublishState> | null } = { current: null };
   function Harness({ step }: { step: "edit" | "validation" }) {
     state.current = usePublishState();
     return step === "validation" ? (
-      <PublishValidatePost onClose={() => {}} onSuccess={() => {}} />
+      <PublishValidatePost onClose={noop} onSuccess={noop} />
     ) : null;
   }
   const tree = (step: "edit" | "validation") => (
@@ -81,6 +85,7 @@ function openValidationStep() {
   act(() => state.current!.setContent("Some words about travel."));
   act(() => state.current!.setTags(["travel"]));
   rerender(tree("validation"));
+  return () => rerender(tree("validation"));
 }
 
 // #2196
@@ -106,7 +111,7 @@ describe("publish: out-of-RC telemetry", () => {
 
     expect(publishApi.publish).toHaveBeenCalled();
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/post", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "rejected", "rc.op": "post" },
@@ -122,5 +127,36 @@ describe("publish: out-of-RC telemetry", () => {
 
     expect(publishApi.publish).toHaveBeenCalled();
     expect(sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  // The account can be switched from the navbar while this step is open. The
+  // report goes to the account active when Publish is pressed, the one the
+  // publish broadcasts as, not the one the step first rendered with.
+  it("reports the account active when Publish is pressed", async () => {
+    const sameAccountData = { name: "author", post_count: 10 };
+    publishApi.publish.mockRejectedValue(
+      new Error("Account: switched has 100 RC, needs 2000 RC. Please wait to transact or power up HIVE.")
+    );
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "author" },
+      username: "author",
+      account: sameAccountData,
+      isLoading: false
+    } as unknown as ReturnType<typeof useActiveAccount>);
+    const rerenderStep = openValidationStep();
+
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "switched" },
+      username: "switched",
+      account: sameAccountData,
+      isLoading: false
+    } as unknown as ReturnType<typeof useActiveAccount>);
+    rerenderStep();
+    await act(async () => fireEvent.click(screen.getByText("publish.publish-now")));
+
+    expect(sentry.captureMessage).toHaveBeenCalledWith(
+      "rc-shortfall: rejected/post",
+      expect.objectContaining({ user: { username: "switched" } })
+    );
   });
 });

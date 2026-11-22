@@ -50,7 +50,7 @@ describe("RcPrecheckBanner: out-of-RC telemetry", () => {
     render(<RcPrecheckBanner operation="comment_operation" payload={commentPayload("hello")} />);
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: precheck/comment", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "precheck", "rc.op": "comment" },
@@ -63,7 +63,7 @@ describe("RcPrecheckBanner: out-of-RC telemetry", () => {
     render(<RcPrecheckBanner operation="vote_operation" compact />);
 
     expect(sentry.captureMessage).toHaveBeenCalledWith(
-      "rc-shortfall",
+      "rc-shortfall: precheck/vote",
       expect.objectContaining({ tags: { "rc.stage": "precheck", "rc.op": "vote" } })
     );
   });
@@ -73,7 +73,7 @@ describe("RcPrecheckBanner: out-of-RC telemetry", () => {
     render(<RcPrecheckBanner operation="comment_operation" rcOp="post" />);
 
     expect(sentry.captureMessage).toHaveBeenCalledWith(
-      "rc-shortfall",
+      "rc-shortfall: precheck/post",
       expect.objectContaining({ tags: { "rc.stage": "precheck", "rc.op": "post" } })
     );
   });

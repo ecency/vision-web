@@ -98,7 +98,7 @@ describe("useCreateReply: out-of-RC telemetry", () => {
     await failWith(rcRejection());
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/comment", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "rejected", "rc.op": "comment" },

@@ -44,7 +44,7 @@ describe("useEntryVote: out-of-RC telemetry", () => {
     await expect(hook.current.mutateAsync({ weight: 10000, estimated: 0 })).rejects.toBe(err);
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/vote", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "rejected", "rc.op": "vote" },

@@ -165,7 +165,7 @@ describe.each(PATHS)("%s: community reblog after a published post", (_name, moun
     expect(h.reblogMutation).toHaveBeenCalledTimes(1);
     expect(thrown).toBe(err);
     expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall", {
+    expect(sentry.captureMessage).toHaveBeenCalledWith("rc-shortfall: rejected/reblog", {
       level: "info",
       fingerprint: ["rc-shortfall"],
       tags: { "rc.stage": "rejected", "rc.op": "reblog" },

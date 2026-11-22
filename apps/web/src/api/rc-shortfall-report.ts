@@ -5,7 +5,8 @@ import { sentry } from "@/core/sentry/lazy-sentry";
 
 /**
  * Out-of-RC telemetry (#2196): one Sentry `info` message per event, grouped
- * under a fixed fingerprint so it never pages as an error. Sentry then gives
+ * under a fixed fingerprint so it never pages as an error. The message is
+ * "rc-shortfall: <stage>/<op>". Sentry then gives
  * daily events and unique users per stage and op. The mobile app sends the
  * identical shape; keep the two in step.
  */
@@ -53,7 +54,12 @@ function isRcRejection(err: unknown): boolean {
 }
 
 function send(stage: RcShortfallStage, op: RcShortfallOp, username: string | undefined) {
-  sentry.captureMessage("rc-shortfall", {
+  // One grouped issue through the fingerprint, but a message per stage and op:
+  // Sentry's default Dedupe integration drops an event whose message,
+  // fingerprint and stacktrace equal the previous one, ignoring tags and user,
+  // so a shared message would keep only the first of a pre-check and the
+  // rejection that follows it.
+  sentry.captureMessage(`rc-shortfall: ${stage}/${op}`, {
     level: "info",
     fingerprint: ["rc-shortfall"],
     tags: { "rc.stage": stage, "rc.op": op },

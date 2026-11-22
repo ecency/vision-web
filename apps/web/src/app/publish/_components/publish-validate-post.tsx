@@ -270,6 +270,7 @@ export function PublishValidatePost({ onClose, onSuccess }: Props) {
     }
   }, [
     account,
+    activeUser?.username,
     clearAll,
     content,
     loadedDraftTags,
