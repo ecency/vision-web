@@ -50,7 +50,8 @@ vi.mock("@ecency/sdk", async () => ({
   }),
   getHivePowerDelegatesInfiniteQueryOptions: () => ({
     queryKey: ["hp-delegates", "alice"],
-    queryFn: async () => [{ delegator: "bob", delegatee: "alice", vesting_shares: "1000.000000 VESTS" }]
+    // Delegations made BY the profile owner (alice) to bob.
+    queryFn: async () => [{ delegator: "alice", delegatee: "bob", vesting_shares: "1000.000000 VESTS" }]
   })
 }));
 vi.mock("@/features/shared", () => ({
@@ -111,6 +112,39 @@ describe("WalletOperationsDialog", () => {
 });
 
 describe("DelegatedVesting dialog", () => {
+  // #2197: only the profile owner (the delegator) can undelegate these rows.
+  it("shows Undelegate to the profile owner on the delegatee's row", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    renderWithClient(
+      <DelegatedVesting username="alice" show={true} setShow={vi.fn()} totalDelegated="1 HP" />
+    );
+
+    await act(async () => {
+      fireEvent.click(await screen.findByText("delegated-vesting.undelegate"));
+    });
+
+    expect(delegate.mutateAsync).toHaveBeenCalledWith({
+      delegatee: "bob",
+      vestingShares: "0.000000 VESTS"
+    });
+    expect(sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not show Undelegate to the delegatee viewing the owner's list", async () => {
+    vi.mocked(useActiveAccount).mockReturnValue({
+      activeUser: { username: "bob" },
+      username: "bob",
+      account: { name: "bob" },
+      isLoading: false
+    } as unknown as ReturnType<typeof useActiveAccount>);
+    renderWithClient(
+      <DelegatedVesting username="alice" show={true} setShow={vi.fn()} totalDelegated="1 HP" />
+    );
+
+    expect(await screen.findByText("bob")).toBeTruthy();
+    expect(screen.queryByText("delegated-vesting.undelegate")).toBeNull();
+  });
+
   it("reports an undelegation rejected for RC as a transfer", async () => {
     delegate.mutateAsync.mockRejectedValue(rcRejection());
     renderWithClient(
@@ -123,7 +157,7 @@ describe("DelegatedVesting dialog", () => {
     });
 
     expect(delegate.mutateAsync).toHaveBeenCalledWith({
-      delegatee: "alice",
+      delegatee: "bob",
       vestingShares: "0.000000 VESTS"
     });
     expectOneTransferReport();

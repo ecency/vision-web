@@ -124,7 +124,9 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                           )}
                         </span>
                       </Tooltip>
-                      {activeUser && activeUser.username === x.delegatee && (
+                      {/* These rows are delegations BY the profile owner, so only the
+                          owner (the delegator) can undelegate them (#2197). */}
+                      {activeUser && activeUser.username === username && (
                         <a
                           href="#"
                           className="undelegate"
