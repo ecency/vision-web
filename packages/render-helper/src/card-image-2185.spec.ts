@@ -2,32 +2,56 @@ import { describe, expect, it } from 'vitest'
 import { markdown2Html } from './markdown-2-html'
 import { catchPostImage } from './catch-post-image'
 import { getEntryImageRawUrl, getEntryLcpImage } from './card-image'
-import { getProxyBase, proxifyImageSrc } from './proxify-image-src'
+import { getProxyBase, isPictureEligibleRawUrl, proxifyImageSrc } from './proxify-image-src'
 
 let n = 0
 const entry = (body: string) => ({ author: 'cs', permlink: `q${n++}`, last_update: '2026-11-21', body, json_metadata: '{}' }) as never
-// The first image the body shows: an <img> the render dropped (no src) shows nothing.
+// The first image the body shows: the first <img> with a nonempty src (an
+// <img> the render dropped shows nothing), as the request it makes.
 const shown = (body: string) =>
-  [...markdown2Html(entry(body), false).matchAll(/<img [^>]*?src="([^"]*)"/g)].map((m) => m[1].replace(/&amp;/g, '&'))[0] ?? null
+  [...markdown2Html(entry(body), false).matchAll(/<img\b[^>]*?\ssrc="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'))[0] ?? null
+// One request, however it is spelled: the proxy reads `/p/<hash>.png` and
+// `/p/<hash>?format=match&mode=fit` as the same image.
+const request = (src: string | null) => (src === null ? null : proxifyImageSrc(src, 0, 0, 'match') || src)
 
 const FAST = { fast: true }
-// The entry page builds its preload from the raw URL the way img() builds the
-// body's <img>: routed through /p/ unless already on the proxy.
-// A proxy URL is kept as written by img() and routed through /p/ by
-// createImageHTML: either is the src the body shows, whichever it rendered.
-const asRendered = (url: string, body: string) => {
-  const forced = proxifyImageSrc(url, 0, 0, 'match', { forceProxy: true })
-  return /^https:\/\/i\.ecency\.com\/(?:p|u|\d+x\d+)\//.test(url) && shown(body) !== forced ? url : forced
+
+// Milliseconds per call, timed over a batch long enough to measure: a sample
+// under the timer's resolution would hide how the call grows.
+const perCall = (run: () => void) => {
+  for (let count = 1; ; count *= 2) {
+    const started = performance.now()
+    for (let i = 0; i < count; i++) run()
+    const spent = performance.now() - started
+    if (spent >= 20) return spent / count
+  }
 }
+// How much longer `large` takes than `small`, the least of a few tries.
+const growth = (once: (text: string) => void, small: string, large: string) => {
+  once(small)
+  let ratio = Infinity
+  for (let attempt = 0; attempt < 3 && ratio >= 30; attempt++) {
+    ratio = Math.min(ratio, perCall(() => once(large)) / perCall(() => once(small)))
+  }
+  return ratio
+}
+// The image the entry page requests from a raw URL, built the way it builds it
+// and never from the render (entry-lcp-match.ts): a picture-eligible cover
+// through the proxy hash of the raw URL, anything else (already proxied, gif, a
+// poster) through proxifyImageSrc as it stands. This checks which image, not
+// which size: for an already-proxied first image the page preloads another
+// rendition than the body requests (#2191).
+const preload = (url: string, poster = false) =>
+  request(!poster && isPictureEligibleRawUrl(url) ? proxifyImageSrc(url, 0, 0, 'match', { forceProxy: true }) : url)
 const lookups = {
-  fast: (body: string) => catchPostImage(entry(body), 0, 0, 'match', FAST),
+  fast: (body: string) => request(catchPostImage(entry(body), 0, 0, 'match', FAST)),
   raw: (body: string) => {
     const url = getEntryImageRawUrl(entry(body))
-    return url ? asRendered(url, body) : null
+    return url ? preload(url) : null
   },
   lcp: (body: string) => {
     const found = getEntryLcpImage(entry(body))
-    return found ? asRendered(found.url, body) : null
+    return found ? preload(found.url, found.poster) : null
   }
 }
 
@@ -42,6 +66,52 @@ const TAIL = `\n\n<img data-src="${D}" src="${S}">`
 
 describe('a lookup names the image the body shows, or defers (#2185)', () => {
   it.each([
+    // Over the limit as written, under it decoded: the render shows it.
+    `![x](https://e.com/${'a'.repeat(2020)}${'%41'.repeat(10)}.png) ![d](${B})`,
+    // Reserved escapes, a legacy host's encoded inner URL: shown although long as written.
+    `![x](https://e.com/x%2F%7e${'a'.repeat(2024)}.png) ![d](${B})`,
+    `![x](https://e.com/%3Fq%3D%41%41${'a'.repeat(2019)}.png) ![d](${B})`,
+    `![x](https://images.hive.blog/0x0/https%3A%2F%2Fe.com%2F${'a'.repeat(1995)}.png)\n\n![d](${B})`,
+    `![x](https://images.hive.blog/0x0/https%3A%2F%2Fe.com%2F${'a'.repeat(2022)}.png)\n\n![d](${B})`,
+    // A lone surrogate: no lookup throws.
+    `![x](https://e.com/%20\ud800${'a'.repeat(2040)}.png) ![d](${B})`,
+    // The candidate's whole line decides a closer, not the text before it.
+    `\`\`\`\ncode\n\`\`\`js\nmore\n\`\`\`<img src="${B}">`,
+    // A closer behind a container the opener was not in, or indented four.
+    `\`\`\`\ncode\n\`\`\`js\n> \`\`\`\n![x](${A})`,
+    `\`\`\`\ncode\n    \`\`\`\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    `\`\`\`\ncode\n- \`\`\`\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    `\`\`\`\ncode\n\`\`\`![x](${A})\n\`\`\`\n\n![d](${B})`,
+    // Multi-byte escapes decode shorter than two per escape.
+    `![x](https://e.com/%C3%A9${'a'.repeat(2029)}.png) ![d](${B})`,
+    `![x](https://e.com/%E2%82%AC${'a'.repeat(2028)}.png) ![d](${B})`,
+    `![x](https://e.com/${'%C3%A9'.repeat(100)}${'a'.repeat(1882)}.png) ![d](${B})`,
+    `![x](https://e.com/${'%F0%9F%98%80'.repeat(20)}${'a'.repeat(1820)}.png) ![d](${B})`,
+    // A closer indented up to three spaces closes whatever the opener's indent.
+    `\`\`\`\na\n   \`\`\`\n\`\`\`\nb\n\`\`\`\n\`\`\`\n<img src="${B}">`,
+    `\`\`\`\na\n   \`\`\`\n\`\`\`\nb\n\`\`\`\n\`\`\`\n![x](${A})`,
+    `\`\`\`\n\n   \`\`\`\nx\n\`\`\`\n\`\`A\`\`\n\n![d](${B})`,
+    // A fence holding a blank line, then inline code before the URL.
+    `\`\`\`\ncode\n\n\`\`\`\n\`\`${A}\`\`\n\n![d](${B})`,
+    // A list fence closed by its indented closer, then a fence the list
+    // marker line does not close.
+    `- \`\`\`\n  a\n  \`\`\`\n\n\`\`\`\n- \`\`\`\n![x](${A})`,
+    // A marker indented four or by a tab is indented code, not an opener.
+    `\t\`\`\`\n</pre>   \`\`\`\n    \t\`\`\`\n    \`\`\`\n![x](${A})\`\`\`\t\n`,
+    `\t\`\`\`\n\n\n<code>--- \`\`\`\n\`\`\`\t\nhttps://youtu.be/dQw4w9WgXcQ`,
+    `text\n\n    \`\`\`\n    indented code\n\n\`\`\`\n${A}\n\`\`\`\n\n![d](${B})`,
+    `    \`\`\`\n\n\`\`\`\n![x](${A})`,
+    `    \`\`\`\n\n\`\`\`\nhttps://youtu.be/dQw4w9WgXcQ`,
+    // An info string holding a backtick opens nothing.
+    `\`\`\` a\`b\n\n\`\`\`\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    `~~~ a\`b\n\n~~~\n![x](${A})\n~~~\n\n![d](${B})`,
+    // A list item's fence, then a marker under its indent.
+    `1. x\n   \`\`\`\n   a\n\`\`\`\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    // A fence marker with text after it closes nothing.
+    `\`\`\`\n\`\`\` not a closer\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    `~~~\n~~~ x\n![x](${A})\n~~~\n\n![d](${B})`,
+    `\`\`\`\n\`\`\` x\n\`\`\`\n${A}\n\`\`\`\n\n![d](${B})`,
+    `\`\`\`\n\`\`\` x\n\`\`\`\n\`a\`\n\`\`\`\n\n${A}\n\n![d](${B})`,
     // 2. Bare image URLs the scans never read.
     `https://e.com/a(1).png\n\n![d](${B})`,
     `_${A}_ ![x](${B})`,
@@ -188,7 +258,7 @@ describe('a lookup names the image the body shows, or defers (#2185)', () => {
     expect(['card', catchPostImage(entry(body), 0, 0, 'match')]).toEqual(['card', rendered])
     for (const name of ['fast', 'raw', 'lcp'] as const) {
       const found = lookups[name](body)
-      if (found !== null) expect([name, found]).toEqual([name, rendered])
+      if (found !== null) expect([name, found]).toEqual([name, request(rendered)])
     }
   })
 })
@@ -203,9 +273,29 @@ describe('a kept proxy URL over the proxy limit is the card as rendered (#2185)'
   })
 })
 
+describe('an image over the proxy limit with percent escapes is skipped (#2182)', () => {
+  it.each([
+    `![x](https://e.com/${'a'.repeat(2050)}%20b.png) ![d](${B})`,
+    `![x](https://e.com/${'a'.repeat(2050)}%C3%A9.png)\n\n![d](${B})`
+  ])('%j', (body) => {
+    const rendered = shown(body)
+    expect(rendered).toBe(proxifyImageSrc(B, 0, 0, 'match'))
+    for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, request(rendered)])
+  })
+})
+
 describe('a bare URL over the proxy limit does not end the render (#2185)', () => {
   it('still renders the image after it', () => {
     expect(shown(`https://e.example/${'a'.repeat(2040)}.png\n\n${Z}`)).toBe(proxifyImageSrc(Z, 0, 0, 'match'))
+  })
+  it('leaves an IPFS one a link, with no empty image', () => {
+    const url = `https://ipfs.io/ipfs/QmTest/${'a'.repeat(2100)}.png`
+    for (const body of [url, `[${url}](${url})`]) expect(markdown2Html(entry(`${body}\n\n![x](${B})`), false)).not.toMatch(/<img(?![^>]*\ssrc=)/)
+  })
+  it.each([true, false])('leaves it an external link like any other (forApp %s)', (forApp) => {
+    const url = `https://e.example/${'a'.repeat(2040)}.png`
+    const asLink = (html: string, href: string) => html.replace(href, 'URL').replace(href, 'URL')
+    expect(asLink(markdown2Html(entry(url), forApp), url)).toBe(asLink(markdown2Html(entry('https://e.example/page'), forApp), 'https://e.example/page'))
   })
 })
 
@@ -220,13 +310,18 @@ describe('a bare URL in a plain line is named by every lookup (#2185)', () => {
     `<center>${A}</center>`,
     `<div>${A}</div>\n\n![x](${B})`,
     `<img src=" ${A} ">\n\n![x](${B})`,
+    // Code before the paragraph, or fenced in it, is not the URL's code.
+    `\`x\`\n\n${A}\n\n![x](${B})`,
+    `\`\`\`\nx\n\`\`\`\n${A}\n\n![x](${B})`,
+    // A fence in a quote, closed behind the same prefix.
+    `> \`\`\`\n> code\n> \`\`\`\n\n![x](${A})`,
     // A linked image.
     `<a href="${A}"><img src="${A}"></a>`,
     `<center><a href="https://e.com/full.jpg"><img src="${A}"></a></center>\n\n![x](${B})`
   ])('%j', (body) => {
     const rendered = proxifyImageSrc(A, 0, 0, 'match')
     expect(shown(body)).toBe(rendered)
-    for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, rendered])
+    for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, request(rendered)])
   })
 })
 
@@ -238,7 +333,7 @@ describe('a legacy host image is preloaded as rendered (#2185)', () => {
   ])('%j', (body) => {
     const rendered = shown(body)
     expect(rendered).not.toBeNull()
-    for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, rendered])
+    for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, request(rendered)])
   })
 })
 
@@ -255,24 +350,10 @@ describe('the new scans are linear (#2185)', () => {
     const lead = unit === 'https://e.com/t.png ' ? '<div title="' : ''
     const make = (n: number) => lead + (unit.includes('rN') ? Array.from({ length: n }, (_, i) => unit.replace('rN', `r${i}`)).join('') : unit.repeat(n)) + tail
     const once = (text: string) => {
-      const started = performance.now()
       catchPostImage(entry(text), 0, 0, 'match', FAST)
       getEntryLcpImage(entry(text))
-      return performance.now() - started
     }
-    const small = make(Math.floor(4_000 / unit.length))
-    const large = make(Math.floor(32_000 / unit.length))
-    once(small)
-    let ratio = Infinity
-    for (let attempt = 0; attempt < 3 && ratio >= 30; attempt++) {
-      let s = Infinity
-      let l = Infinity
-      for (let run = 0; run < 3; run++) {
-        s = Math.min(s, once(small))
-        l = Math.min(l, once(large))
-      }
-      ratio = Math.min(ratio, l / Math.max(s, 1))
-    }
+    const ratio = growth(once, make(Math.floor(4_000 / unit.length)), make(Math.floor(32_000 / unit.length)))
     // 8x input: about 8-15 linear, 60+ quadratic.
     expect(ratio).toBeLessThan(30)
   }, 120_000)
@@ -281,25 +362,27 @@ describe('the new scans are linear (#2185)', () => {
 describe('the <img scan is linear (#2185)', () => {
   it.each(['<img ', '<img a', '(<img src =)'])('%j repeated', (unit) => {
     const once = (text: string) => {
-      const started = performance.now()
       getEntryImageRawUrl(entry(text))
       catchPostImage(entry(text), 0, 0, 'match', FAST)
-      return performance.now() - started
     }
-    const small = unit.repeat(1_500)
-    const large = unit.repeat(12_000)
-    once(small)
-    let ratio = Infinity
-    for (let attempt = 0; attempt < 3 && ratio >= 30; attempt++) {
-      let s = Infinity
-      let l = Infinity
-      for (let run = 0; run < 3; run++) {
-        s = Math.min(s, once(small))
-        l = Math.min(l, once(large))
-      }
-      ratio = Math.min(ratio, l / Math.max(s, 1))
-    }
+    // A src at the end: a scan that looks past each tag for one reaches it every time.
+    const tail = `<img src="${A}">`
+    const ratio = growth(once, unit.repeat(1_500) + tail, unit.repeat(12_000) + tail)
     // 8x input: about 8-15 linear, 60+ for a rescan of the rest per tag.
     expect(ratio).toBeLessThan(30)
+  }, 120_000)
+})
+
+describe('a gallery of closed <img> tags without a src is read once (#2185)', () => {
+  it.each(['<img>', '<img alt="x">'])('%j repeated, then an image', (unit) => {
+    const once = (text: string) => {
+      getEntryImageRawUrl(entry(text))
+      catchPostImage(entry(text), 0, 0, 'match', FAST)
+    }
+    // A src at the end: a scan that looks past each tag for one reaches it every time.
+    const tail = `<img src="${A}">`
+    const ratio = growth(once, unit.repeat(12_000) + tail, unit.repeat(192_000) + tail)
+    // 16x input: about 5-20 linear, 50+ for a rescan of the rest per tag.
+    expect(ratio).toBeLessThan(32)
   }, 120_000)
 })

@@ -492,18 +492,29 @@ function labelCloseBefore(text: string, idx: number): number {
 
 // An image the render leaves without a src: a plain label and a plain URL the
 // proxy refuses for its length, with nothing in it that the render would
-// shorten (a reference, an escape, a percent escape). Sticky, at a `![`.
-const DROPPED_IMAGE_RE = /!\[[^[\]\n\\`<>]*\]\((https?:\/\/[^\s()<>[\]\\`&%"']+)\)/y
+// shorten (a reference, an escape). Sticky, at a `![`.
+const DROPPED_IMAGE_RE = /!\[[^[\]\n\\`<>]*\]\((https?:\/\/[^\s()<>[\]\\`&"']+)\)/y
 
 // The end of the image at `pos` when the render drops it (#2182), else -1.
 function droppedImageEnd(text: string, pos: number): number {
   DROPPED_IMAGE_RE.lastIndex = pos
   const m = DROPPED_IMAGE_RE.exec(text)
   // An existing proxy URL is kept as written, whatever its length.
-  return m && m[1].length > MAX_PROXIED_URL_LENGTH && !m[1].startsWith(`${getProxyBase()}/`) ? DROPPED_IMAGE_RE.lastIndex : -1
+  if (!m || m[1].length <= MAX_PROXIED_URL_LENGTH || m[1].startsWith(`${getProxyBase()}/`)) return -1
+  const url = m[1]
+  if (url.includes('%')) {
+    // The render decodes some escapes and keeps others; dropped for sure only
+    // when even every escape decoded is over the limit. A UTF-8 sequence
+    // decodes to at least one character per three escapes (`%C3%A9` is `é`),
+    // so each escape shrinks the URL by under three.
+    const escapes = url.match(PERCENT_ESCAPE_G)?.length ?? 0
+    if (url.length - 3 * escapes <= MAX_PROXIED_URL_LENGTH) return -1
+  }
+  return DROPPED_IMAGE_RE.lastIndex
 }
 
 const DROPPED_IMAGE_G = new RegExp(DROPPED_IMAGE_RE.source, 'g')
+const PERCENT_ESCAPE_G = /%[\da-f]{2}/gi
 
 // Whether `text` before `pos` is only images the render drops and whitespace
 // (a shorter image there would itself be the first image).
@@ -547,17 +558,23 @@ interface HtmlImageMatch {
 function matchHtmlImage(text: string): HtmlImageMatch | null {
   const lower = asciiLower(text)
   IMG_OPEN_RE.lastIndex = 0
+  // The next `src` at or after the tag being read, carried from tag to tag:
+  // tags only move forward, so the body is searched for `src` once in all.
+  let next = -1
   let m: RegExpExecArray | null
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
     const start = m.index
     let gt = text.indexOf('>', start)
     if (gt === -1) gt = text.length
-    for (let p = lower.indexOf('src', start + 4); p !== -1 && p < gt; p = lower.indexOf('src', p + 1)) {
-      if (/\w/.test(text[p - 1])) continue
-      SRC_VALUE_RE.lastIndex = p
+    if (next < start + 4) next = lower.indexOf('src', start + 4)
+    for (; next >= 0 && next < gt; next = lower.indexOf('src', next + 1)) {
+      if (/\w/.test(text[next - 1])) continue
+      SRC_VALUE_RE.lastIndex = next
       const v = SRC_VALUE_RE.exec(text)
-      if (v) return { index: start, whole: text.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text[p - 1] === '-' }
+      if (v) return { index: start, whole: text.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text[next - 1] === '-' }
     }
+    // None left in the body: no later tag has one either.
+    if (next === -1) return null
     IMG_OPEN_RE.lastIndex = Math.max(gt, start + 4)
   }
   return null
@@ -1263,17 +1280,49 @@ const HIDING_TAG_RE = /<(\/?)(iframe|head|script|style|textarea|title|noscript|t
 // A code fence line, after any container prefix: its run of `` ` `` or `~`.
 const FENCE_LINE_RE = /^[ \t>*+\-\d.)]*(`{3,}|~{3,})/
 
-// Whether a code fence is still open at the end of `text`: a closing fence is
-// the opening one's character, at least as long.
-function fenceOpen(text: string): boolean {
-  let open = ''
-  for (const line of text.split('\n')) {
-    const m = FENCE_LINE_RE.exec(line)
-    if (!m) continue
-    if (!open) open = m[1]
-    else if (m[1][0] === open[0] && m[1].length >= open.length) open = ''
+// A fence as it opened: its marker run and the prefix before it.
+interface Fence {
+  run: string
+  prefix: string
+}
+// Outside any fence (null), inside one, or past a line that may or may not
+// have closed it ('unknown'): from there on nothing is read as known.
+type FenceState = Fence | null | 'unknown'
+
+const SPACES_RE = /^ *$/
+
+// The fence state after `line`. A closer is the opener's character, at least
+// as long, with nothing after it but spaces. Behind the opener's own prefix
+// it closes; after an opener at the margin, a closer indented up to three
+// spaces closes and one indented four is code. Any other prefix (a
+// container, an indent the opener had and the closer has not, a tab) is a
+// line the scans cannot place.
+function nextFenceState(state: FenceState, line: string): FenceState {
+  if (state === 'unknown') return state
+  const m = FENCE_LINE_RE.exec(line)
+  if (!m) return state
+  const prefix = m[0].slice(0, -m[1].length)
+  if (state === null) {
+    // A backtick in the info string makes it no fence (Remarkable 2.0.1
+    // refuses one after `~~~` too).
+    if (line.slice(m[0].length).includes('`')) return 'unknown'
+    return { run: m[1], prefix }
   }
-  return open !== ''
+  if (m[1][0] !== state.run[0] || m[1].length < state.run.length || line.slice(m[0].length).trim()) return state
+  if (prefix === state.prefix) return null
+  // A top-level fence: a closer indented up to three spaces closes it, one
+  // indented four is its content.
+  if (!state.prefix && SPACES_RE.test(prefix)) return prefix.length <= 3 ? null : state
+  return 'unknown'
+}
+
+// Whether a code fence may be open at `pos` in `source`, reading the line
+// `pos` is on whole: text after a marker there keeps the fence open.
+function fenceOpen(source: string, pos: number): boolean {
+  const eol = source.indexOf('\n', pos)
+  let state: FenceState = null
+  for (const line of source.slice(0, eol === -1 ? source.length : eol).split('\n')) state = nextFenceState(state, line)
+  return state !== null
 }
 
 /**
@@ -1289,7 +1338,7 @@ function unreadBefore(prepared: PreparedBody, closes: Set<number>, pos: number):
   const prefix = cleaned.slice(0, pos)
   const lowerPrefix = asciiLower(prefix)
   if (/<img\b/.test(lowerPrefix)) return true
-  if (fenceOpen(source.slice(0, pos))) return true
+  if (fenceOpen(source, pos)) return true
   let open = 0
   for (const m of regexMatches(lowerPrefix, HIDING_TAG_RE)) open += m[1] ? -1 : 1
   if (open > 0) return true
@@ -1368,17 +1417,21 @@ function mdImageShown(prepared: PreparedBody, pos: number): boolean {
   return !inTextContext(text.slice(blank === -1 ? 0 : blank, pos))
 }
 
-// Whether `text` has a backtick outside code fences (a fence's own lines and
-// the code inside it are the parser's code block, not inline code).
-function inlineBacktick(text: string): boolean {
-  let open = ''
-  for (const line of text.split('\n')) {
-    const m = FENCE_LINE_RE.exec(line)
-    if (m && (!open || (m[1][0] === open[0] && m[1].length >= open.length))) {
-      open = open ? '' : m[1]
-      continue
-    }
-    if (!open && line.includes('`')) return true
+// Whether the paragraph from `from` to `to` in `source` has a backtick outside
+// code fences (a fence's own lines and its content are code already), the
+// fences read from the start of the body: a paragraph may begin inside one.
+function inlineBacktick(source: string, from: number, to: number): boolean {
+  let state: FenceState = null
+  let at = 0
+  for (const line of source.slice(0, to).split('\n')) {
+    const before = state
+    state = nextFenceState(state, line)
+    const lineStart = at
+    at += line.length + 1
+    if (lineStart < from) continue
+    // Fenced lines and a fence's own marker lines are not inline code.
+    if (before !== null || state !== null) continue
+    if (line.includes('`')) return true
   }
   return false
 }
@@ -1411,7 +1464,7 @@ function markdownBracketAt(source: string, at: number): boolean {
   // one URL and nothing else, outside a code fence.
   const def = new RegExp(`(?:^|\\n[ \\t]*\\n)( {0,3}\\[${escaped}\\]:[ \\t]*\\S+[ \\t]*)(?:\\n|$)`, 'i').exec(source)
   if (!def) return false
-  return !fenceOpen(source.slice(0, def.index))
+  return !fenceOpen(source, def.index)
 }
 
 // Tag marks on the code-stripped text before any anchor is blanked: an
@@ -1458,7 +1511,7 @@ function bareShown(prepared: PreparedBody, candidate: ImageCandidate): boolean {
     else if (c === ']' && !prepared.image.inTag[paraStart + i]) depth = Math.max(0, depth - 1)
   }
   if (depth > 0) return false
-  if (inlineBacktick(para) || URL_SYNTAX_RE.test(candidate.url)) return false
+  if (inlineBacktick(source, paraStart, pos) || URL_SYNTAX_RE.test(candidate.url)) return false
   // An autolink in an HTML block is text to the parser.
   if (source[pos - 1] === '<' && markLines(asciiLower(codeBlanked(source))).block[pos]) return false
   // An anchor around it opened across lines, or nested, is read its own way.

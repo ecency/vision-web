@@ -259,6 +259,7 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
 
   // if href is an image url and innerHTML same with href then mark it as image
   // & => &amp; can break equality
+  let refusedImage = false
   if (
     href.match(IMG_REGEX) &&
     // Not `.ico` in `.icons/readme` nor `.jpg` in `photo.jpg.html` (imageUrlEnd).
@@ -268,21 +269,24 @@ export function a(el: HTMLElement | null, forApp: boolean, parentDomain: string 
   ) {
     const isLCP = false; // LCP handled elsewhere
     const imgHTML = createImageHTML(href, isLCP, forApp);
-    // A URL the proxy refuses has no image to show: the link stays a link
-    // (an empty document would throw and end the render, #2185).
-    if (!imgHTML) return
-    const doc = DOMParser.parseFromString(imgHTML, 'text/html');
-    const replaceNode = (doc as any).body?.firstChild || doc.firstChild
+    // A URL the proxy refuses has no image to show: the link goes on as an
+    // ordinary link (an empty document would throw and end the render, #2185).
+    refusedImage = !imgHTML
+    if (imgHTML) {
+      const doc = DOMParser.parseFromString(imgHTML, 'text/html');
+      const replaceNode = (doc as any).body?.firstChild || doc.firstChild
 
-    if (replaceNode && el.parentNode) {
-      const importedNode = el.ownerDocument.importNode(replaceNode, true)
-      el.parentNode.replaceChild(importedNode, el)
+      if (replaceNode && el.parentNode) {
+        const importedNode = el.ownerDocument.importNode(replaceNode, true)
+        el.parentNode.replaceChild(importedNode, el)
+      }
+
+      return
     }
-
-    return
   }
 
   if (
+    !refusedImage &&
     href.match(IPFS_REGEX) &&
     href.trim().replace(/&amp;/g, '&') ===
     getSerializedInnerHTML(el).trim().replace(/&amp;/g, '&') &&
