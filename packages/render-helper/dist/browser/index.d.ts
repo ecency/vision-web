@@ -220,6 +220,24 @@ declare function buildPictureSources(rawUrl?: string): {
  * match the exact srcset candidate the rendered <img> selects.
  */
 declare const IMAGE_SIZES = "(max-width: 768px) 100vw, 700px";
+/**
+ * The src and srcset the body gives an image written as `src`, the one rule
+ * for a markdown or HTML <img> (img) and a linkified URL or promoted link
+ * (createImageHTML), and what the entry page preloads (#2191), or null when
+ * the proxy refuses it.
+ *
+ * A src already on the proxy (/p/, /u/, a sized route) is kept as written; a
+ * /p/ one gets the sized srcset of its hash. Any other goes through /p/,
+ * unsized so uploads still get WebP/AVIF by Accept negotiation, with a srcset
+ * of sized variants of the /p/ hash it got. A legacy host's /p/ route is
+ * sized from that hash too: sized as written it only swaps the host back, so
+ * every width would name the same unsized URL.
+ */
+declare function bodyImageSources(src: string): {
+    src: string;
+    srcSet: string;
+    kept: boolean;
+} | null;
 
 declare function setCacheSize(size: number): void;
 
@@ -239,4 +257,4 @@ declare function isValidPermlink(permlink: string): boolean;
  */
 declare function simpleMarkdownToHTML(input: string): string;
 
-export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, getPostBodyText, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };
+export { type Entry, IMAGE_SIZES, type ProxifyOptions, type RenderOptions, SECTION_LIST, type SeoContext, bodyImageSources, buildPictureSources, buildSrcSet, buildSrcSetForFormat, catchPostImage, getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, getPostBodyText, isAllowedEmbedSrc, isLegacySizedProxyUrl, isPictureEligibleRawUrl, isValidPermlink, getPostBodySummary as postBodySummary, proxifyImageSrc, markdown2Html as renderPostBody, setCacheSize, setProxyBase, setSlowRenderThresholdMs, simpleMarkdownToHTML };

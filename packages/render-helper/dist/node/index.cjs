@@ -60,7 +60,8 @@ function decodeImageSrc(src) {
   return decodeDomImageSrc(decodeEntities(src));
 }
 var LEGACY_ENCODED_INNER_RE = /^https?:\/\/(?:images\.hive\.blog|steemitimages\.com|images\.ecency\.com|i\.ecency\.com)\/\d+x\d+\/https?(?::%2F%2F|%3A%2F%2F|%3A\/\/)/i;
-function decodeDomImageSrc(src) {
+function decodeDomImageSrc(raw) {
+  const src = raw.trim();
   try {
     const full = decodeURIComponent(src);
     if (LEGACY_ENCODED_INNER_RE.test(src)) return full.trim();
@@ -122,9 +123,9 @@ var MD_ESCAPE_RE = /\\([\\!"#$%&'()*+,./:;<=>?@[\]^_`{|}~-])/g;
 function unescapeDestination(src, ampEscapes2 = true) {
   return src.replace(MD_ESCAPE_RE, (_m, c) => c === "&" && ampEscapes2 ? "&amp;" : c);
 }
-function decodeRawBodyImageSrc(src, destination = false, ampEscapes2 = true) {
+function rawBodySource(src, destination = false, ampEscapes2 = true) {
   const unescaped = destination ? unescapeDestination(src, ampEscapes2) : src.replace(/\\&/g, "&amp;");
-  return decodeDomImageSrc(decodeCompleteReferences(unescaped));
+  return decodeCompleteReferences(unescaped);
 }
 function escapeAttrValue(value) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\t/g, "&#9;").replace(/\n/g, "&#10;").replace(/\r/g, "&#13;");
@@ -940,7 +941,7 @@ function proxifyForFormat(url, width = 0, height = 0, format = "match", opts = {
   }
   const routeThroughProxy = width > 0 || height > 0 || !!opts.blur || !!opts.forceProxy;
   if (isLegacyForeignProxyUrl(url) && !(isLegacySizedProxyUrl(url) && routeThroughProxy)) {
-    return url.replace("https://images.hive.blog", proxyBase).replace("https://steemitimages.com", proxyBase);
+    return url.replace("https://images.hive.blog", proxyBase).replace("https://steemitimages.com", proxyBase).replace(/[\u0000-\u0020\u007f]/g, (c) => encodeURIComponent(c));
   }
   if (url.indexOf("https://images.ecency.com/") === 0 && !routeThroughProxy) {
     return url.replace("https://images.ecency.com", proxyBase);
@@ -1485,31 +1486,21 @@ function img(el, state, forApp = true, renderOptions) {
   }
   const shouldReplace = !isInternalThumbnail(el);
   const base = trimTrailingSlash(getProxyBase());
-  const hasAlreadyProxied = src.startsWith(`${base}/p/`) || src.startsWith(`${base}/u/`) || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\d+x\\d+/`).test(src);
-  if (shouldReplace && !hasAlreadyProxied) {
-    const proxified = proxifyImageSrc(decodedSrc, 0, 0, "match", { forceProxy: true });
-    if (proxified) {
-      el.setAttribute("src", proxified);
-      const srcset2 = buildSrcSet(decodedSrc);
-      if (srcset2) {
-        el.setAttribute("srcset", srcset2);
+  if (shouldReplace) {
+    const sources = bodyImageSources(src);
+    if (sources) {
+      if (sources.src !== src) el.setAttribute("src", sources.src);
+      if (sources.srcSet) {
+        el.setAttribute("srcset", sources.srcSet);
         el.setAttribute("sizes", IMAGE_SIZES);
       }
-      if (!forApp) {
+      if (!forApp && !sources.kept) {
         wrapInPicture(el, decodedSrc);
       }
     } else if (/^https?:\/\//i.test(decodedSrc)) {
       el.removeAttribute("src");
       el.removeAttribute("srcset");
       el.removeAttribute("sizes");
-    }
-  } else if (shouldReplace && hasAlreadyProxied) {
-    if (src.startsWith(`${base}/p/`)) {
-      const srcset2 = buildSrcSet(src);
-      if (srcset2) {
-        el.setAttribute("srcset", srcset2);
-        el.setAttribute("sizes", IMAGE_SIZES);
-      }
     }
   }
   const srcset = shouldReplace ? el.getAttribute("srcset") : null;
@@ -1518,14 +1509,23 @@ function img(el, state, forApp = true, renderOptions) {
     el.removeAttribute("sizes");
   }
 }
+function bodyImageSources(src) {
+  const base = trimTrailingSlash(getProxyBase());
+  const written = src.trim();
+  const kept = written.startsWith(`${base}/p/`) || written.startsWith(`${base}/u/`) || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\d+x\\d+/`).test(written);
+  if (kept) return { src: written, srcSet: written.startsWith(`${base}/p/`) ? buildSrcSet(written) : "", kept };
+  const decoded = decodeDomImageSrc(src);
+  const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
+  if (!proxified) return null;
+  return { src: proxified, srcSet: buildSrcSet(proxified.startsWith(`${base}/p/`) ? proxified : decoded), kept };
+}
 var quoteAttr = (value) => value.replace(/"/g, "&quot;");
 function createImageHTML(src, isLCP, forApp = true) {
   const decoded = decodeDomImageSrc(src);
-  const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
-  if (!proxified) return "";
-  const base = trimTrailingSlash(getProxyBase());
-  const isAlreadyProxied = decoded.startsWith(`${base}/u/`) || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\d+x\\d+/`).test(decoded);
-  const srcset = isAlreadyProxied ? "" : buildSrcSet(decoded);
+  const sources = bodyImageSources(src);
+  if (!sources) return "";
+  const proxified = sources.src;
+  const srcset = sources.srcSet;
   const loading = isLCP ? "eager" : "lazy";
   const fetch = isLCP ? 'fetchpriority="high"' : 'decoding="async"';
   const srcsetAttr = srcset ? `srcset="${quoteAttr(srcset)}" sizes="${IMAGE_SIZES}"` : "";
@@ -1538,9 +1538,9 @@ function createImageHTML(src, isLCP, forApp = true) {
     itemprop="image"
   />`;
   if (!forApp) {
-    const sources = buildPictureSources(decoded);
-    if (sources) {
-      return `<picture><source type="image/avif" srcset="${quoteAttr(sources.avif)}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${quoteAttr(sources.webp)}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
+    const sources2 = buildPictureSources(decoded);
+    if (sources2) {
+      return `<picture><source type="image/avif" srcset="${quoteAttr(sources2.avif)}" sizes="${IMAGE_SIZES}" /><source type="image/webp" srcset="${quoteAttr(sources2.webp)}" sizes="${IMAGE_SIZES}" />${imgTag}</picture>`;
     }
   }
   return imgTag;
@@ -1662,19 +1662,23 @@ function a(el, forApp, parentDomain = "ecency.com", seoContext, renderOptions) {
     }
     return;
   }
+  let refusedImage = false;
   if (href.match(IMG_REGEX) && // Not `.ico` in `.icons/readme` nor `.jpg` in `photo.jpg.html` (imageUrlEnd).
   imageUrlEnd(href) !== -1 && href.trim().replace(/&amp;/g, "&") === getSerializedInnerHTML(el).trim().replace(/&amp;/g, "&")) {
     const isLCP = false;
     const imgHTML = createImageHTML(href, isLCP, forApp);
-    const doc = DOMParser.parseFromString(imgHTML, "text/html");
-    const replaceNode = doc.body?.firstChild || doc.firstChild;
-    if (replaceNode && el.parentNode) {
-      const importedNode = el.ownerDocument.importNode(replaceNode, true);
-      el.parentNode.replaceChild(importedNode, el);
+    refusedImage = !imgHTML;
+    if (imgHTML) {
+      const doc = DOMParser.parseFromString(imgHTML, "text/html");
+      const replaceNode = doc.body?.firstChild || doc.firstChild;
+      if (replaceNode && el.parentNode) {
+        const importedNode = el.ownerDocument.importNode(replaceNode, true);
+        el.parentNode.replaceChild(importedNode, el);
+      }
+      return;
     }
-    return;
   }
-  if (href.match(IPFS_REGEX) && href.trim().replace(/&amp;/g, "&") === getSerializedInnerHTML(el).trim().replace(/&amp;/g, "&") && href.indexOf("#") === -1) {
+  if (!refusedImage && href.match(IPFS_REGEX) && href.trim().replace(/&amp;/g, "&") === getSerializedInnerHTML(el).trim().replace(/&amp;/g, "&") && href.indexOf("#") === -1) {
     if (forApp) {
       el.setAttribute("data-href", href);
       el.removeAttribute("href");
@@ -10950,6 +10954,64 @@ function parseTokens(state) {
 function linkify2(md) {
   md.core.ruler.push("linkify", parseTokens);
 }
+
+// src/methods/linear-linkify.ts
+var LINK_SCAN_RE2 = /www|@|:\/\//;
+var isLinkOpen2 = (str) => /^<a[>\s]/i.test(str);
+var isLinkClose2 = (str) => /^<\/a\s*>/i.test(str);
+function linearLinkify(md) {
+  const ruler = md.core.ruler;
+  const rule = ruler.__rules__.find((r) => r.name === "linkify");
+  if (!rule) return;
+  const original = rule.fn;
+  ruler.at("linkify", (state) => {
+    const picked = [];
+    for (const block2 of state.tokens) {
+      if (block2.type !== "inline" || !block2.children) continue;
+      const tokens = block2.children;
+      let htmlLinkLevel = 0;
+      for (let i2 = tokens.length - 1; i2 >= 0; i2--) {
+        const token = tokens[i2];
+        if (token.type === "link_close") {
+          i2--;
+          while (tokens[i2].level !== token.level && tokens[i2].type !== "link_open") i2--;
+          continue;
+        }
+        if (token.type === "htmltag") {
+          if (isLinkOpen2(token.content ?? "") && htmlLinkLevel > 0) htmlLinkLevel--;
+          if (isLinkClose2(token.content ?? "")) htmlLinkLevel++;
+        }
+        if (htmlLinkLevel > 0) continue;
+        if (token.type === "text" && LINK_SCAN_RE2.test(token.content ?? "")) {
+          picked.push({ block: block2, at: i2, single: { type: "inline", children: [token] } });
+        }
+      }
+    }
+    if (picked.length === 0) return;
+    original({ ...state, tokens: picked.map((p2) => p2.single) });
+    const byBlock = /* @__PURE__ */ new Map();
+    for (const p2 of picked) {
+      const nodes = p2.single.children ?? [];
+      if (nodes.length === 1 && nodes[0] === p2.block.children[p2.at]) continue;
+      let replacements = byBlock.get(p2.block);
+      if (!replacements) byBlock.set(p2.block, replacements = /* @__PURE__ */ new Map());
+      replacements.set(p2.at, nodes);
+    }
+    for (const [block2, replacements] of byBlock) {
+      const rebuilt = [];
+      const children = block2.children;
+      for (let i2 = 0; i2 < children.length; i2++) {
+        const nodes = replacements.get(i2);
+        if (nodes) {
+          for (const node of nodes) rebuilt.push(node);
+        } else {
+          rebuilt.push(children[i2]);
+        }
+      }
+      block2.children = rebuilt;
+    }
+  });
+}
 var domSerializer = domSerializerModule__namespace.default || domSerializerModule__namespace;
 var URL_RUN = /https?:\/\/(?:[^\s<>"'`()]|\([^\s<>"'`()]*\)|\()+/gi;
 var AMP_PAIR = "\uE000\uE001";
@@ -11434,7 +11496,7 @@ function markdownToHTML(input, forApp, parentDomain = "ecency.com", seoContext, 
       }
       return "";
     }
-  }).use(linkify2);
+  }).use(linkify2).use(linearLinkify);
   md.core.ruler.before("linkify", "decode_destinations", decodeDestinations, {});
   wrapRule(md.inline.ruler, "links", (rule) => withAngleDestinations(rule, (text3) => unswap(text3)));
   wrapRule(md.inline.ruler, "links", withPairedSource);
@@ -11573,7 +11635,7 @@ function getMd() {
       html: true,
       breaks: true,
       typographer: false
-    }).use(linkify2);
+    }).use(linkify2).use(linearLinkify);
   }
   return mdInstance;
 }
@@ -11940,7 +12002,99 @@ function escapedLabelHoldsUrl(match) {
   return match.slice(0, close === -1 ? match.length : close).includes("://");
 }
 var MD_IMAGE_RE_G = new RegExp(MD_IMAGE_RE.source, "g");
-var HTML_IMAGE_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i;
+var MD_IMAGE_HEAD_RE = new RegExp(MD_IMAGE_RE.source.slice(0, MD_IMAGE_RE.source.indexOf("\\]\\(") + 4), "y");
+function knownLabelCloses(cleaned) {
+  const closes = /* @__PURE__ */ new Set();
+  const untrusted = [];
+  for (const m of regexMatches(cleaned, MD_IMAGE_RE_G)) {
+    if (escapedAt(cleaned, m.index ?? 0)) continue;
+    MD_IMAGE_HEAD_RE.lastIndex = m.index ?? 0;
+    if (MD_IMAGE_HEAD_RE.exec(cleaned)) closes.add(MD_IMAGE_HEAD_RE.lastIndex - 2);
+  }
+  for (const m of regexMatches(cleaned, MD_LINK_RE)) {
+    const open = m.index ?? 0;
+    const close = open + 1 + m[1].length;
+    if (escapedAt(cleaned, open) || escapedAt(cleaned, close)) continue;
+    if (
+      // The pattern is looser than the parser: a blank line ends the
+      // paragraph, `[x][y](url)` is a reference link followed by text, an
+      // angle destination must end the destination, and a `(` in a plain one
+      // may be one the parser balances further on.
+      /\n[ \t]*\n/.test(m[0]) || cleaned[open - 1] === "]" || /[<>]/.test(m[2]) && !/^<[^<>]*>$/.test(m[2]) || !m[2].startsWith("<") && m[2].includes("(")
+    ) {
+      untrusted.push([close + 2, open + m[0].length]);
+      continue;
+    }
+    closes.add(close);
+  }
+  return { closes, untrusted };
+}
+function labelCloseBefore(text3, idx) {
+  let k = idx - 1;
+  if (text3[k] === "<") k--;
+  while (k >= 0 && text3[k] === " ") k--;
+  if (text3[k] === "\n") {
+    k--;
+    while (k >= 0 && text3[k] === " ") k--;
+  }
+  return text3[k] === "(" && text3[k - 1] === "]" ? k - 1 : -1;
+}
+var DROPPED_IMAGE_RE = /!\[[^[\]\n\\`<>]*\]\((https?:\/\/[^\s()<>[\]\\`&"']+)\)/y;
+function droppedImageEnd(text3, pos) {
+  DROPPED_IMAGE_RE.lastIndex = pos;
+  const m = DROPPED_IMAGE_RE.exec(text3);
+  if (!m || m[1].length <= MAX_PROXIED_URL_LENGTH || m[1].startsWith(`${getProxyBase()}/`)) return -1;
+  const url = m[1];
+  if (url.includes("%")) {
+    const escapes = url.match(PERCENT_ESCAPE_G)?.length ?? 0;
+    if (url.length - 3 * escapes <= MAX_PROXIED_URL_LENGTH) return -1;
+  }
+  return DROPPED_IMAGE_RE.lastIndex;
+}
+var DROPPED_IMAGE_G = new RegExp(DROPPED_IMAGE_RE.source, "g");
+var PERCENT_ESCAPE_G = /%[\da-f]{2}/gi;
+function onlyDroppedBefore(text3, pos) {
+  return !text3.slice(0, pos).replace(DROPPED_IMAGE_G, "").trim();
+}
+function hasUndecidedImage(text3, seen) {
+  const re = MD_IMAGE_PRESENT_RE;
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(text3)) !== null) {
+    if (escapedAt(text3, m.index) && !escapedLabelHoldsUrl(m[0])) {
+      re.lastIndex = m.index + 2;
+      continue;
+    }
+    const end = droppedImageEnd(text3, m.index);
+    if (end === -1) return true;
+    seen.dropped = true;
+    re.lastIndex = end;
+  }
+  return false;
+}
+var IMG_OPEN_RE = /<img\b/gi;
+var SRC_VALUE_RE = /src\s*=\s*["']([^"']+)["']/iy;
+function matchHtmlImage(text3) {
+  const lower = asciiLower(text3);
+  IMG_OPEN_RE.lastIndex = 0;
+  let next = -1;
+  let m;
+  while ((m = IMG_OPEN_RE.exec(text3)) !== null) {
+    const start = m.index;
+    let gt = text3.indexOf(">", start);
+    if (gt === -1) gt = text3.length;
+    if (next < start + 4) next = lower.indexOf("src", start + 4);
+    for (; next >= 0 && next < gt; next = lower.indexOf("src", next + 1)) {
+      if (/\w/.test(text3[next - 1])) continue;
+      SRC_VALUE_RE.lastIndex = next;
+      const v = SRC_VALUE_RE.exec(text3);
+      if (v) return { index: start, whole: text3.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text3[next - 1] === "-" };
+    }
+    if (next === -1) return null;
+    IMG_OPEN_RE.lastIndex = Math.max(gt, start + 4);
+  }
+  return null;
+}
 var URL_TOKEN_RE2 = /https?:\/\/(?:[^\s<>"'()[\]&]|&(?!lt;|gt;))+/gi;
 var YOUTUBE_ID_RE = /^[^"&?/\s]{11}$/;
 function imageToken(token) {
@@ -12027,10 +12181,6 @@ function* standaloneMatches(scan, classify) {
     if (value !== null) yield { url: value, pos: idx };
   }
 }
-function firstStandalone(scan, classify) {
-  for (const hit of standaloneMatches(scan, classify)) return hit;
-  return null;
-}
 var HREF_ATTR_RE = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 function hasGluedAttribute(tag) {
   let quote = "";
@@ -12052,9 +12202,6 @@ var MD_LINK_RE = /\[([^[\]]*)\]\(\s*([^)\s[]+)(?:\s+["'][^"']*["'])?\s*\)/g;
 var SAFE_URL_RE = /^https?:\/\//i;
 var IMG_EXT_RE = /\.(?:tiff?|jpe?g|gif|png|svg|ico|heic|webp|arw)/i;
 var isImageHref = (href) => SAFE_URL_RE.test(href) && IMG_EXT_RE.test(href) && imageUrlEnd(href) !== -1;
-function findFirstImageUrl(body, includeBareUrls = false) {
-  return findFirstImageCandidate(prepareBody(parserInput(body)), includeBareUrls).candidate?.url ?? null;
-}
 function promotesToImage(label, href) {
   const deAmp = (value) => value.replace(/&amp;/g, "&");
   const serialized = decodeCompleteReferences(label.trim()).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -12148,7 +12295,7 @@ function htmlTextImageUrl(body, pos) {
   const token = HTML_TEXT_URL_RE.exec(decodeHtmlText(body.slice(pos, end)))?.[0];
   if (!token) return null;
   const urlEnd = imageUrlEnd(token);
-  return urlEnd === -1 ? null : decodeDomImageSrc(token.slice(0, urlEnd));
+  return urlEnd === -1 ? null : token.slice(0, urlEnd);
 }
 function firstBodyImageRawUrl(raw) {
   const body = parserInput(raw);
@@ -12198,22 +12345,33 @@ function strayHashBefore(body, pos) {
   return false;
 }
 function bodyImageRawUrl(body, prepared) {
-  const candidate = findFirstImageCandidate(prepared, true).candidate;
+  const candidate = findFirstImageCandidate(prepared).candidate;
   if (!candidate) return null;
-  if (candidate.html) return decodeDomImageSrc(decodeAttributeEntities(candidate.url));
+  const poster = findFirstVideoPoster(prepared);
+  if (poster && poster.pos < candidate.pos) return null;
+  const source = candidateSource(body, candidate);
+  if (source === null) return null;
+  const url = decodeDomImageSrc(source);
+  if (url.length > MAX_PROXIED_URL_LENGTH) return null;
+  if (onProxy(source.trim()) && url !== source.trim()) return null;
+  return candidate.destination && CONTROL_CHAR_RE.test(url) ? null : url;
+}
+function candidateSource(body, candidate) {
+  if (candidate.html) return decodeAttributeEntities(candidate.url);
   const ampEscapes2 = !hasAmpSentinel(body);
-  if (candidate.destination) {
-    const url2 = decodeRawBodyImageSrc(candidate.url, true, ampEscapes2);
-    return CONTROL_CHAR_RE.test(url2) ? null : url2;
-  }
+  if (candidate.destination) return rawBodySource(candidate.url, true, ampEscapes2);
   if (markLines(asciiLower(codeBlanked(body))).block[candidate.pos]) return htmlTextImageUrl(body, candidate.pos);
   const after = body.slice(candidate.pos + candidate.url.length, candidate.pos + candidate.url.length + 4);
+  if (after.startsWith(";") && /&#?[a-z\d]+$/i.test(candidate.url)) return null;
   const loneAt = loneSurrogateAt(candidate.url);
   const token = loneAt === -1 ? candidate.url : candidate.url.slice(0, loneAt);
   const tokenUrl = () => {
     const url2 = withoutTrailingPunctuation(token, loneAt === -1 ? after : "");
-    return imageUrlEnd(url2) === -1 ? null : decodeRawBodyImageSrc(url2, false, ampEscapes2);
+    return imageUrlEnd(url2) === -1 ? null : rawBodySource(url2, false, ampEscapes2);
   };
+  if (body[candidate.pos - 1] === "<" && after.startsWith(">")) {
+    return loneAt !== -1 || token.includes("&") ? null : token;
+  }
   if (/^<\/a[\s>]/i.test(after) || definitionDestinationAt(body, candidate.pos)) return tokenUrl();
   const raw = markdownTextSpan(body, candidate.pos);
   let span = decodeCompleteReferences(raw.replace(/\\&/g, "&amp;"));
@@ -12224,7 +12382,7 @@ function bodyImageRawUrl(body, prepared) {
   const plain = (k === candidate.pos - 1 ? before === "\n" || before === "(" : before !== "@") && !strayHashBefore(body, candidate.pos);
   if (!/[()]/.test(span) || /[*~_|^]|==|\+\+/.test(span) || !plain) return tokenUrl();
   const url = span.slice(0, autolinkUrlEnd(span));
-  return imageUrlEnd(url) === -1 ? null : decodeDomImageSrc(url);
+  return imageUrlEnd(url) === -1 ? null : url;
 }
 function codeBlanked(body) {
   return blankMatches(blankMatches(blankMatches(body, BACKTICK_FENCE_RE), TILDE_FENCE_RE), INLINE_CODE_RE);
@@ -12277,10 +12435,11 @@ function blankUnequalAnchors(cleaned, textContent) {
 var EMPTY_SCAN = { text: "", inTag: new Uint8Array(0) };
 function prepareBody(body) {
   const cleaned = body ? stripCodeRegions(body) : "";
-  if (!cleaned) return { cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN };
+  if (!cleaned) return { source: body, cleaned, image: EMPTY_SCAN, video: EMPTY_SCAN };
   const imageText = blankUnequalAnchors(cleaned, false);
   const videoText = blankUnequalAnchors(cleaned, true);
   return {
+    source: body,
     cleaned,
     image: { text: imageText, inTag: markInsideTags(imageText) },
     video: { text: videoText, inTag: markInsideTags(videoText) }
@@ -12308,15 +12467,201 @@ function findFirstVideoPoster(prepared) {
     }
   }
   if (!best) return null;
-  return { url: `https://img.youtube.com/vi/${best.url.split("?")[0]}/hqdefault.jpg`, pos: best.pos };
+  return {
+    url: `https://img.youtube.com/vi/${best.url.split("?")[0]}/hqdefault.jpg`,
+    pos: best.pos,
+    uncertain: !posterShown(prepared, best.pos)
+  };
+}
+function posterShown(prepared, pos) {
+  const token = /^https?:\/\/[^\s<>"'`]+/i.exec(prepared.source.slice(pos, pos + 2100));
+  const candidate = token ? { url: token[0], pos } : { url: "", pos};
+  const { cleaned, source } = prepared;
+  if (token && labelCloseBefore(cleaned, pos) !== -1) return false;
+  let lineEnd = source.indexOf("\n", pos);
+  if (lineEnd === -1) lineEnd = source.length;
+  if (markLines(asciiLower(codeBlanked(source))).block[pos] && /!\[|<img\b/i.test(source.slice(pos, lineEnd))) return false;
+  return bareShown(prepared, candidate) && !unreadBefore(prepared, knownLabelCloses(cleaned).closes, pos);
+}
+var LOOSE_URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
+var HIDING_TAG_RE = /<(\/?)(iframe|head|script|style|textarea|title|noscript|template|object|svg|select)\b/g;
+var FENCE_LINE_RE = /^[ \t>*+\-\d.)]*(`{3,}|~{3,})/;
+var SPACES_RE2 = /^ *$/;
+function nextFenceState(state, line) {
+  if (state === "unknown") return state;
+  const m = FENCE_LINE_RE.exec(line);
+  if (!m) return state;
+  const prefix = m[0].slice(0, -m[1].length);
+  if (state === null) {
+    if (line.slice(m[0].length).includes("`")) return "unknown";
+    return { run: m[1], prefix };
+  }
+  if (m[1][0] !== state.run[0] || m[1].length < state.run.length || line.slice(m[0].length).trim()) return state;
+  if (prefix === state.prefix) return null;
+  if (!state.prefix && SPACES_RE2.test(prefix)) return prefix.length <= 3 ? null : state;
+  return "unknown";
+}
+function fenceOpen(source, pos) {
+  const eol = source.indexOf("\n", pos);
+  let state = null;
+  for (const line of source.slice(0, eol === -1 ? source.length : eol).split("\n")) state = nextFenceState(state, line);
+  return state !== null;
+}
+function unreadBefore(prepared, closes, pos) {
+  const { source, cleaned } = prepared;
+  const scan = prepared.image;
+  const prefix = cleaned.slice(0, pos);
+  const lowerPrefix = asciiLower(prefix);
+  if (/<img\b/.test(lowerPrefix)) return true;
+  if (fenceOpen(source, pos)) return true;
+  let open = 0;
+  for (const m of regexMatches(lowerPrefix, HIDING_TAG_RE)) open += m[1] ? -1 : 1;
+  if (open > 0) return true;
+  if (lowerPrefix.lastIndexOf("<?") > lowerPrefix.lastIndexOf("?>")) return true;
+  const lastAnchorClose = lowerPrefix.lastIndexOf("</a");
+  const nested = nestedAnchors(lowerPrefix);
+  let tagMarks = null;
+  let tagOpen = null;
+  for (const m of regexMatches(source, LOOSE_URL_RE)) {
+    const idx = m.index ?? 0;
+    if (idx >= pos) break;
+    if (imageUrlEnd(m[0]) === -1) continue;
+    if (scan.text.slice(idx, idx + 4).toLowerCase() !== "http" && cleaned.slice(idx, idx + 4).toLowerCase() === "http" && lastAnchorClose >= idx && !nested) {
+      continue;
+    }
+    if (!tagMarks || !tagOpen) {
+      tagMarks = markInsideTags(prefix);
+      tagOpen = new Int32Array(prefix.length);
+      let lt = -1;
+      let nl = -1;
+      for (let i2 = 0; i2 < prefix.length; i2++) {
+        if (prefix[i2] === "<") lt = i2;
+        if (prefix[i2] === "\n") nl = i2;
+        tagOpen[i2] = lt > nl ? lt : -1;
+      }
+    }
+    if (tagMarks[idx] && tagOpen[idx] !== -1) continue;
+    const close = labelCloseBefore(cleaned, idx);
+    if (close !== -1 && closes.has(close)) continue;
+    return true;
+  }
+  return false;
+}
+function inTextContext(text3) {
+  if (text3.includes("]:")) return true;
+  let inDestination = false;
+  for (let i2 = 0; i2 < text3.length; i2++) {
+    const c = text3[i2];
+    if (c === "]" && text3[i2 + 1] === "(") {
+      inDestination = true;
+      i2++;
+    } else if (inDestination) {
+      if (c === ")") inDestination = false;
+      else if (/\s/.test(c) && /["'(]/.test(text3[i2 + 1] ?? "")) return true;
+    }
+  }
+  return inDestination;
+}
+function mdImageShown(prepared, pos) {
+  if (prepared.image.inTag[pos]) return false;
+  const text3 = prepared.cleaned;
+  const blank = text3.lastIndexOf("\n\n", pos);
+  return !inTextContext(text3.slice(blank === -1 ? 0 : blank, pos));
+}
+function inlineBacktick(source, from, to) {
+  let state = null;
+  let at = 0;
+  for (const line of source.slice(0, to).split("\n")) {
+    const before = state;
+    state = nextFenceState(state, line);
+    const lineStart = at;
+    at += line.length + 1;
+    if (lineStart < from) continue;
+    if (before !== null || state !== null) continue;
+    if (line.includes("`")) return true;
+  }
+  return false;
+}
+var URL_SYNTAX_RE = /[`|^]|\+\+|==|~~/;
+function markdownBracketAt(source, at) {
+  const head = source.slice(at, at + 2200);
+  if (/^\[(?:[^[\]\n]|\[[^[\]\n]{0,100}\]){0,100}\]\([^\s()<>]*\)/.test(head)) return true;
+  const m = /^\[([^[\]\n]{1,100})\](?:\[([^[\]\n]{0,100})\])?/.exec(head);
+  if (!m) return false;
+  const label = (m[2] ? m[2] : m[1]).trim();
+  if (!label) return false;
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const def = new RegExp(`(?:^|\\n[ \\t]*\\n)( {0,3}\\[${escaped}\\]:[ \\t]*\\S+[ \\t]*)(?:\\n|$)`, "i").exec(source);
+  if (!def) return false;
+  return !fenceOpen(source, def.index);
+}
+var rawTagMarks = /* @__PURE__ */ new WeakMap();
+function rawTagsOf(prepared) {
+  let marks = rawTagMarks.get(prepared);
+  if (!marks) {
+    marks = markInsideTags(prepared.cleaned);
+    rawTagMarks.set(prepared, marks);
+  }
+  return marks;
+}
+function nestedAnchors(lower) {
+  let depth = 0;
+  for (const m of regexMatches(lower, /<(\/?)a\b/g)) {
+    depth = m[1] ? Math.max(0, depth - 1) : depth + 1;
+    if (depth > 1) return true;
+  }
+  return false;
+}
+function bareShown(prepared, candidate) {
+  const { source, cleaned } = prepared;
+  const pos = candidate.pos;
+  if (prepared.image.inTag[pos] || rawTagsOf(prepared)[pos]) return false;
+  let slashes = 0;
+  while (source[pos - 1 - slashes] === "\\") slashes++;
+  if (slashes % 2 === 1) return false;
+  const blank = source.lastIndexOf("\n\n", pos);
+  const paraStart = blank === -1 ? 0 : blank + 2;
+  const para = source.slice(paraStart, pos);
+  if (inTextContext(para)) return false;
+  let depth = 0;
+  for (let i2 = 0; i2 < para.length; i2++) {
+    const c = para[i2];
+    if (c === "\\") i2++;
+    else if (c === "[") depth++;
+    else if (c === "]" && !prepared.image.inTag[paraStart + i2]) depth = Math.max(0, depth - 1);
+  }
+  if (depth > 0) return false;
+  if (inlineBacktick(source, paraStart, pos) || URL_SYNTAX_RE.test(candidate.url)) return false;
+  if (source[pos - 1] === "<" && markLines(asciiLower(codeBlanked(source))).block[pos]) return false;
+  const lowerPara = asciiLower(cleaned.slice(paraStart, pos));
+  if (nestedAnchors(lowerPara)) return false;
+  const lt = lowerPara.lastIndexOf("<a");
+  if (lt !== -1 && /^<a\b/.test(lowerPara.slice(lt, lt + 3)) && lowerPara.slice(lt).includes("\n")) return false;
+  const next = source[pos + candidate.url.length];
+  if (next === "'") return false;
+  if (next === "[" && !markdownBracketAt(source, pos + candidate.url.length)) return false;
+  const closing = /^<\/([a-z][a-z\d]*)/i.exec(source.slice(pos + candidate.url.length, pos + candidate.url.length + 40));
+  if (closing) {
+    const lt2 = cleaned.lastIndexOf("<", pos);
+    const opening = lt2 === -1 ? null : /^<([a-z][a-z\d]*)/i.exec(cleaned.slice(lt2, lt2 + 40));
+    if (!opening || opening[1].toLowerCase() !== closing[1].toLowerCase()) return false;
+  }
+  if (next !== void 0 && "*_~".includes(next) && !para.includes(next)) return false;
+  if (candidate.url.endsWith("\\")) return false;
+  if (/&amp;(?:[a-z][a-z\d]*|#\d+|#x[\da-f]+);/i.test(candidate.url)) return false;
+  const tag = cleaned.lastIndexOf("<", pos);
+  if (decodeHtmlText(candidate.url) !== decodeCompleteReferences(candidate.url) && tag !== -1 && /^<a\b/i.test(cleaned.slice(tag, tag + 3))) {
+    return false;
+  }
+  return true;
 }
 var NONE = { candidate: null, ambiguous: false };
 var AMBIGUOUS = { candidate: null, ambiguous: true };
-function findFirstImageCandidate(prepared, includeBareUrls = false) {
+function findFirstImageCandidate(prepared) {
   const { cleaned } = prepared;
   if (!cleaned) return NONE;
   const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G);
-  const htmlMatch = cleaned.match(HTML_IMAGE_RE);
+  const htmlMatch = matchHtmlImage(cleaned);
   const mdUrl = mdMatch ? mdMatch[1] !== void 0 || mdMatch[2].includes("\\") ? angleAsPlain(mdMatch[1] ?? mdMatch[2], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
   if (mdMatch) {
     const url = mdUrl;
@@ -12330,50 +12675,94 @@ function findFirstImageCandidate(prepared, includeBareUrls = false) {
     }
   }
   const priorRegion = mdMatch ? cleaned.slice(0, mdMatch.index ?? 0) : cleaned;
-  if (firstUnescapedImage(priorRegion, MD_IMAGE_PRESENT_RE)) {
+  const seen = { dropped: false };
+  if (hasUndecidedImage(priorRegion, seen)) {
     return AMBIGUOUS;
   }
   const candidates = [];
-  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true });
-  if (htmlMatch && htmlMatch[1] && SAFE_URL_RE.test(htmlMatch[1])) {
-    candidates.push({ url: htmlMatch[1], pos: htmlMatch.index ?? 0, html: true });
+  if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true, md: true });
+  const dashSrc = !!htmlMatch && htmlMatch.dashed;
+  if (dashSrc && !(mdMatch && mdUrl && (mdMatch.index ?? 0) < htmlMatch.index)) {
+    return AMBIGUOUS;
   }
-  if (includeBareUrls) {
-    const bareMatch = firstStandalone(prepared.image, imageToken);
-    if (bareMatch && SAFE_URL_RE.test(bareMatch.url)) {
-      candidates.push(bareMatch);
+  if (htmlMatch && !dashSrc && SAFE_URL_RE.test(htmlMatch.src.trim())) {
+    candidates.push({ url: htmlMatch.src, pos: htmlMatch.index, html: true });
+  }
+  const scan = prepared.image;
+  const { closes, untrusted } = knownLabelCloses(cleaned);
+  let undecidedAt = -1;
+  let range = 0;
+  for (const m of regexMatches(scan.text, URL_TOKEN_RE2)) {
+    const idx = m.index ?? 0;
+    if (scan.inTag[idx]) continue;
+    const url = imageToken(m[0]);
+    if (url === null) continue;
+    while (range < untrusted.length && untrusted[range][1] <= idx) range++;
+    if (range < untrusted.length && untrusted[range][0] <= idx) {
+      undecidedAt = idx;
+      break;
     }
-    for (const m of regexMatches(cleaned, MD_LINK_RE)) {
-      const idx = m.index ?? 0;
-      if (idx > 0 && cleaned[idx - 1] === "!") continue;
-      const href = m[2];
-      if (href && isImageHref(href) && promotesToImage(m[1], href)) {
-        candidates.push({ url: href, pos: idx, destination: true });
-        break;
-      }
+    const close = labelCloseBefore(cleaned, idx);
+    if (close !== -1) {
+      if (closes.has(close)) continue;
+      undecidedAt = idx;
+      break;
+    }
+    if (!isStandalone(scan, idx) || !SAFE_URL_RE.test(url)) continue;
+    candidates.push({ url, pos: idx });
+    break;
+  }
+  for (const m of regexMatches(cleaned, MD_LINK_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > 0 && cleaned[idx - 1] === "!") continue;
+    const href = /^<[^<>]*>$/.test(m[2]) ? m[2].slice(1, -1) : m[2];
+    if (href && isImageHref(href) && promotesToImage(m[1], href)) {
+      candidates.push({ url: href, pos: idx, destination: true });
+      break;
     }
   }
-  if (candidates.length === 0) return NONE;
+  if (undecidedAt !== -1 && candidates.every((c) => undecidedAt < c.pos)) {
+    return AMBIGUOUS;
+  }
   candidates.sort((a2, b) => a2.pos - b.pos);
-  return { candidate: candidates[0], ambiguous: false };
+  const first = candidates[0];
+  if (seen.dropped && !(first?.md && onlyDroppedBefore(prepared.source, first.pos))) {
+    return AMBIGUOUS;
+  }
+  if (!first) return NONE;
+  if (unreadBefore(prepared, closes, first.pos)) return AMBIGUOUS;
+  if (first.md && !mdImageShown(prepared, first.pos)) return AMBIGUOUS;
+  if (!(first.html || first.md) && !bareShown(prepared, first)) return AMBIGUOUS;
+  if (!(first.html || first.md)) {
+    const lineEnd = prepared.cleaned.indexOf("\n", first.pos);
+    const blockLine = markLines(asciiLower(codeBlanked(prepared.source))).block[first.pos];
+    if (blockLine && candidates.some((c) => c !== first && (c.html || c.md) && (lineEnd === -1 || c.pos < lineEnd))) {
+      return AMBIGUOUS;
+    }
+  }
+  return { candidate: first, ambiguous: false };
 }
 function fastBodyImage(raw, width, height, format) {
   const body = parserInput(raw);
   const prepared = prepareBody(body);
-  const strict = findFirstImageCandidate(prepared, false);
-  if (strict.candidate) {
-    return proxifyFound(strict.candidate.url, width, height, format);
-  }
-  if (strict.ambiguous) {
+  const found = findFirstImageCandidate(prepared);
+  if (found.ambiguous) {
     return null;
   }
-  const bare = findFirstImageCandidate(prepared, true).candidate;
+  const first = found.candidate;
   const poster = findFirstVideoPoster(prepared);
-  if (bare && !bare.html && !bare.destination && loneSurrogateAt(bare.url) !== -1 && !(poster && poster.pos < bare.pos)) return null;
-  if (poster && (!bare || poster.pos < bare.pos)) {
+  if (poster && (!first || poster.pos < first.pos) && poster.uncertain) return null;
+  if (first && (first.html || first.md) && !(poster && poster.pos < first.pos)) {
+    const source2 = candidateSource(body, first);
+    return source2 === null ? null : proxifySource(source2, width, height, format) || null;
+  }
+  if (first && !first.destination && loneSurrogateAt(first.url) !== -1 && !(poster && poster.pos < first.pos)) return null;
+  if (poster && (!first || poster.pos < first.pos)) {
     return proxifyFound(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
   }
-  return bare ? proxifyFound(bare.url, width, height, format) : null;
+  if (!first) return null;
+  const source = candidateSource(body, first);
+  return source === null ? null : proxifySource(source, width, height, format) || null;
 }
 function firstMetaUrl(value) {
   if (typeof value === "string" && value.trim().length > 0) {
@@ -12402,9 +12791,28 @@ function metaFingerprint(jsonMetadata) {
   }
 }
 function proxifyFound(src, width, height, format) {
-  const entityDecoded = decodeEntities(src);
-  const proxied = proxifyImageSrc(decodeDomImageSrc(entityDecoded), width, height, format);
-  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(entityDecoded, width, height, format);
+  return proxifySource(decodeEntities(src), width, height, format);
+}
+function onProxy(src) {
+  const base = getProxyBase();
+  return src.startsWith(`${base}/p/`) || src.startsWith(`${base}/u/`) || src.startsWith(`${base}/`) && /^\d+x\d+\//.test(src.slice(base.length + 1));
+}
+function proxifySource(written, width, height, format) {
+  const source = written.trim();
+  if (!onProxy(source)) return proxifyImageSrc(decodeDomImageSrc(source), width, height, format, { forceProxy: true });
+  if (!width && !height) return source;
+  const proxied = proxifyImageSrc(decodeDomImageSrc(source), width, height, format);
+  return proxied.startsWith(`${getProxyBase()}/p/`) ? proxied : proxifyImageSrc(source, width, height, format);
+}
+function regexTierImage(raw, width, height, format) {
+  const body = parserInput(raw);
+  const prepared = prepareBody(body);
+  const found = findFirstImageCandidate(prepared).candidate;
+  if (!found || !(found.html || found.md)) return null;
+  const poster = findFirstVideoPoster(prepared);
+  if (poster && poster.pos < found.pos) return null;
+  const source = candidateSource(body, found);
+  return source === null ? null : proxifySource(source, width, height, format);
 }
 function getImage(entry, width, height, format, renderFirstImage) {
   let meta;
@@ -12436,12 +12844,12 @@ function getImage(entry, width, height, format, renderFirstImage) {
   if (!renderFirstImage) {
     return fastBodyImage(entry.body, width, height, format);
   }
-  const fast = findFirstImageUrl(entry.body);
+  const fast = regexTierImage(entry.body, width, height, format);
   if (fast) {
-    return proxifyFound(fast, width, height, format);
+    return fast;
   }
   const src = renderFirstImage(entry);
-  return src ? proxifyFound(src, width, height, format) : null;
+  return src ? proxifyFound(src, width, height, format) || src : null;
 }
 function getEntryCardImageRawUrl(obj) {
   if (typeof obj === "string") {
@@ -12489,13 +12897,13 @@ function getEntryLcpImage(obj) {
   }
   const body = parserInput(obj.body);
   const prepared = prepareBody(body);
-  const found = findFirstImageCandidate(prepared, true);
+  const found = findFirstImageCandidate(prepared);
   if (found.ambiguous) {
     return null;
   }
   const poster = findFirstVideoPoster(prepared);
   if (poster && (!found.candidate || poster.pos < found.candidate.pos)) {
-    return { url: poster.url, poster: true };
+    return poster.uncertain ? null : { url: poster.url, poster: true };
   }
   const url = bodyImageRawUrl(body, prepared);
   return url ? { url, poster: false } : null;
@@ -12511,12 +12919,12 @@ function lookupPostImage(obj, width, height, format, renderFirstImage) {
     if (!renderFirstImage) {
       return fastBodyImage(obj, width, height, format);
     }
-    const fast = findFirstImageUrl(obj);
+    const fast = regexTierImage(obj, width, height, format);
     if (fast) {
-      return proxifyFound(fast, width, height, format);
+      return fast;
     }
     const src = renderFirstImage(obj);
-    return src ? proxifyFound(src, width, height, format) : null;
+    return src ? proxifyFound(src, width, height, format) || src : null;
   }
   const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${renderFirstImage ? "" : "-fast"}`;
   const meta = metaFingerprint(obj.json_metadata);
@@ -12539,7 +12947,11 @@ function firstRenderedImageSrc(obj) {
     return null;
   }
   const imgEls = doc.getElementsByTagName("img");
-  return imgEls.length >= 1 ? imgEls[0].getAttribute("src") || null : null;
+  for (let i2 = 0; i2 < imgEls.length; i2++) {
+    const src = imgEls[i2].getAttribute("src");
+    if (src) return src;
+  }
+  return null;
 }
 function catchPostImage(obj, width = 0, height = 0, format = "match", options = {}) {
   return lookupPostImage(obj, width, height, format, options.fast === true ? null : firstRenderedImageSrc);
@@ -12700,7 +13112,7 @@ function postBodySummary(entryBody, length = 200, platform = "web") {
   }
   let text3 = "";
   try {
-    text3 = summaryRenderer.render(entryBody);
+    text3 = summaryRenderer.render(withoutLoneSurrogates(entryBody));
   } catch (err) {
     console.error("[postBodySummary] Failed to render markdown:", {
       error: err instanceof Error ? err.message : String(err),
@@ -12742,6 +13154,7 @@ function getPostBodySummary(obj, length, platform) {
 
 exports.IMAGE_SIZES = IMAGE_SIZES;
 exports.SECTION_LIST = SECTION_LIST;
+exports.bodyImageSources = bodyImageSources;
 exports.buildPictureSources = buildPictureSources;
 exports.buildSrcSet = buildSrcSet;
 exports.buildSrcSetForFormat = buildSrcSetForFormat;
