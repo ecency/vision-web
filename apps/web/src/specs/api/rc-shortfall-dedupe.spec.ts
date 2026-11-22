@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dedupeIntegration } from "@sentry/core";
+import { clientIntegrations } from "@/utils/sentry-dedupe";
 import type { Event } from "@sentry/core";
 
 const sentry = vi.hoisted(() => ({ captureMessage: vi.fn() }));
@@ -12,11 +13,11 @@ const rcRejection = () =>
 
 /**
  * The event Sentry builds from each captureMessage(message, context) the
- * reporter made, run through the SDK's own Dedupe integration (a default
- * integration the client config keeps). Returns the messages that survive.
+ * reporter made, run through the SDK's own Dedupe integration as the client
+ * config installs it (clientIntegrations). Returns the messages that survive.
  */
 function keptBySentryDedupe(): string[] {
-  const dedupe = dedupeIntegration();
+  const dedupe = clientIntegrations([dedupeIntegration()]).find((i) => i.name === "Dedupe")!;
   return sentry.captureMessage.mock.calls
     .map(([message, context]) => ({ message, ...context }) as Event)
     .map((event) => dedupe.processEvent!(event, {}, {} as never) as Event | null)
@@ -24,9 +25,9 @@ function keptBySentryDedupe(): string[] {
     .map((event) => event.message as string);
 }
 
-// #2196: Dedupe drops an event equal to the previous one by message,
-// fingerprint and stacktrace (tags and user are ignored). Every report shares
-// one fingerprint, so the message carries stage and op to keep them apart.
+// #2196: Sentry's default Dedupe drops an event equal to the previous one by
+// message, fingerprint and stacktrace (tags and user are ignored). The client
+// config exempts RC telemetry from it, so every report the reporter sends is kept.
 describe("rc-shortfall events through Sentry's Dedupe integration", () => {
   beforeEach(() => {
     sentry.captureMessage.mockReset();
@@ -53,14 +54,19 @@ describe("rc-shortfall events through Sentry's Dedupe integration", () => {
     ]);
   });
 
-  // Accepted: the same failure repeated in a row by one tab counts once, which
-  // is what the daily unique-user count needs anyway.
-  it("drops an identical rejection that directly follows the first", () => {
+  it("keeps an identical rejection from the next account (same stage and op)", () => {
     reportRcRejection(rcRejection(), "post", "dedupe-c");
-    reportRcRejection(rcRejection(), "post", "dedupe-c");
+    reportRcRejection(rcRejection(), "post", "dedupe-e");
 
     expect(sentry.captureMessage).toHaveBeenCalledTimes(2);
-    expect(keptBySentryDedupe()).toEqual(["rc-shortfall: rejected/post"]);
+    expect(keptBySentryDedupe()).toEqual(["rc-shortfall: rejected/post", "rc-shortfall: rejected/post"]);
+  });
+
+  it("keeps a second real failure of the same op by the same account", () => {
+    reportRcRejection(rcRejection(), "post", "dedupe-f");
+    reportRcRejection(rcRejection(), "post", "dedupe-f");
+
+    expect(keptBySentryDedupe()).toHaveLength(2);
   });
 
   it("keeps the one grouping fingerprint on every event", () => {
