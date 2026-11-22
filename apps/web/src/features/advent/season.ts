@@ -3,7 +3,7 @@
 
 export const ADVENT_SEASON = 2026;
 /// The page, nav item and feed banner show themselves from here (a teaser)...
-export const ADVENT_SHOW_FROM = Date.UTC(2026, 10, 29);
+export const ADVENT_SHOW_FROM = Date.UTC(2026, 10, 25);
 /// ...the first door opens here...
 export const ADVENT_FIRST_DOOR = Date.UTC(2026, 11, 1);
 /// ...and everything hides itself again from here. The games API stays up; it

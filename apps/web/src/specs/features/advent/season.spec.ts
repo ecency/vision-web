@@ -8,13 +8,13 @@ describe("advent season dates", () => {
     expect(ADVENT_SEASON).toBe(2026);
   });
 
-  it("stays hidden until 29 Nov 00:00 UTC", () => {
+  it("stays hidden until 25 Nov 00:00 UTC", () => {
     expect(adventPhase(at("2026-11-01T00:00:00Z"))).toBe("hidden");
-    expect(adventPhase(at("2026-11-28T23:59:59.999Z"))).toBe("hidden");
+    expect(adventPhase(at("2026-11-24T23:59:59.999Z"))).toBe("hidden");
   });
 
-  it("is a teaser from 29 Nov until the first door", () => {
-    expect(adventPhase(at("2026-11-29T00:00:00Z"))).toBe("teaser");
+  it("is a teaser from 25 Nov until the first door", () => {
+    expect(adventPhase(at("2026-11-25T00:00:00Z"))).toBe("teaser");
     expect(adventPhase(at("2026-11-30T23:59:59.999Z"))).toBe("teaser");
   });
 

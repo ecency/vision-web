@@ -10,8 +10,8 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Advent feed banner", () => {
-  it("does not show before 29 November or from 1 January", () => {
-    vi.setSystemTime(Date.UTC(2026, 10, 28, 23));
+  it("does not show before 25 November or from 1 January", () => {
+    vi.setSystemTime(Date.UTC(2026, 10, 24, 23));
     const { container, unmount } = render(<AdventBanner />);
     expect(container).toBeEmptyDOMElement();
     unmount();
@@ -20,7 +20,7 @@ describe("Advent feed banner", () => {
   });
 
   it("invites to the teaser and to today's door", () => {
-    vi.setSystemTime(Date.UTC(2026, 10, 29, 8));
+    vi.setSystemTime(Date.UTC(2026, 10, 25, 8));
     const { unmount } = render(<AdventBanner />);
     expect(screen.getByRole("link")).toHaveAttribute("href", "/advent");
     unmount();
