@@ -132,6 +132,13 @@ describe('a lookup names the image the body shows, or defers (#2185)', () => {
     `text <img @a src="${A}">\n\n![d](${B})`,
     // The first src decides, empty or not.
     `<img src="" src="${A}">\n\n![d](${B})`,
+    // A tag across a blank line is text: the paragraph ends there.
+    `<img alt="a>b"\n\n src="${A}">\n\n![d](${B})`,
+    `<img alt="a>b"\n\n src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="x"\n\n src="https://e.com/cover">\n\n![d](${B})`,
+    `<img alt="a\n\nb" src="${A}">\n\n![d](${B})`,
+    `<img\n\nsrc="${A}">\n\n![d](${B})`,
+    `<img alt="x"\n  \n src="${A}">\n\n![d](${B})`,
     // A fence marker with text after it closes nothing.
     `\`\`\`\n\`\`\` not a closer\n![x](${A})\n\`\`\`\n\n![d](${B})`,
     `~~~\n~~~ x\n![x](${A})\n~~~\n\n![d](${B})`,

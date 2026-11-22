@@ -546,7 +546,7 @@ function hasUndecidedImage(text: string, seen: { dropped: boolean }): boolean {
 // whole, so a `src` inside another attribute's value (`alt="x src='a.png'"`)
 // or a `>` there is text. A name that only ends in `src` (`data-src`) is
 // reported as dashed. At the first `<img` the grammar does not read (no space
-// before a name, an unclosed quote, no `>`), the render shows text the scans
+// before a name, an unclosed quote, no `>`, a blank line), the render shows text the scans
 // cannot place, so the scan stops: nothing after it is named (unreadBefore
 // defers on the `<img`), and no later tag is read inside this one's text.
 const IMG_OPEN_RE = /<img\b/gi
@@ -555,6 +555,23 @@ const IMG_OPEN_RE = /<img\b/gi
 const ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y
 const ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y
 const TAG_END_RE = /\/?>/y
+// Whether text[from, to) holds a blank line (only spaces or tabs between two
+// line breaks), read in code: a regex with a run before a required break
+// reads as backtracking to a scanner.
+function hasBlankLine(text: string, from: number, to: number): boolean {
+  // Only within the tag: a search past `to` would make a gallery quadratic.
+  let lineOpen = false
+  for (let k = from; k < to; k++) {
+    const c = text[k]
+    if (c === '\n') {
+      if (lineOpen) return true
+      lineOpen = true
+    } else if (c !== ' ' && c !== '\t' && c !== '\r') {
+      lineOpen = false
+    }
+  }
+  return false
+}
 const SPACE_CHARS = ' \t\n\r\f'
 function skipSpaces(text: string, i: number): number {
   while (i < text.length && SPACE_CHARS.includes(text[i])) i++
@@ -606,6 +623,9 @@ function matchHtmlImage(text: string): HtmlImageMatch | null {
         found = { index: start, src: value, dashed: true }
       }
     }
+    // A blank line ends the paragraph, so a tag across one is text the
+    // render reads its own way.
+    if (hasBlankLine(text, start, i)) return null
     if (found) return found
     IMG_OPEN_RE.lastIndex = i
   }

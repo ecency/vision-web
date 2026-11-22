@@ -372,6 +372,19 @@ var IMG_OPEN_RE = /<img\b/gi;
 var ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y;
 var ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y;
 var TAG_END_RE = /\/?>/y;
+function hasBlankLine(text, from, to) {
+  let lineOpen = false;
+  for (let k = from; k < to; k++) {
+    const c = text[k];
+    if (c === "\n") {
+      if (lineOpen) return true;
+      lineOpen = true;
+    } else if (c !== " " && c !== "	" && c !== "\r") {
+      lineOpen = false;
+    }
+  }
+  return false;
+}
 var SPACE_CHARS = " 	\n\r\f";
 function skipSpaces(text, i) {
   while (i < text.length && SPACE_CHARS.includes(text[i])) i++;
@@ -414,6 +427,7 @@ function matchHtmlImage(text) {
         found = { index: start, src: value, dashed: true };
       }
     }
+    if (hasBlankLine(text, start, i)) return null;
     if (found) return found;
     IMG_OPEN_RE.lastIndex = i;
   }
@@ -1265,5 +1279,5 @@ function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
 }
 
 export { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, lookupPostImage };
-//# sourceMappingURL=chunk-HPJICDNB.js.map
-//# sourceMappingURL=chunk-HPJICDNB.js.map
+//# sourceMappingURL=chunk-PQCJOCHG.js.map
+//# sourceMappingURL=chunk-PQCJOCHG.js.map

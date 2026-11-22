@@ -12076,6 +12076,19 @@ var IMG_OPEN_RE = /<img\b/gi;
 var ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y;
 var ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y;
 var TAG_END_RE = /\/?>/y;
+function hasBlankLine(text3, from, to) {
+  let lineOpen = false;
+  for (let k = from; k < to; k++) {
+    const c = text3[k];
+    if (c === "\n") {
+      if (lineOpen) return true;
+      lineOpen = true;
+    } else if (c !== " " && c !== "	" && c !== "\r") {
+      lineOpen = false;
+    }
+  }
+  return false;
+}
 var SPACE_CHARS = " 	\n\r\f";
 function skipSpaces3(text3, i2) {
   while (i2 < text3.length && SPACE_CHARS.includes(text3[i2])) i2++;
@@ -12118,6 +12131,7 @@ function matchHtmlImage(text3) {
         found = { index: start, src: value, dashed: true };
       }
     }
+    if (hasBlankLine(text3, start, i2)) return null;
     if (found) return found;
     IMG_OPEN_RE.lastIndex = i2;
   }
