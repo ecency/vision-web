@@ -6043,6 +6043,7 @@
     "your-answer-open": "See your answer",
     "wave-head": "I opened door {{day}} of the Ecency Advent Calendar 🎄",
     "banner-results": "All 24 doors are open. See who won and the grand draw.",
-    "banner-results-cta": "See the results"
+    "banner-results-cta": "See the results",
+    "spotlight-amount": "Promotion worth {{n}} Points"
   }
 }

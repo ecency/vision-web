@@ -60,7 +60,13 @@ function signedIn(name: string | null) {
 
 const look = (c: HTMLElement, l: string) => c.querySelectorAll(`[data-look="${l}"]`);
 
+// numbers as an en-US reader sees them, whatever the machine running the specs uses
+let numbers: { mockRestore(): void } | undefined;
 beforeEach(() => {
+  const plain = Number.prototype.toLocaleString;
+  numbers = vi.spyOn(Number.prototype, "toLocaleString").mockImplementation(function (this: number, locales?: Intl.LocalesArgument, o?: Intl.NumberFormatOptions) {
+    return plain.call(this, locales ?? "en-US", o);
+  });
   vi.useFakeTimers({ toFake: ["Date"] });
   setupModalContainers();
   Object.values(api).forEach((f) => f.mockReset());
@@ -70,6 +76,7 @@ beforeEach(() => {
   owner.account = "maria";
 });
 afterEach(() => {
+  numbers?.mockRestore();
   vi.useRealTimers();
   cleanupModalContainers();
   signedIn(null);
