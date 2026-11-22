@@ -33,6 +33,7 @@ const commentPayload = (body: string) => ({
 describe("RcPrecheckBanner: out-of-RC telemetry", () => {
   beforeEach(() => {
     sentry.captureMessage.mockReset();
+    window.localStorage.clear();
     precheck.ready = true;
     precheck.willLikelyFail = true;
   });
@@ -83,5 +84,29 @@ describe("RcPrecheckBanner: out-of-RC telemetry", () => {
     render(<RcPrecheckBanner operation="comment_operation" />);
 
     expect(sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  // The reply box under every post shows the banner before anything is typed;
+  // opening a post is not an attempt to reply.
+  it("waits for the caller's go-ahead before reporting, but still shows the banner", () => {
+    signIn("reader");
+    const { rerender, getByRole } = render(
+      <RcPrecheckBanner operation="comment_operation" reportWhen={false} />
+    );
+
+    expect(getByRole("status")).toBeTruthy();
+    expect(sentry.captureMessage).not.toHaveBeenCalled();
+
+    rerender(<RcPrecheckBanner operation="comment_operation" reportWhen />);
+
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps reporting a vote warning after a comment warning for the same account", () => {
+    signIn("both");
+    render(<RcPrecheckBanner operation="comment_operation" />);
+    render(<RcPrecheckBanner operation="vote_operation" compact />);
+
+    expect(sentry.captureMessage).toHaveBeenCalledTimes(2);
   });
 });

@@ -15,6 +15,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import i18next from "i18next";
 import { usePublishState } from "../_hooks";
 import { sentry } from "@/core/sentry/lazy-sentry";
+import { reportRcRejection } from "@/api/rc-shortfall-report";
 import { useActiveAccount } from "@/core/hooks";
 import { buildPublishOperation } from "../_utils/build-publish-operation";
 
@@ -188,7 +189,12 @@ export function usePublishApi() {
 
       success(i18next.t("submit.published"));
       if (isCommunity(tags?.[0]) && isReblogToCommunity) {
-        await reblogMutation({ author, permlink });
+        await reblogMutation({ author, permlink }).catch((e) => {
+          // The post went out; only the reblog failed. Counted as a reblog
+          // here, so the page's report of the same error is a no-op.
+          reportRcRejection(e, "reblog", author);
+          throw e;
+        });
       }
 
       // return [entry as Entry, activePoll] as const;

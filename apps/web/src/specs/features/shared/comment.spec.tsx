@@ -45,8 +45,12 @@ vi.mock("@/features/shared", () => ({
   handleAndReportError: vi.fn(() => true)
 }));
 
+const rcBanner = vi.hoisted(() => ({ props: [] as Array<{ reportWhen?: boolean }> }));
 vi.mock("@/features/shared/rc-precheck", () => ({
-  RcPrecheckBanner: () => null
+  RcPrecheckBanner: (props: { reportWhen?: boolean }) => {
+    rcBanner.props.push(props);
+    return null;
+  }
 }));
 
 vi.mock("@/app/(dynamicPages)/entry/[category]/[author]/[permlink]/_components/context", () => ({
@@ -944,5 +948,28 @@ describe("Comment composer", () => {
 
       expect(queryByRole("checkbox", { name: "comment.decline-payout" })).toBeNull();
     });
+  });
+});
+
+// #2196: the reply box sits under every post, so its RC warning is only counted
+// once the reader has started a reply.
+describe("Comment composer: RC pre-check telemetry", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    rcBanner.props.length = 0;
+  });
+
+  it("does not count the warning for an empty reply box", () => {
+    renderComment();
+
+    expect(rcBanner.props.at(-1)?.reportWhen).toBe(false);
+  });
+
+  it("counts it once the reader has typed something", () => {
+    const { getByRole } = renderComment();
+
+    type(getByRole, "Nice post");
+
+    expect(rcBanner.props.at(-1)?.reportWhen).toBe(true);
   });
 });

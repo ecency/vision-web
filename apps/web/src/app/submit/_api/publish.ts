@@ -196,7 +196,12 @@ export function usePublishApi(onClear: () => void) {
         router.push(`/@${username}/posts`);
 
         if (isCommunity(tags[0]) && reblogSwitch) {
-          await reblogMutation({ author, permlink });
+          await reblogMutation({ author, permlink }).catch((e) => {
+            // The post went out; only the reblog failed. Counted as a reblog
+            // here, so the outer handler's report of the same error is a no-op.
+            reportRcRejection(e, "reblog", username ?? undefined);
+            throw e;
+          });
         }
 
         return [entry as Entry, activePoll] as const;

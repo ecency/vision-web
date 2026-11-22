@@ -533,7 +533,12 @@ function CommentForm({
             </div>
           </div>
         </div>
-        <RcPrecheckBanner operation="comment_operation" payload={rcPayload} className="mt-2" />
+        <RcPrecheckBanner
+          operation="comment_operation"
+          payload={rcPayload}
+          reportWhen={!!text?.trim()}
+          className="mt-2"
+        />
         {showShortReplyHint && (
           <div className="comment-short-reply-hint mt-2 text-xs opacity-60" role="status">
             {i18next.t("comment.short-reply-hint", { n: QUEST_MIN_CONTENT_LENGTH })}

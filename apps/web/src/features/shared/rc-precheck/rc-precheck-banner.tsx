@@ -23,6 +23,11 @@ interface Props {
   className?: string;
   /** The action reported to telemetry; derived from `operation` when omitted. */
   rcOp?: RcShortfallOp;
+  /**
+   * Whether a shown warning may be reported to telemetry. A banner that is up
+   * before the user has started (an empty reply box) passes false until they do.
+   */
+  reportWhen?: boolean;
 }
 
 function rcOpOf(operation: RcPrecheckOperation): RcShortfallOp {
@@ -52,7 +57,8 @@ export function RcPrecheckBanner({
   payload,
   compact = false,
   className,
-  rcOp
+  rcOp,
+  reportWhen = true
 }: Props) {
   const { activeUser } = useActiveAccount();
   const username = activeUser?.username;
@@ -62,10 +68,10 @@ export function RcPrecheckBanner({
   const reportOp = rcOp ?? rcOpOf(operation);
 
   useEffect(() => {
-    if (shown) {
+    if (shown && reportWhen) {
       reportRcPrecheck(username, reportOp);
     }
-  }, [shown, username, reportOp]);
+  }, [shown, reportWhen, username, reportOp]);
 
   if (!shown) {
     return null;
