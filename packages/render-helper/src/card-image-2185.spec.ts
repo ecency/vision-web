@@ -108,6 +108,30 @@ describe('a lookup names the image the body shows, or defers (#2185)', () => {
     `~~~ a\`b\n\n~~~\n![x](${A})\n~~~\n\n![d](${B})`,
     // A list item's fence, then a marker under its indent.
     `1. x\n   \`\`\`\n   a\n\`\`\`\n![x](${A})\n\`\`\`\n\n![d](${B})`,
+    // A src inside another attribute's value is not the image's src.
+    `<img alt="x src='${A}'" src="${B}">`,
+    `<img title='a src="${A}"' src="${B}">`,
+    `<img alt="a > src='${A}'" src="${B}">`,
+    // A tag the render shows as text reads nothing past its own text.
+    `<img alt="a>b"\n\n![d](${B})\n\n<img src="${C}">`,
+    `Intro text.\n\n<img alt="1 > 0" width="100"\n\n![d](${B})\n\nMore\n\n<img src="${C}">`,
+    `<img alt="a>b"\n![d](${B}) <img src="${C}">`,
+    `<img alt="a>b"\n\n${B}\n\n<img src="${C}">`,
+    `<img alt="it's" title='a>b'\n\n![d](${B})\n\n<img src="${C}">`,
+    `<img alt="<img src='${A}'>"src="${B}">`,
+    `<img title="<img src='${A}'>"src="${B}">\n\n![d](${C})`,
+    `<IMG=data-src = "${A}"\n\n<img src='${B}'>`,
+    `<img='x src="${A}"'\n\n<img src="${B}">`,
+    `<IMG = ">"x src='${A}'"`,
+    `<img src="${A}"x="1"\n\n![d](${B})`,
+    `<img src="${A}" alt="x"y\n\n![d](${B})`,
+    `<img @a src="${A}">\n\n![d](${B})`,
+    `<img 1x src="${A}">\n\n![d](${B})`,
+    // Inline, a tag outside the grammar is text.
+    `text <img src="${A}"x="1">\n\n![d](${B})`,
+    `text <img @a src="${A}">\n\n![d](${B})`,
+    // The first src decides, empty or not.
+    `<img src="" src="${A}">\n\n![d](${B})`,
     // A fence marker with text after it closes nothing.
     `\`\`\`\n\`\`\` not a closer\n![x](${A})\n\`\`\`\n\n![d](${B})`,
     `~~~\n~~~ x\n![x](${A})\n~~~\n\n![d](${B})`,
@@ -328,6 +352,8 @@ describe('a bare URL in a plain line is named by every lookup (#2185)', () => {
     `<center>${A}</center>`,
     `<div>${A}</div>\n\n![x](${B})`,
     `<img src=" ${A} ">\n\n![x](${B})`,
+    `<img alt="x src='${B}'" src="${A}">\n\n![x](${B})`,
+    `<img xsrc="${B}" src="${A}">\n\n![x](${B})`,
     // Code before the paragraph, or fenced in it, is not the URL's code.
     `\`x\`\n\n${A}\n\n![x](${B})`,
     `\`\`\`\nx\n\`\`\`\n${A}\n\n![x](${B})`,

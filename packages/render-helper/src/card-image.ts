@@ -541,41 +541,54 @@ function hasUndecidedImage(text: string, seen: { dropped: boolean }): boolean {
   }
   return false
 }
-// The first `<img` tag with a quoted `src`, as `/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i`
-// reads it, in one pass (#2185): that pattern rescans to the next `>` from
-// every `<img`, so a run of them without one was quadratic. Every `<img` up to
-// the same `>` reads the same span, so only the first of them is tried.
+// The first `<img` tag with a quoted `src`, in one forward pass (#2185). A
+// tag is read by the HTML tag grammar, attribute by attribute, a quoted value
+// whole, so a `src` inside another attribute's value (`alt="x src='a.png'"`)
+// or a `>` there is text. A name that only ends in `src` (`data-src`) is
+// reported as dashed. At the first `<img` the grammar does not read (no space
+// before a name, an unclosed quote, no `>`), the render shows text the scans
+// cannot place, so the scan stops: nothing after it is named (unreadBefore
+// defers on the `<img`), and no later tag is read inside this one's text.
 const IMG_OPEN_RE = /<img\b/gi
-const SRC_VALUE_RE = /src\s*=\s*["']([^"']+)["']/iy
+const ATTRIBUTE_RE = /\s+([A-Za-z_:][\w.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|[^\s"'=<>`]+))?/y
+const TAG_END_RE = /\s*\/?>/y
 interface HtmlImageMatch {
   index: number
-  /** From the `<img` to the end of the src value. */
-  whole: string
   src: string
   /** The attribute's name only ends in `src` (`data-src`). */
   dashed: boolean
 }
 function matchHtmlImage(text: string): HtmlImageMatch | null {
-  const lower = asciiLower(text)
   IMG_OPEN_RE.lastIndex = 0
-  // The next `src` at or after the tag being read, carried from tag to tag:
-  // tags only move forward, so the body is searched for `src` once in all.
-  let next = -1
   let m: RegExpExecArray | null
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
     const start = m.index
-    let gt = text.indexOf('>', start)
-    if (gt === -1) gt = text.length
-    if (next < start + 4) next = lower.indexOf('src', start + 4)
-    for (; next >= 0 && next < gt; next = lower.indexOf('src', next + 1)) {
-      if (/\w/.test(text[next - 1])) continue
-      SRC_VALUE_RE.lastIndex = next
-      const v = SRC_VALUE_RE.exec(text)
-      if (v) return { index: start, whole: text.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text[next - 1] === '-' }
+    let i = start + 4
+    let found: HtmlImageMatch | null = null
+    let srcSeen = false
+    for (;;) {
+      TAG_END_RE.lastIndex = i
+      if (TAG_END_RE.exec(text)) {
+        i = TAG_END_RE.lastIndex
+        break
+      }
+      ATTRIBUTE_RE.lastIndex = i
+      const attr = ATTRIBUTE_RE.exec(text)
+      if (!attr) return null
+      i = ATTRIBUTE_RE.lastIndex
+      const name = asciiLower(attr[1])
+      const value = attr[2] ?? attr[3]
+      // The first src decides, as the render reads it: an empty one leaves
+      // the tag without an image, whatever follows.
+      if (name === 'src') {
+        if (!srcSeen && !found && value) found = { index: start, src: value, dashed: false }
+        srcSeen = true
+      } else if (!found && !srcSeen && value && name.endsWith('src') && /\W/.test(name[name.length - 4])) {
+        found = { index: start, src: value, dashed: true }
+      }
     }
-    // None left in the body: no later tag has one either.
-    if (next === -1) return null
-    IMG_OPEN_RE.lastIndex = Math.max(gt, start + 4)
+    if (found) return found
+    IMG_OPEN_RE.lastIndex = i
   }
   return null
 }

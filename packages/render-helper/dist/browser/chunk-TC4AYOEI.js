@@ -369,25 +369,37 @@ function hasUndecidedImage(text, seen) {
   return false;
 }
 var IMG_OPEN_RE = /<img\b/gi;
-var SRC_VALUE_RE = /src\s*=\s*["']([^"']+)["']/iy;
+var ATTRIBUTE_RE = /\s+([A-Za-z_:][\w.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|[^\s"'=<>`]+))?/y;
+var TAG_END_RE = /\s*\/?>/y;
 function matchHtmlImage(text) {
-  const lower = asciiLower(text);
   IMG_OPEN_RE.lastIndex = 0;
-  let next = -1;
   let m;
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
     const start = m.index;
-    let gt = text.indexOf(">", start);
-    if (gt === -1) gt = text.length;
-    if (next < start + 4) next = lower.indexOf("src", start + 4);
-    for (; next >= 0 && next < gt; next = lower.indexOf("src", next + 1)) {
-      if (/\w/.test(text[next - 1])) continue;
-      SRC_VALUE_RE.lastIndex = next;
-      const v = SRC_VALUE_RE.exec(text);
-      if (v) return { index: start, whole: text.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text[next - 1] === "-" };
+    let i = start + 4;
+    let found = null;
+    let srcSeen = false;
+    for (; ; ) {
+      TAG_END_RE.lastIndex = i;
+      if (TAG_END_RE.exec(text)) {
+        i = TAG_END_RE.lastIndex;
+        break;
+      }
+      ATTRIBUTE_RE.lastIndex = i;
+      const attr = ATTRIBUTE_RE.exec(text);
+      if (!attr) return null;
+      i = ATTRIBUTE_RE.lastIndex;
+      const name = asciiLower(attr[1]);
+      const value = attr[2] ?? attr[3];
+      if (name === "src") {
+        if (!srcSeen && !found && value) found = { index: start, src: value, dashed: false };
+        srcSeen = true;
+      } else if (!found && !srcSeen && value && name.endsWith("src") && /\W/.test(name[name.length - 4])) {
+        found = { index: start, src: value, dashed: true };
+      }
     }
-    if (next === -1) return null;
-    IMG_OPEN_RE.lastIndex = Math.max(gt, start + 4);
+    if (found) return found;
+    IMG_OPEN_RE.lastIndex = i;
   }
   return null;
 }
@@ -1237,5 +1249,5 @@ function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
 }
 
 export { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, lookupPostImage };
-//# sourceMappingURL=chunk-MCR7BQMS.js.map
-//# sourceMappingURL=chunk-MCR7BQMS.js.map
+//# sourceMappingURL=chunk-TC4AYOEI.js.map
+//# sourceMappingURL=chunk-TC4AYOEI.js.map

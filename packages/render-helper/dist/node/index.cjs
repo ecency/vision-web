@@ -12073,25 +12073,37 @@ function hasUndecidedImage(text3, seen) {
   return false;
 }
 var IMG_OPEN_RE = /<img\b/gi;
-var SRC_VALUE_RE = /src\s*=\s*["']([^"']+)["']/iy;
+var ATTRIBUTE_RE = /\s+([A-Za-z_:][\w.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|[^\s"'=<>`]+))?/y;
+var TAG_END_RE = /\s*\/?>/y;
 function matchHtmlImage(text3) {
-  const lower = asciiLower(text3);
   IMG_OPEN_RE.lastIndex = 0;
-  let next = -1;
   let m;
   while ((m = IMG_OPEN_RE.exec(text3)) !== null) {
     const start = m.index;
-    let gt = text3.indexOf(">", start);
-    if (gt === -1) gt = text3.length;
-    if (next < start + 4) next = lower.indexOf("src", start + 4);
-    for (; next >= 0 && next < gt; next = lower.indexOf("src", next + 1)) {
-      if (/\w/.test(text3[next - 1])) continue;
-      SRC_VALUE_RE.lastIndex = next;
-      const v = SRC_VALUE_RE.exec(text3);
-      if (v) return { index: start, whole: text3.slice(start, SRC_VALUE_RE.lastIndex), src: v[1], dashed: text3[next - 1] === "-" };
+    let i2 = start + 4;
+    let found = null;
+    let srcSeen = false;
+    for (; ; ) {
+      TAG_END_RE.lastIndex = i2;
+      if (TAG_END_RE.exec(text3)) {
+        i2 = TAG_END_RE.lastIndex;
+        break;
+      }
+      ATTRIBUTE_RE.lastIndex = i2;
+      const attr2 = ATTRIBUTE_RE.exec(text3);
+      if (!attr2) return null;
+      i2 = ATTRIBUTE_RE.lastIndex;
+      const name = asciiLower(attr2[1]);
+      const value = attr2[2] ?? attr2[3];
+      if (name === "src") {
+        if (!srcSeen && !found && value) found = { index: start, src: value, dashed: false };
+        srcSeen = true;
+      } else if (!found && !srcSeen && value && name.endsWith("src") && /\W/.test(name[name.length - 4])) {
+        found = { index: start, src: value, dashed: true };
+      }
     }
-    if (next === -1) return null;
-    IMG_OPEN_RE.lastIndex = Math.max(gt, start + 4);
+    if (found) return found;
+    IMG_OPEN_RE.lastIndex = i2;
   }
   return null;
 }
