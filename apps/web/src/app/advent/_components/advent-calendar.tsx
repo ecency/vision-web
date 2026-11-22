@@ -41,7 +41,7 @@ function useNow() {
   return now;
 }
 
-function Countdown({ to, now }: { to: number; now: number }) {
+export function Countdown({ to, now }: { to: number; now: number }) {
   const ms = Math.max(0, to - now);
   const d = Math.floor(ms / 864e5);
   const h = Math.floor(ms / 36e5) % 24;
