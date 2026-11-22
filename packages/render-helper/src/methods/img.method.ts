@@ -140,29 +140,19 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
   // Only render-helper's own video thumbnails skip this step; an author's
   // class="no-replace" must not (#1999).
   const shouldReplace = !isInternalThumbnail(el);
-  // Only skip re-proxification for URLs already going through proxy/avatar/cover routes
-  // Direct upload URLs (e.g. /DQm...) should still be proxified for resizing & format optimization
   const base = trimTrailingSlash(getProxyBase());
-  const hasAlreadyProxied = src.startsWith(`${base}/p/`)
-    || src.startsWith(`${base}/u/`)
-    || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\d+x\\d+/`).test(src);
-
-  if (shouldReplace && !hasAlreadyProxied) {
-    // forceProxy: route the fallback src through /p/ even though no width is set,
-    // so uploads still get WebP/AVIF via Accept negotiation instead of the
-    // original-format direct-serve bytes. (srcset carries the resized variants.)
-    const proxified = proxifyImageSrc(decodedSrc, 0, 0, "match", { forceProxy: true });
-    if (proxified) {
-      el.setAttribute("src", proxified);
-      const srcset = buildSrcSet(decodedSrc);
-      if (srcset) {
-        el.setAttribute("srcset", srcset);
+  if (shouldReplace) {
+    const sources = bodyImageSources(src)
+    if (sources) {
+      if (sources.src !== src) el.setAttribute("src", sources.src);
+      if (sources.srcSet) {
+        el.setAttribute("srcset", sources.srcSet);
         el.setAttribute("sizes", IMAGE_SIZES);
       }
       // Web/self-hosted: offer avif/webp via <picture>. The raw decodedSrc still
       // carries the original extension here (pre-proxify), which the eligibility
       // gate needs. The <img> above stays the format=match fallback.
-      if (!forApp) {
+      if (!forApp && !sources.kept) {
         wrapInPicture(el, decodedSrc);
       }
     } else if (/^https?:\/\//i.test(decodedSrc)) {
@@ -172,16 +162,6 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
       el.removeAttribute("src");
       el.removeAttribute("srcset");
       el.removeAttribute("sizes");
-    }
-  } else if (shouldReplace && hasAlreadyProxied) {
-    // Only /p/ URLs have extractable hashes for srcset; /u/ and /WxH/ routes
-    // are avatar/cover URLs that shouldn't get responsive srcset
-    if (src.startsWith(`${base}/p/`)) {
-      const srcset = buildSrcSet(src);
-      if (srcset) {
-        el.setAttribute("srcset", srcset);
-        el.setAttribute("sizes", IMAGE_SIZES);
-      }
     }
   }
   // An author's srcset can name any host, and the branches above leave it in
@@ -194,6 +174,36 @@ export function img(el: HTMLElement, state?: { firstImageFound: boolean; imageCo
   }
 }
 
+/**
+ * The src and srcset the body gives an image written as `src`, the one rule
+ * for a markdown or HTML <img> (img) and a linkified URL or promoted link
+ * (createImageHTML), and what the entry page preloads (#2191), or null when
+ * the proxy refuses it.
+ *
+ * A src already on the proxy (/p/, /u/, a sized route) is kept as written; a
+ * /p/ one gets the sized srcset of its hash. Any other goes through /p/,
+ * unsized so uploads still get WebP/AVIF by Accept negotiation, with a srcset
+ * of sized variants of the /p/ hash it got. A legacy host's /p/ route is
+ * sized from that hash too: sized as written it only swaps the host back, so
+ * every width would name the same unsized URL.
+ */
+export function bodyImageSources(src: string): { src: string; srcSet: string; kept: boolean } | null {
+  const base = trimTrailingSlash(getProxyBase());
+  // Kept trimmed: spaces around a src are not part of the URL.
+  const written = src.trim();
+  const kept = written.startsWith(`${base}/p/`)
+    || written.startsWith(`${base}/u/`)
+    || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\d+x\\d+/`).test(written);
+  if (kept) return { src: written, srcSet: written.startsWith(`${base}/p/`) ? buildSrcSet(written) : '', kept };
+  const decoded = decodeDomImageSrc(src);
+  // forceProxy: route the fallback src through /p/ even though no width is set,
+  // so uploads still get WebP/AVIF via Accept negotiation instead of the
+  // original-format direct-serve bytes. (srcset carries the resized variants.)
+  const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
+  if (!proxified) return null;
+  return { src: proxified, srcSet: buildSrcSet(proxified.startsWith(`${base}/p/`) ? proxified : decoded), kept };
+}
+
 // A value for a double-quoted attribute: a `"` (from a configured proxy base,
 // say) is written as &quot; so it cannot end the attribute.
 const quoteAttr = (value: string): string => value.replace(/"/g, '&quot;');
@@ -203,15 +213,10 @@ export function createImageHTML(src: string, isLCP: boolean, forApp = true): str
   // hashes to the same proxy /p/ URL regardless of which render path produced it
   // (and so the LCP preload, which decodes via getEntryImageRawUrl, matches).
   const decoded = decodeDomImageSrc(src);
-  // forceProxy: see img() — keep the fallback src unsized but proxied so uploads
-  // are served WebP/AVIF rather than the original-format direct-serve bytes.
-  const proxified = proxifyImageSrc(decoded, 0, 0, "match", { forceProxy: true });
-  if (!proxified) return '';
-
-  const base = trimTrailingSlash(getProxyBase());
-  const isAlreadyProxied = decoded.startsWith(`${base}/u/`)
-    || new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\d+x\\d+/`).test(decoded);
-  const srcset = isAlreadyProxied ? '' : buildSrcSet(decoded);
+  const sources = bodyImageSources(src);
+  if (!sources) return '';
+  const proxified = sources.src;
+  const srcset = sources.srcSet;
   const loading = isLCP ? 'eager' : 'lazy';
   const fetch = isLCP ? 'fetchpriority="high"' : 'decoding="async"';
   const srcsetAttr = srcset ? `srcset="${quoteAttr(srcset)}" sizes="${IMAGE_SIZES}"` : '';

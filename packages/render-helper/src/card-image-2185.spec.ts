@@ -3,6 +3,7 @@ import { markdown2Html } from './markdown-2-html'
 import { catchPostImage } from './catch-post-image'
 import { getEntryImageRawUrl, getEntryLcpImage } from './card-image'
 import { getProxyBase, isPictureEligibleRawUrl, proxifyImageSrc } from './proxify-image-src'
+import { bodyImageSources } from './methods/img.method'
 
 let n = 0
 const entry = (body: string) => ({ author: 'cs', permlink: `q${n++}`, last_update: '2026-11-21', body, json_metadata: '{}' }) as never
@@ -281,6 +282,23 @@ describe('an image over the proxy limit with percent escapes is skipped (#2182)'
     const rendered = shown(body)
     expect(rendered).toBe(proxifyImageSrc(B, 0, 0, 'match'))
     for (const name of ['fast', 'raw', 'lcp'] as const) expect([name, lookups[name](body)]).toEqual([name, request(rendered)])
+  })
+})
+
+describe('a proxy URL is the same src bare or in markdown (#2191)', () => {
+  it.each(['https://images.hive.blog', 'https://steemitimages.com'])('%s /p/ gets a sized srcset of its hash', (host) => {
+    const sources = bodyImageSources(`${host}/p/2bP4pJr4wVimqCWjYimXJe2cnCgnAhYxiBtbXg5JBpk?format=match&mode=fit`)!
+    const candidates = sources.srcSet.split(', ').map((c) => c.split(' ')[0])
+    expect(candidates).toHaveLength(new Set(candidates).size)
+    expect(candidates[0]).toBe(`${getProxyBase()}/p/2bP4pJr4wVimqCWjYimXJe2cnCgnAhYxiBtbXg5JBpk?format=match&mode=fit&width=320`)
+  })
+  const H = 'https://i.ecency.com/p/2bP4pJr4wVimqCWjYimXJe2cnCgnAhYxiBtbXg5JBpk.png'
+  const W = 'https://i.ecency.com/600x400/https://e.com/a.png'
+  it.each([W, `![x](${W})`, `<center>${W}</center>\n\n![x](${B})`, H, `![x](${H})`, `<img src=" ${W} ">`, `<img src="${H} ">`])('%j', (body) => {
+    const rendered = shown(body)
+    expect(rendered).toBe(body.includes('600x400') ? W : H)
+    expect(catchPostImage(entry(body), 0, 0, 'match')).toBe(rendered)
+    expect(catchPostImage(entry(body), 0, 0, 'match', FAST)).toBe(rendered)
   })
 })
 

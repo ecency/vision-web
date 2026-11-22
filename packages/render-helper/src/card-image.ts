@@ -1011,6 +1011,9 @@ function bodyImageRawUrl(body: string, prepared: PreparedBody): string | null {
   if (source === null) return null
   const url = decodeDomImageSrc(source)
   if (url.length > MAX_PROXIED_URL_LENGTH) return null
+  // One already on the proxy is kept as written, which a decoded URL would
+  // not name (#2191).
+  if (onProxy(source.trim()) && url !== source.trim()) return null
   // A control character a destination decodes to (`&Tab;`, `%0A`): the render
   // reads it its own way, and a guessed preload is a wasted download.
   return candidate.destination && CONTROL_CHAR_RE.test(url) ? null : url
@@ -1731,7 +1734,7 @@ function fastBodyImage(raw: string, width: number, height: number, format: strin
   if (!first) return null
   const source = candidateSource(body, first)
   // A URL the proxy refuses is one the render drops.
-  return source === null ? null : proxifySource(source, width, height, format, !(first.html || first.md)) || null
+  return source === null ? null : proxifySource(source, width, height, format) || null
 }
 
 // json_metadata is whatever the publishing client wrote: `thumbnails` has been
@@ -1781,17 +1784,17 @@ function proxifyFound(src: string, width: number, height: number, format: string
 }
 
 // proxifyFound for a URL whose references are already decoded (candidateSource).
-// As img() reads an <img> src: one already on the proxy (/p/, /u/, a sized
-// route) is kept as written, any other goes through /p/ (#2185), legacy
-// sized hosts included.
+// As the body reads any image src (bodyImageSources): one already on the
+// proxy (/p/, /u/, a sized route) is kept as written, any other goes through
+// /p/ (#2185, #2191), legacy sized hosts included.
 function onProxy(src: string): boolean {
   const base = getProxyBase()
   return src.startsWith(`${base}/p/`) || src.startsWith(`${base}/u/`) || (src.startsWith(`${base}/`) && /^\d+x\d+\//.test(src.slice(base.length + 1)))
 }
 
-function proxifySource(source: string, width: number, height: number, format: string, linked = false): string {
-  // A linkified URL or a promoted link always goes through /p/ (createImageHTML).
-  if (linked || !onProxy(source)) return proxifyImageSrc(decodeDomImageSrc(source), width, height, format, { forceProxy: true })
+function proxifySource(written: string, width: number, height: number, format: string): string {
+  const source = written.trim()
+  if (!onProxy(source)) return proxifyImageSrc(decodeDomImageSrc(source), width, height, format, { forceProxy: true })
   // Unsized, the card is the src the render keeps.
   if (!width && !height) return source
   const proxied = proxifyImageSrc(decodeDomImageSrc(source), width, height, format)
