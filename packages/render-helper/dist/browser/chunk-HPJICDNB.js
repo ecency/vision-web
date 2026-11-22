@@ -369,8 +369,14 @@ function hasUndecidedImage(text, seen) {
   return false;
 }
 var IMG_OPEN_RE = /<img\b/gi;
-var ATTRIBUTE_RE = /\s+([A-Za-z_:][\w.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|[^\s"'=<>`]+))?/y;
-var TAG_END_RE = /\s*\/?>/y;
+var ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y;
+var ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y;
+var TAG_END_RE = /\/?>/y;
+var SPACE_CHARS = " 	\n\r\f";
+function skipSpaces(text, i) {
+  while (i < text.length && SPACE_CHARS.includes(text[i])) i++;
+  return i;
+}
 function matchHtmlImage(text) {
   IMG_OPEN_RE.lastIndex = 0;
   let m;
@@ -380,17 +386,27 @@ function matchHtmlImage(text) {
     let found = null;
     let srcSeen = false;
     for (; ; ) {
-      TAG_END_RE.lastIndex = i;
+      const spaced = skipSpaces(text, i);
+      TAG_END_RE.lastIndex = spaced;
       if (TAG_END_RE.exec(text)) {
         i = TAG_END_RE.lastIndex;
         break;
       }
-      ATTRIBUTE_RE.lastIndex = i;
-      const attr = ATTRIBUTE_RE.exec(text);
-      if (!attr) return null;
-      i = ATTRIBUTE_RE.lastIndex;
-      const name = asciiLower(attr[1]);
-      const value = attr[2] ?? attr[3];
+      ATTRIBUTE_NAME_RE.lastIndex = spaced;
+      const named = spaced > i ? ATTRIBUTE_NAME_RE.exec(text) : null;
+      if (!named) return null;
+      i = ATTRIBUTE_NAME_RE.lastIndex;
+      let value;
+      const eq = skipSpaces(text, i);
+      if (text[eq] === "=") {
+        ATTRIBUTE_VALUE_RE.lastIndex = skipSpaces(text, eq + 1);
+        const v = ATTRIBUTE_VALUE_RE.exec(text);
+        if (v) {
+          i = ATTRIBUTE_VALUE_RE.lastIndex;
+          value = v[1] ?? v[2];
+        }
+      }
+      const name = asciiLower(named[0]);
       if (name === "src") {
         if (!srcSeen && !found && value) found = { index: start, src: value, dashed: false };
         srcSeen = true;
@@ -1249,5 +1265,5 @@ function getEntryCardImage(obj, width = 0, height = 0, format = "match") {
 }
 
 export { getEntryCardImage, getEntryCardImageRawUrl, getEntryImageRawUrl, getEntryLcpImage, lookupPostImage };
-//# sourceMappingURL=chunk-TC4AYOEI.js.map
-//# sourceMappingURL=chunk-TC4AYOEI.js.map
+//# sourceMappingURL=chunk-HPJICDNB.js.map
+//# sourceMappingURL=chunk-HPJICDNB.js.map

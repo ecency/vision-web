@@ -550,8 +550,16 @@ function hasUndecidedImage(text: string, seen: { dropped: boolean }): boolean {
 // cannot place, so the scan stops: nothing after it is named (unreadBefore
 // defers on the `<img`), and no later tag is read inside this one's text.
 const IMG_OPEN_RE = /<img\b/gi
-const ATTRIBUTE_RE = /\s+([A-Za-z_:][\w.:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|[^\s"'=<>`]+))?/y
-const TAG_END_RE = /\s*\/?>/y
+// Whitespace is skipped in code: a `\s*` before an optional part reads as
+// backtracking to a regex scanner, though each pattern is sticky.
+const ATTRIBUTE_NAME_RE = /[A-Za-z_:][\w.:-]*/y
+const ATTRIBUTE_VALUE_RE = /"([^"]*)"|'([^']*)'|[^\s"'=<>`]+/y
+const TAG_END_RE = /\/?>/y
+const SPACE_CHARS = ' \t\n\r\f'
+function skipSpaces(text: string, i: number): number {
+  while (i < text.length && SPACE_CHARS.includes(text[i])) i++
+  return i
+}
 interface HtmlImageMatch {
   index: number
   src: string
@@ -567,17 +575,28 @@ function matchHtmlImage(text: string): HtmlImageMatch | null {
     let found: HtmlImageMatch | null = null
     let srcSeen = false
     for (;;) {
-      TAG_END_RE.lastIndex = i
+      const spaced = skipSpaces(text, i)
+      TAG_END_RE.lastIndex = spaced
       if (TAG_END_RE.exec(text)) {
         i = TAG_END_RE.lastIndex
         break
       }
-      ATTRIBUTE_RE.lastIndex = i
-      const attr = ATTRIBUTE_RE.exec(text)
-      if (!attr) return null
-      i = ATTRIBUTE_RE.lastIndex
-      const name = asciiLower(attr[1])
-      const value = attr[2] ?? attr[3]
+      // An attribute: whitespace, a name, then an optional `= value`.
+      ATTRIBUTE_NAME_RE.lastIndex = spaced
+      const named = spaced > i ? ATTRIBUTE_NAME_RE.exec(text) : null
+      if (!named) return null
+      i = ATTRIBUTE_NAME_RE.lastIndex
+      let value: string | undefined
+      const eq = skipSpaces(text, i)
+      if (text[eq] === '=') {
+        ATTRIBUTE_VALUE_RE.lastIndex = skipSpaces(text, eq + 1)
+        const v = ATTRIBUTE_VALUE_RE.exec(text)
+        if (v) {
+          i = ATTRIBUTE_VALUE_RE.lastIndex
+          value = v[1] ?? v[2]
+        }
+      }
+      const name = asciiLower(named[0])
       // The first src decides, as the render reads it: an empty one leaves
       // the tag without an image, whatever follows.
       if (name === 'src') {
