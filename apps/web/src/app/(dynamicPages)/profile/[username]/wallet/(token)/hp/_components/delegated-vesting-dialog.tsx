@@ -3,7 +3,7 @@ import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
 import { error, LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
 import { formatError } from "@/api/format-error";
 import { List, ListItem } from "@/features/ui/list";
-import { formattedNumber, parseAsset, vestsToHp } from "@/utils";
+import { formattedNumber, getLoginType, parseAsset, vestsToHp } from "@/utils";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { getHivePowerDelegatesInfiniteQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +17,16 @@ import { reportRcRejection } from "@/api/rc-shortfall-report";
 
 const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
   `${item.delegatee} ${item.vesting_shares}`;
+
+interface PendingRow {
+  attempt: number;
+  /** delegationKey of the row the request was for. */
+  key: string;
+  /** Released when the dialog closes (a HiveSigner signing never settles here). */
+  released: boolean;
+  /** Succeeded after its opening ended: waits for a refresh without the row. */
+  settled: boolean;
+}
 
 interface Props {
   username: string;
@@ -45,14 +55,22 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
 
   const { mutateAsync: delegate } = useDelegateVestingSharesMutation();
   // Per row: the mutation's isPending is one flag for every row (#2198).
-  // Each attempt has its own number, so an earlier attempt settling late does
-  // not clear a later one's mark.
-  const [pending, setPending] = useState<ReadonlyMap<string, number>>(new Map());
+  // A row's request stays pending across a close and reopen, so it is not
+  // sent twice. Each attempt has its own number: only that attempt clears it.
+  const [pending, setPending] = useState<ReadonlyMap<string, PendingRow>>(new Map());
   const attempts = useRef(0);
-  // A signing abandoned in HiveSigner never settles: closing the dialog ends
-  // the wait, so reopening offers Undelegate again.
+  // Bumped on every open and close: a request answers the opening it started in.
+  const opening = useRef(0);
   useEffect(() => {
-    if (!show) setPending(new Map());
+    opening.current++;
+    // A HiveSigner signing happens in another tab and never settles here:
+    // closing ends the wait, so reopening offers Undelegate again.
+    if (!show) {
+      setPending((map) => {
+        const next = new Map([...map].filter(([, row]) => !row.released || row.settled));
+        return next.size === map.size ? map : next;
+      });
+    }
   }, [show]);
   // Undelegated rows stay hidden while the cached list still holds them (the
   // refresh lands seconds after the broadcast), whether or not the dialog was
@@ -60,38 +78,63 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   // gone. Keyed by amount too, so a new delegation of another amount shows.
   const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
   // A list without the row confirms it gone: a later delegation of the same
-  // amount shows again.
+  // amount shows again, and a row waiting for that refresh stops waiting.
   useEffect(() => {
     if (!delegations) return;
+    const live = new Set(delegations.map(delegationKey));
     setUndelegated((set) => {
-      const live = new Set(delegations.map(delegationKey));
       const kept = new Set([...set].filter((key) => live.has(key)));
       return kept.size === set.size ? set : kept;
     });
+    setPending((map) => {
+      const next = new Map([...map].filter(([, row]) => !row.settled || live.has(row.key)));
+      return next.size === map.size ? map : next;
+    });
     // Also when a key is added: in sync mode the refreshed list lands before
     // the broadcast resolves.
-  }, [delegations, undelegated]);
+  }, [delegations, undelegated, pending]);
 
   const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
     const { delegatee } = item;
     if (pending.has(delegatee)) return;
     const attempt = ++attempts.current;
-    setPending((map) => new Map(map).set(delegatee, attempt));
+    const startedIn = opening.current;
+    const key = delegationKey(item);
+    const update = (change: (row: PendingRow) => PendingRow | null) =>
+      setPending((map) => {
+        const row = map.get(delegatee);
+        if (row?.attempt !== attempt) return map;
+        const next = new Map(map);
+        const changed = change(row);
+        if (changed) next.set(delegatee, changed);
+        else next.delete(delegatee);
+        return next;
+      });
+    setPending((map) =>
+      new Map(map).set(delegatee, {
+        attempt,
+        key,
+        released: getLoginType(by) === "hivesigner",
+        settled: false
+      })
+    );
     delegate({ delegatee, vestingShares: "0.000000 VESTS" })
-      .then(() => setUndelegated((set) => new Set(set).add(delegationKey(item))))
+      .then(() => {
+        if (opening.current === startedIn) {
+          setUndelegated((set) => new Set(set).add(key));
+          update(() => null);
+        } else {
+          // Answered after its opening ended: the row stays as listed, still
+          // not offered, until a refresh drops it.
+          update((row) => ({ ...row, settled: true }));
+        }
+      })
       .catch((err) => {
         // Was an unhandled rejection with no feedback at all.
         reportRcRejection(err, "transfer", by);
         error(...formatError(err));
-      })
-      .finally(() =>
-        setPending((map) => {
-          if (map.get(delegatee) !== attempt) return map;
-          const next = new Map(map);
-          next.delete(delegatee);
-          return next;
-        })
-      );
+        update(() => null);
+      });
   };
 
   const data = useMemo(
