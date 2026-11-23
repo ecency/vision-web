@@ -16,7 +16,7 @@ vi.mock("@/utils", async () => ({
 const delegate = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: true }));
 const BOB = { delegator: "alice", delegatee: "bob", vesting_shares: "2000.000000 VESTS" };
 const CAROL = { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" };
-const rows = vi.hoisted(() => ({ current: [] as unknown[] }));
+const rows = vi.hoisted(() => ({ current: [] as unknown[], fetches: 0 }));
 vi.mock("@/api/sdk-mutations", () => ({ useDelegateVestingSharesMutation: () => delegate }));
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
@@ -26,7 +26,10 @@ vi.mock("@ecency/sdk", async () => ({
   }),
   getHivePowerDelegatesInfiniteQueryOptions: () => ({
     queryKey: ["hp-delegates", "alice"],
-    queryFn: async () => rows.current
+    queryFn: async () => {
+      rows.fetches++;
+      return rows.current;
+    }
   })
 }));
 vi.mock("@/features/shared", () => ({
@@ -52,7 +55,7 @@ function renderDialog() {
     </QueryClientProvider>
   );
   const view = render(ui(true));
-  return { queryClient, setShow: (show: boolean) => view.rerender(ui(show)) };
+  return { queryClient, setShow: (show: boolean) => view.rerender(ui(show)), unmount: view.unmount };
 }
 
 const rowOf = (name: string) => screen.getByText(name).closest(".list-item") as HTMLElement;
@@ -175,6 +178,24 @@ describe("DelegatedVesting rows (#2198)", () => {
       });
 
       expect(within(await screen.findByText("bob").then(() => rowOf("bob"))).getByText("delegated-vesting.undelegate")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads nothing more once unmounted before the expiry check", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      delegate.mutateAsync.mockResolvedValue(undefined);
+      const { unmount } = renderDialog();
+      await screen.findByText("bob");
+      await undelegateBob();
+      const before = rows.fetches;
+
+      unmount();
+      vi.advanceTimersByTime(70_000);
+
+      expect(rows.fetches).toBe(before);
     } finally {
       vi.useRealTimers();
     }

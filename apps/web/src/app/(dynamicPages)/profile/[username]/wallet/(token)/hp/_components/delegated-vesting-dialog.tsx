@@ -21,7 +21,9 @@ const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
 
 // A transaction expires 60s after signing (hive-tx Transaction), plus margin:
 // a list read this long after an accepted undelegation that still holds the
-// delegation means it never landed.
+// delegation means it never landed. The expiry comes from the browser clock;
+// with a clock far ahead the first one can still land after the row is
+// offered again, and the second then fails on chain with an error, no harm.
 const TX_EXPIRY_MS = 65_000;
 
 interface PendingRow {
