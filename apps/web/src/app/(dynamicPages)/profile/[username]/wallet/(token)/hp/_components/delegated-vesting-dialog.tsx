@@ -19,6 +19,11 @@ import { reportRcRejection } from "@/api/rc-shortfall-report";
 const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
   `${item.delegatee} ${item.vesting_shares}`;
 
+// A transaction expires 60s after signing (hive-tx Transaction), plus margin:
+// a list read this long after an accepted undelegation that still holds the
+// delegation means it never landed.
+const TX_EXPIRY_MS = 65_000;
+
 interface PendingRow {
   attempt: number;
   /** delegationKey of the row the request was for. */
@@ -27,6 +32,8 @@ interface PendingRow {
   released: boolean;
   /** Succeeded after its opening ended: waits for a refresh without the row. */
   settled: boolean;
+  /** When it succeeded, for a settled row. */
+  settledAt?: number;
 }
 
 interface Props {
@@ -46,7 +53,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
-  const { data: delegations, isLoading } = useQuery({
+  const { data: delegations, isLoading, dataUpdatedAt, refetch } = useQuery({
     ...getHivePowerDelegatesInfiniteQueryOptions(username, 1000),
     select: (data) =>
       data?.sort(
@@ -105,23 +112,43 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   // refresh lands seconds after the broadcast), whether or not the dialog was
   // closed in between, so Undelegate is not offered on a delegation that is
   // gone. Keyed by amount too, so a new delegation of another amount shows.
-  const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
+  // Key -> when it was hidden.
+  const [undelegated, setUndelegated] = useState<ReadonlyMap<string, number>>(new Map());
   // A list without the row confirms it gone: a later delegation of the same
-  // amount shows again, and a row waiting for that refresh stops waiting.
+  // amount shows again, and a row waiting for that refresh stops waiting. A
+  // list read past the transaction's expiry that still holds it says the
+  // undelegation never landed: the row is offered again.
   useEffect(() => {
     if (!delegations) return;
     const live = new Set(delegations.map(delegationKey));
-    setUndelegated((set) => {
-      const kept = new Set([...set].filter((key) => live.has(key)));
-      return kept.size === set.size ? set : kept;
+    const waiting = (key: string, since: number) => live.has(key) && dataUpdatedAt < since + TX_EXPIRY_MS;
+    setUndelegated((map) => {
+      const kept = new Map([...map].filter(([key, at]) => waiting(key, at)));
+      return kept.size === map.size ? map : kept;
     });
     setPending((map) => {
-      const next = new Map([...map].filter(([, row]) => !row.settled || live.has(row.key)));
+      const next = new Map(
+        [...map].filter(([, row]) => !row.settled || waiting(row.key, row.settledAt ?? 0))
+      );
       return next.size === map.size ? map : next;
     });
     // Also when a key is added: in sync mode the refreshed list lands before
     // the broadcast resolves.
-  }, [delegations, undelegated, pending]);
+  }, [delegations, dataUpdatedAt, undelegated, pending]);
+  // The SDK refreshes the list seconds after the broadcast; one more read
+  // past the expiry decides an undelegation that never landed.
+  const expiryChecks = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = expiryChecks.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  const checkAfterExpiry = () => {
+    const timer = setTimeout(() => {
+      expiryChecks.current.delete(timer);
+      void refetch();
+    }, TX_EXPIRY_MS);
+    expiryChecks.current.add(timer);
+  };
 
   const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
     const { delegatee } = item;
@@ -150,13 +177,14 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
     delegate({ delegatee, vestingShares: "0.000000 VESTS" })
       .then(() => {
         if (opening.current === startedIn) {
-          setUndelegated((set) => new Set(set).add(key));
+          setUndelegated((map) => new Map(map).set(key, Date.now()));
           update(() => null);
         } else {
           // Answered after its opening ended: the row stays as listed, still
           // not offered, until a refresh drops it.
-          update((row) => ({ ...row, settled: true }));
+          update((row) => ({ ...row, settled: true, settledAt: Date.now() }));
         }
+        checkAfterExpiry();
       })
       .catch((err) => {
         // Was an unhandled rejection with no feedback at all.

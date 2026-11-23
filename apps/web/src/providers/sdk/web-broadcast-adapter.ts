@@ -435,13 +435,14 @@ export function createWebBroadcastAdapter(): PlatformAdapter {
       // so nothing here ever learns it: the promise never settles, as in
       // wallet-operations-sign. A blocked popup makes `sendOperations` throw
       // (it focuses a null window), which rejects the promise instead.
-      notifyUnsettledSigning(ops);
       return new Promise(() => {
         hs.sendOperations(
           ops,
           { callback: `${window.location.origin}${window.location.pathname}` },
           () => {}
         );
+        // Only a tab that opened is a hand-off; a blocked popup threw above.
+        notifyUnsettledSigning(ops);
       });
     },
 

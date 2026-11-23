@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // #2198: a signing handed to another tab or app never settles here; the
 // adapter says so, so the HP dialog can release the row.
-vi.mock("hivesigner", () => ({ default: { sendOperations: vi.fn() } }));
+const hs = vi.hoisted(() => ({ sendOperations: vi.fn() }));
+vi.mock("hivesigner", () => ({ default: hs }));
 vi.mock("@/utils/hive-extensions", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   hasAnyHiveExtension: () => false
@@ -39,6 +40,20 @@ describe("unsettled signing hand-offs", () => {
 
     expect(heard).toHaveBeenCalledTimes(1);
     expect(heard).toHaveBeenCalledWith(OPS);
+  });
+
+  it("are not announced when HiveSigner's popup is blocked", async () => {
+    hs.sendOperations.mockImplementationOnce(() => {
+      throw new Error("popup blocked");
+    });
+    const heard = vi.fn();
+    off = onUnsettledSigning(heard);
+
+    await expect(createWebBroadcastAdapter().broadcastWithHiveSigner!("alice", OPS, "active")).rejects.toThrow(
+      "popup blocked"
+    );
+
+    expect(heard).not.toHaveBeenCalled();
   });
 
   it("stop reaching a listener that unsubscribed", () => {

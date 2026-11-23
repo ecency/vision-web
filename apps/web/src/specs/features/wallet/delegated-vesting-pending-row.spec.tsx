@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
@@ -156,6 +156,56 @@ describe("DelegatedVesting rows (#2198)", () => {
     expect(await screen.findByText("bob")).toBeTruthy();
   });
 
+  it("shows the row again when the undelegation never lands", async () => {
+    // The transaction expires 60s after signing; past that, a list that
+    // still holds the delegation means it did not go through.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      delegate.mutateAsync.mockResolvedValue(undefined);
+      renderDialog();
+      await screen.findByText("bob");
+      await undelegateBob();
+
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(screen.queryByText("bob")).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(40_000);
+      });
+
+      expect(within(await screen.findByText("bob").then(() => rowOf("bob"))).getByText("delegated-vesting.undelegate")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers Undelegate again when a late success from an earlier opening never lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let succeed: () => void = () => {};
+      delegate.mutateAsync.mockReturnValue(new Promise<void>((resolve) => (succeed = resolve)));
+      const { setShow } = renderDialog();
+      await screen.findByText("bob");
+      await act(async () => {
+        fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+      });
+      await act(async () => setShow(false));
+      await act(async () => setShow(true));
+      await act(async () => succeed());
+      expect(within(rowOf("bob")).getByText("...")).toBeTruthy();
+
+      await act(async () => {
+        vi.advanceTimersByTime(70_000);
+      });
+
+      // The query's notifications run on a timer too.
+      await waitFor(() => expect(within(rowOf("bob")).getByText("delegated-vesting.undelegate")).toBeTruthy());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a new delegation of another amount at once", async () => {
     delegate.mutateAsync.mockResolvedValue(undefined);
     const { queryClient } = renderDialog();
@@ -253,6 +303,8 @@ describe("DelegatedVesting rows (#2198)", () => {
       notifyUnsettledSigning(undelegateOps("carol"));
       notifyUnsettledSigning(undelegateOps("bob", "mallory"));
       notifyUnsettledSigning([["vote", { voter: "alice", author: "bob", permlink: "p", weight: 1 }]] as never);
+      // Another operation naming the same delegator and delegatee.
+      notifyUnsettledSigning([["custom_op", { delegator: "alice", delegatee: "bob" }]] as never);
     });
     await act(async () => setShow(false));
     await act(async () => setShow(true));
