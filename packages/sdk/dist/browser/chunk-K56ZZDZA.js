@@ -1,0 +1,2 @@
+import {a}from'./chunk-DGZJKXXC.js';import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function p(e,o,r){return queryOptions({queryKey:a.posts.userPostVote(e,o,r),queryFn:async()=>{let t=(await m("database_api.list_votes",{start:[e,o,r],limit:1,order:"by_voter_comment"}))?.votes?.[0];return !t||t.voter!==e||t.author!==o||t.permlink!==r?null:t},enabled:!!e&&!!o&&!!r})}export{p as a};//# sourceMappingURL=chunk-K56ZZDZA.js.map
+//# sourceMappingURL=chunk-K56ZZDZA.js.map

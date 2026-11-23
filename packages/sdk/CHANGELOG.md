@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.8
+
+### Patch Changes
+
+- render-helper card image (#2195) and HP delegations refresh (#2198) (#2200)
+
 ## 2.9.7
 
 ### Patch Changes

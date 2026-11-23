@@ -1,2 +1,0 @@
-import {o}from'./chunk-BY3ATGEK.js';import {a}from'./chunk-PDIUUNDQ.js';import {queryOptions}from'@tanstack/react-query';function c(i,n){return queryOptions({queryKey:a.curation.application(i),queryFn:({signal:e})=>{if(!i||!n)throw new Error("[SDK][Curation] reading the own application needs a signed-in account");return o(n,e)},enabled:!!i&&!!n,staleTime:6e4})}export{c as a};//# sourceMappingURL=chunk-H4YGWG54.js.map
-//# sourceMappingURL=chunk-H4YGWG54.js.map

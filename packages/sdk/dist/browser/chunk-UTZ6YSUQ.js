@@ -1,2 +1,0 @@
-import {a}from'./chunk-PDIUUNDQ.js';import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function c(o){return queryOptions({queryKey:a.accounts.followCount(o),queryFn:()=>m("condenser_api.get_follow_count",[o])})}export{c as a};//# sourceMappingURL=chunk-UTZ6YSUQ.js.map
-//# sourceMappingURL=chunk-UTZ6YSUQ.js.map

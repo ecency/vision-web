@@ -1,5 +1,11 @@
 # @ecency/render-helper
 
+## 2.5.59
+
+### Patch Changes
+
+- render-helper card image (#2195) and HP delegations refresh (#2198) (#2200)
+
 ## 2.5.58
 
 ### Patch Changes
