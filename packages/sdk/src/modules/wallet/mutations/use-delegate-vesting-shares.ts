@@ -91,6 +91,7 @@ export function useDelegateVestingShares(
         QueryKeys.assets.accountDelegations(username),
         QueryKeys.assets.accountDelegations(variables.delegatee),
         QueryKeys.assets.hivePowerDelegatings(variables.delegatee),
+        QueryKeys.wallet.receivedVestingShares(variables.delegatee),
         ["ecency-wallets", "asset-info", username],
         ["wallet", "portfolio", "v2", username]
       ]);

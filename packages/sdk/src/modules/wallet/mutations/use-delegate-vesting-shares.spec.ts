@@ -42,6 +42,7 @@ describe("useDelegateVestingShares", () => {
     expect(keys).toContainEqual(QueryKeys.assets.accountDelegations("alice"));
     expect(keys).toContainEqual(QueryKeys.assets.accountDelegations("bob"));
     expect(keys).toContainEqual(QueryKeys.assets.hivePowerDelegatings("bob"));
+    expect(keys).toContainEqual(QueryKeys.wallet.receivedVestingShares("bob"));
     // A prefix of the Transfer dialog's list, whatever its limit.
     expect(QueryKeys.wallet.vestingDelegations("alice", 5).slice(0, 3)).toEqual(
       QueryKeys.wallet.vestingDelegationsAll("alice")
