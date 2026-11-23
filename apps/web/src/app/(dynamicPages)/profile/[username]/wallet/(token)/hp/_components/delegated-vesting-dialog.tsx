@@ -15,6 +15,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { reportRcRejection } from "@/api/rc-shortfall-report";
 
+const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
+  `${item.delegatee} ${item.vesting_shares}`;
+
 interface Props {
   username: string;
   show: boolean;
@@ -44,14 +47,20 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   // Per row: the mutation's isPending is one flag for every row (#2198).
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   // Undelegated here: hidden from the list, so Undelegate is not offered again
-  // on a delegation that is gone while the refreshed list is on its way.
+  // on a delegation that is gone while the refreshed list is on its way. Keyed
+  // by amount too, so a new delegation to the same account shows.
   const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
+  // The dialog stays mounted while hidden: start each opening afresh.
+  useEffect(() => {
+    if (!show) setUndelegated(new Set());
+  }, [show]);
 
-  const undelegate = (delegatee: string, by: string) => {
+  const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
+    const { delegatee } = item;
     if (pending.has(delegatee)) return;
     setPending((set) => new Set(set).add(delegatee));
     delegate({ delegatee, vestingShares: "0.000000 VESTS" })
-      .then(() => setUndelegated((set) => new Set(set).add(delegatee)))
+      .then(() => setUndelegated((set) => new Set(set).add(delegationKey(item))))
       .catch((err) => {
         // Was an unhandled rejection with no feedback at all.
         reportRcRejection(err, "transfer", by);
@@ -70,7 +79,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
     () =>
       delegations?.filter(
         (item) =>
-          !undelegated.has(item.delegatee) &&
+          !undelegated.has(delegationKey(item)) &&
           item.delegatee.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())
       ) ?? [],
     [delegations, searchText, undelegated]
@@ -158,7 +167,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                           className="undelegate"
                           onClick={(e) => {
                             e.preventDefault();
-                            undelegate(x.delegatee, activeUser.username);
+                            undelegate(x, activeUser.username);
                           }}
                         >
                           {pending.has(x.delegatee)

@@ -37,6 +37,15 @@ describe("useDelegateVestingShares", () => {
     const [, mode, keys] = mockInvalidate.mock.calls[0];
     expect(mode).toBe("sync");
     expect(keys).toContainEqual(QueryKeys.assets.hivePowerDelegates("alice"));
+    // The other lists of the same delegation, on either side.
+    expect(keys).toContainEqual(QueryKeys.wallet.vestingDelegationsAll("alice"));
+    expect(keys).toContainEqual(QueryKeys.assets.accountDelegations("alice"));
+    expect(keys).toContainEqual(QueryKeys.assets.accountDelegations("bob"));
+    expect(keys).toContainEqual(QueryKeys.assets.hivePowerDelegatings("bob"));
+    // A prefix of the Transfer dialog's list, whatever its limit.
+    expect(QueryKeys.wallet.vestingDelegations("alice", 5).slice(0, 3)).toEqual(
+      QueryKeys.wallet.vestingDelegationsAll("alice")
+    );
     // The list the HP dialog reads is under that same key.
     expect(getHivePowerDelegatesInfiniteQueryOptions("alice", 1000).queryKey).toEqual(
       QueryKeys.assets.hivePowerDelegates("alice")

@@ -85,8 +85,12 @@ export function useDelegateVestingShares(
       await invalidateAfterBroadcast(auth?.adapter, broadcastMode, [
         QueryKeys.accounts.full(username),
         QueryKeys.accounts.full(variables.delegatee),
-        // The delegator's delegations list (#2198).
+        // Every delegations list either side reads (#2198).
         QueryKeys.assets.hivePowerDelegates(username!),
+        QueryKeys.wallet.vestingDelegationsAll(username!),
+        QueryKeys.assets.accountDelegations(username),
+        QueryKeys.assets.accountDelegations(variables.delegatee),
+        QueryKeys.assets.hivePowerDelegatings(variables.delegatee),
         ["ecency-wallets", "asset-info", username],
         ["wallet", "portfolio", "v2", username]
       ]);

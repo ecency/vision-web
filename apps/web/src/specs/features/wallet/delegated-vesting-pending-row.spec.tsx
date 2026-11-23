@@ -41,11 +41,13 @@ import { DelegatedVesting } from "@/app/(dynamicPages)/profile/[username]/wallet
 
 function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const ui = (show: boolean) => (
     <QueryClientProvider client={queryClient}>
-      <DelegatedVesting username="alice" show={true} setShow={vi.fn()} totalDelegated="1.5 HP" />
+      <DelegatedVesting username="alice" show={show} setShow={vi.fn()} totalDelegated="1.5 HP" />
     </QueryClientProvider>
   );
+  const view = render(ui(true));
+  return { queryClient, setShow: (show: boolean) => view.rerender(ui(show)) };
 }
 
 const rowOf = (name: string) => screen.getByText(name).closest(".list-item") as HTMLElement;
@@ -88,6 +90,43 @@ describe("DelegatedVesting rows (#2198)", () => {
 
     expect(screen.queryByText("bob")).toBeNull();
     expect(within(rowOf("carol")).getByText("delegated-vesting.undelegate")).toBeTruthy();
+  });
+
+  it("shows a new delegation to the same account", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    const { queryClient } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+    expect(screen.queryByText("bob")).toBeNull();
+
+    await act(async () => {
+      queryClient.setQueryData(
+        ["hp-delegates", "alice"],
+        [
+          { delegator: "alice", delegatee: "bob", vesting_shares: "5000.000000 VESTS" },
+          { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" }
+        ]
+      );
+    });
+
+    expect(await screen.findByText("bob")).toBeTruthy();
+  });
+
+  it("starts afresh when the dialog is opened again", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+    expect(screen.queryByText("bob")).toBeNull();
+
+    await act(async () => setShow(false));
+    await act(async () => setShow(true));
+
+    expect(await screen.findByText("bob")).toBeTruthy();
   });
 
   it("offers Undelegate again when the undelegation fails", async () => {
