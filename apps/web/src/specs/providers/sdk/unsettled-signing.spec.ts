@@ -21,13 +21,14 @@ let off: (() => void) | undefined;
 afterEach(() => off?.());
 
 describe("unsettled signing hand-offs", () => {
-  it("are announced by HiveSigner hot-signing", () => {
+  it("are announced by HiveSigner hot-signing, with the operations handed off", () => {
     const heard = vi.fn();
     off = onUnsettledSigning(heard);
 
     void createWebBroadcastAdapter().broadcastWithHiveSigner!("alice", OPS, "active");
 
     expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledWith(OPS);
   });
 
   it("are announced by a Keychain Mobile deep link", () => {
@@ -37,6 +38,7 @@ describe("unsettled signing hand-offs", () => {
     void createWebBroadcastAdapter().broadcastWithKeychain!("alice", OPS, "active");
 
     expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledWith(OPS);
   });
 
   it("stop reaching a listener that unsubscribed", () => {

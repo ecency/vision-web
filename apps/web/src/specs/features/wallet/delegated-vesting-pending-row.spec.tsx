@@ -40,6 +40,10 @@ vi.mock("@/core/sentry/lazy-sentry", () => ({ sentry: { captureMessage: vi.fn() 
 import { notifyUnsettledSigning } from "@/providers/sdk/unsettled-signing";
 import { DelegatedVesting } from "@/app/(dynamicPages)/profile/[username]/wallet/(token)/hp/_components/delegated-vesting-dialog";
 
+// The operations the SDK builds for alice undelegating `delegatee`.
+const undelegateOps = (delegatee: string, delegator = "alice") =>
+  [["delegate_vesting_shares", { delegator, delegatee, vesting_shares: "0.000000 VESTS" }]] as never;
+
 function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ui = (show: boolean) => (
@@ -179,7 +183,7 @@ describe("DelegatedVesting rows (#2198)", () => {
   it("offers Undelegate again on reopening after a signing handed elsewhere, which never settles", async () => {
     // Any login: the auth upgrade can route an active op to HiveSigner.
     delegate.mutateAsync.mockImplementation(() => {
-      notifyUnsettledSigning();
+      notifyUnsettledSigning(undelegateOps("bob"));
       return new Promise(() => {});
     });
     const { setShow } = renderDialog();
@@ -237,11 +241,65 @@ describe("DelegatedVesting rows (#2198)", () => {
     expect(within(await screen.findByText("bob").then(() => rowOf("bob"))).getByText("delegated-vesting.undelegate")).toBeTruthy();
   });
 
+  it("keeps the row pending when another operation is handed elsewhere", async () => {
+    delegate.mutateAsync.mockReturnValue(new Promise(() => {}));
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+
+    await act(async () => {
+      notifyUnsettledSigning(undelegateOps("carol"));
+      notifyUnsettledSigning(undelegateOps("bob", "mallory"));
+      notifyUnsettledSigning([["vote", { voter: "alice", author: "bob", permlink: "p", weight: 1 }]] as never);
+    });
+    await act(async () => setShow(false));
+    await act(async () => setShow(true));
+
+    await screen.findByText("bob");
+    expect(within(rowOf("bob")).getByText("...")).toBeTruthy();
+  });
+
+  it("releases only the row whose undelegation was handed elsewhere", async () => {
+    delegate.mutateAsync.mockReturnValue(new Promise(() => {}));
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+      fireEvent.click(within(rowOf("carol")).getByText("delegated-vesting.undelegate"));
+    });
+
+    await act(async () => notifyUnsettledSigning(undelegateOps("bob")));
+    await act(async () => setShow(false));
+    await act(async () => setShow(true));
+
+    await screen.findByText("bob");
+    expect(within(rowOf("bob")).getByText("delegated-vesting.undelegate")).toBeTruthy();
+    expect(within(rowOf("carol")).getByText("...")).toBeTruthy();
+  });
+
+  it("offers Undelegate on the next opening when the hand-off came after closing", async () => {
+    delegate.mutateAsync.mockReturnValue(new Promise(() => {}));
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+    await act(async () => setShow(false));
+
+    await act(async () => notifyUnsettledSigning(undelegateOps("bob")));
+    await act(async () => setShow(true));
+
+    await screen.findByText("bob");
+    expect(within(rowOf("bob")).getByText("delegated-vesting.undelegate")).toBeTruthy();
+  });
+
   it("keeps a retry pending when the abandoned attempt settles late", async () => {
     let failFirst: (e: Error) => void = () => {};
     delegate.mutateAsync
       .mockImplementationOnce(() => {
-        notifyUnsettledSigning();
+        notifyUnsettledSigning(undelegateOps("bob"));
         return new Promise((_, reject) => (failFirst = reject));
       })
       .mockReturnValueOnce(new Promise(() => {}));

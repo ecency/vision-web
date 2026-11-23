@@ -220,7 +220,7 @@ function broadcastWithKeychainMobileDeepLink(
   // on a new page load, so the promise never settles (HiveSigner hot-sign
   // does the same, from a new tab).
   window.location.href = hiveUri;
-  notifyUnsettledSigning();
+  notifyUnsettledSigning(ops);
   return new Promise(() => {});
 }
 
@@ -435,7 +435,7 @@ export function createWebBroadcastAdapter(): PlatformAdapter {
       // so nothing here ever learns it: the promise never settles, as in
       // wallet-operations-sign. A blocked popup makes `sendOperations` throw
       // (it focuses a null window), which rejects the promise instead.
-      notifyUnsettledSigning();
+      notifyUnsettledSigning(ops);
       return new Promise(() => {
         hs.sendOperations(
           ops,

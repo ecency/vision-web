@@ -64,29 +64,42 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   const opening = useRef(0);
   useEffect(() => {
     opening.current++;
-    // A signing handed to another tab or app never settles here: closing
-    // ends the wait, so reopening offers Undelegate again.
-    if (!show) {
-      setPending((map) => {
-        const next = new Map([...map].filter(([, row]) => !row.released || row.settled));
-        return next.size === map.size ? map : next;
-      });
-    }
+    // A signing handed to another tab or app never settles here: closing or
+    // opening ends the wait (the hand-off may come after the close), so the
+    // next opening offers Undelegate again.
+    setPending((map) => {
+      const next = new Map([...map].filter(([, row]) => !row.released || row.settled));
+      return next.size === map.size ? map : next;
+    });
   }, [show]);
   // Whatever the login, a request can end up signed elsewhere (HiveSigner, a
-  // Keychain Mobile deep link, the auth upgrade's choice): the rows in flight
-  // when that happens are released.
+  // Keychain Mobile deep link, the auth upgrade's choice). Only the row whose
+  // own undelegation was handed off is released: another operation's
+  // hand-off leaves it waiting.
   useEffect(
     () =>
-      onUnsettledSigning(() =>
+      onUnsettledSigning((ops) => {
+        const handedOff = new Set(
+          ops.flatMap(([name, op]) =>
+            name === "delegate_vesting_shares" && (op as { delegator?: string }).delegator === username
+              ? [(op as { delegatee: string }).delegatee]
+              : []
+          )
+        );
+        if (handedOff.size === 0) return;
         setPending((map) => {
-          if (![...map.values()].some((row) => !row.settled && !row.released)) return map;
+          if (![...map].some(([name, row]) => handedOff.has(name) && !row.settled && !row.released)) {
+            return map;
+          }
           return new Map(
-            [...map].map(([name, row]) => [name, row.settled ? row : { ...row, released: true }])
+            [...map].map(([name, row]) => [
+              name,
+              handedOff.has(name) && !row.settled ? { ...row, released: true } : row
+            ])
           );
-        })
-      ),
-    []
+        });
+      }),
+    [username]
   );
   // Undelegated rows stay hidden while the cached list still holds them (the
   // refresh lands seconds after the broadcast), whether or not the dialog was
