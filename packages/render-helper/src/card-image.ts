@@ -599,7 +599,8 @@ interface HtmlImageMatch {
   /** An `<img` inside another tag, maybe in a quoted attribute: the render's to read (#2195). */
   undecided?: boolean
 }
-function matchHtmlImage(text: string): HtmlImageMatch | null {
+// `marksOf` gives markInsideTags of `text`, computed once per body (rawTagsOf).
+function matchHtmlImage(text: string, marksOf: () => Uint8Array): HtmlImageMatch | null {
   const footnotes = text.includes('[^')
   IMG_OPEN_RE.lastIndex = 0
   let m: RegExpExecArray | null
@@ -607,7 +608,7 @@ function matchHtmlImage(text: string): HtmlImageMatch | null {
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
     const start = m.index
     // `<div title='<img src="A">'>` shows no image: the attribute is text.
-    tagMarks ??= markInsideTags(text)
+    tagMarks ??= marksOf()
     if (tagMarks[start] === 1) return { index: start, src: '', dashed: false, undecided: true }
     let i = start + 4
     let found: HtmlImageMatch | null = null
@@ -1636,7 +1637,7 @@ function findFirstImageCandidate(prepared: PreparedBody): CandidateResult {
   if (!cleaned) return NONE
 
   const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G)
-  const htmlMatch = matchHtmlImage(cleaned)
+  const htmlMatch = matchHtmlImage(cleaned, () => rawTagsOf(prepared))
 
   // If markdown image syntax is present at all, it must be unambiguous. The
   // capture class `[^)\s]+` excludes `)`, so a captured URL containing `(`

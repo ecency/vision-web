@@ -14,6 +14,9 @@ vi.mock("@/utils", async () => ({
 // The real hook's isPending is one flag for the whole mutation: true while
 // any row's undelegation runs.
 const delegate = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: true }));
+const BOB = { delegator: "alice", delegatee: "bob", vesting_shares: "2000.000000 VESTS" };
+const CAROL = { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" };
+const rows = vi.hoisted(() => ({ current: [] as unknown[] }));
 vi.mock("@/api/sdk-mutations", () => ({ useDelegateVestingSharesMutation: () => delegate }));
 vi.mock("@ecency/sdk", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@ecency/sdk")),
@@ -23,10 +26,7 @@ vi.mock("@ecency/sdk", async () => ({
   }),
   getHivePowerDelegatesInfiniteQueryOptions: () => ({
     queryKey: ["hp-delegates", "alice"],
-    queryFn: async () => [
-      { delegator: "alice", delegatee: "bob", vesting_shares: "2000.000000 VESTS" },
-      { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" }
-    ]
+    queryFn: async () => rows.current
   })
 }));
 vi.mock("@/features/shared", () => ({
@@ -53,6 +53,7 @@ function renderDialog() {
 const rowOf = (name: string) => screen.getByText(name).closest(".list-item") as HTMLElement;
 
 beforeEach(() => {
+  rows.current = [BOB, CAROL];
   delegate.mutateAsync.mockReset();
   vi.mocked(useActiveAccount).mockReturnValue({
     activeUser: { username: "alice" },
@@ -92,41 +93,124 @@ describe("DelegatedVesting rows (#2198)", () => {
     expect(within(rowOf("carol")).getByText("delegated-vesting.undelegate")).toBeTruthy();
   });
 
-  it("shows a new delegation to the same account", async () => {
-    delegate.mutateAsync.mockResolvedValue(undefined);
-    const { queryClient } = renderDialog();
-    await screen.findByText("bob");
+  const undelegateBob = async () => {
     await act(async () => {
       fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
     });
     expect(screen.queryByText("bob")).toBeNull();
-
+  };
+  const refresh = async (queryClient: QueryClient, data: unknown[]) => {
     await act(async () => {
-      queryClient.setQueryData(
-        ["hp-delegates", "alice"],
-        [
-          { delegator: "alice", delegatee: "bob", vesting_shares: "5000.000000 VESTS" },
-          { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" }
-        ]
-      );
+      queryClient.setQueryData(["hp-delegates", "alice"], data);
+      // The query batches its notifications: let this refresh render on its own.
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
+  };
+
+  it("keeps the row hidden while the list still holds it", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    const { queryClient } = renderDialog();
+    await screen.findByText("bob");
+    await undelegateBob();
+
+    await refresh(queryClient, [BOB, CAROL]);
+
+    expect(await screen.findByText("carol")).toBeTruthy();
+    expect(screen.queryByText("bob")).toBeNull();
+  });
+
+  it("shows a new delegation of the same amount once a refresh dropped the old one", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    const { queryClient } = renderDialog();
+    await screen.findByText("bob");
+    await undelegateBob();
+
+    await refresh(queryClient, [CAROL]);
+    await refresh(queryClient, [BOB, CAROL]);
 
     expect(await screen.findByText("bob")).toBeTruthy();
   });
 
-  it("starts afresh when the dialog is opened again", async () => {
+  it("shows a new delegation of another amount at once", async () => {
     delegate.mutateAsync.mockResolvedValue(undefined);
+    const { queryClient } = renderDialog();
+    await screen.findByText("bob");
+    await undelegateBob();
+
+    await refresh(queryClient, [{ ...BOB, vesting_shares: "5000.000000 VESTS" }, CAROL]);
+
+    expect(await screen.findByText("bob")).toBeTruthy();
+  });
+
+  it("keeps the row hidden when the dialog is reopened before the list refreshes", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await undelegateBob();
+
+    await act(async () => setShow(false));
+    await act(async () => setShow(true));
+
+    expect(await screen.findByText("carol")).toBeTruthy();
+    expect(screen.queryByText("bob")).toBeNull();
+  });
+
+  it("offers Undelegate again on reopening after a signing that never settles", async () => {
+    delegate.mutateAsync.mockReturnValue(new Promise(() => {}));
     const { setShow } = renderDialog();
     await screen.findByText("bob");
     await act(async () => {
       fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
     });
-    expect(screen.queryByText("bob")).toBeNull();
+    expect(within(rowOf("bob")).getByText("...")).toBeTruthy();
 
     await act(async () => setShow(false));
     await act(async () => setShow(true));
 
-    expect(await screen.findByText("bob")).toBeTruthy();
+    expect(within(await screen.findByText("bob").then(() => rowOf("bob"))).getByText("delegated-vesting.undelegate")).toBeTruthy();
+  });
+
+  it("keeps a retry pending when the abandoned attempt settles late", async () => {
+    let failFirst: (e: Error) => void = () => {};
+    delegate.mutateAsync
+      .mockReturnValueOnce(new Promise((_, reject) => (failFirst = reject)))
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { setShow } = renderDialog();
+    await screen.findByText("bob");
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+    await act(async () => setShow(false));
+    await act(async () => setShow(true));
+    await act(async () => {
+      fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+    });
+
+    await act(async () => failFirst(new Error("closed")));
+
+    expect(within(rowOf("bob")).getByText("...")).toBeTruthy();
+  });
+
+  it("moves back a page when the last row of the last page is undelegated", async () => {
+    delegate.mutateAsync.mockResolvedValue(undefined);
+    rows.current = Array.from({ length: 9 }, (_, i) => ({
+      delegator: "alice",
+      delegatee: `user${i}`,
+      vesting_shares: `${9000 - i * 100}.000000 VESTS`
+    }));
+    renderDialog();
+    await screen.findByText("user0");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "2" }));
+    });
+    await screen.findByText("user8");
+
+    await act(async () => {
+      fireEvent.click(within(rowOf("user8")).getByText("delegated-vesting.undelegate"));
+    });
+
+    expect(screen.queryByText("user8")).toBeNull();
+    expect(await screen.findByText("user0")).toBeTruthy();
   });
 
   it("offers Undelegate again when the undelegation fails", async () => {

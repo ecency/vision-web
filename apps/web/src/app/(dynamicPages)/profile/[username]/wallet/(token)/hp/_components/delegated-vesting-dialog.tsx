@@ -11,7 +11,7 @@ import { Pagination, Tooltip } from "@ui/index";
 import { FormControl } from "@ui/input";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { reportRcRejection } from "@/api/rc-shortfall-report";
 
@@ -45,20 +45,36 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
 
   const { mutateAsync: delegate } = useDelegateVestingSharesMutation();
   // Per row: the mutation's isPending is one flag for every row (#2198).
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
-  // Undelegated here: hidden from the list, so Undelegate is not offered again
-  // on a delegation that is gone while the refreshed list is on its way. Keyed
-  // by amount too, so a new delegation to the same account shows.
-  const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
-  // The dialog stays mounted while hidden: start each opening afresh.
+  // Each attempt has its own number, so an earlier attempt settling late does
+  // not clear a later one's mark.
+  const [pending, setPending] = useState<ReadonlyMap<string, number>>(new Map());
+  const attempts = useRef(0);
+  // A signing abandoned in HiveSigner never settles: closing the dialog ends
+  // the wait, so reopening offers Undelegate again.
   useEffect(() => {
-    if (!show) setUndelegated(new Set());
+    if (!show) setPending(new Map());
   }, [show]);
+  // Undelegated rows stay hidden while the cached list still holds them (the
+  // refresh lands seconds after the broadcast), whether or not the dialog was
+  // closed in between, so Undelegate is not offered on a delegation that is
+  // gone. Keyed by amount too, so a new delegation of another amount shows.
+  const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
+  // A list without the row confirms it gone: a later delegation of the same
+  // amount shows again.
+  useEffect(() => {
+    if (!delegations) return;
+    setUndelegated((set) => {
+      const live = new Set(delegations.map(delegationKey));
+      const kept = new Set([...set].filter((key) => live.has(key)));
+      return kept.size === set.size ? set : kept;
+    });
+  }, [delegations]);
 
   const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
     const { delegatee } = item;
     if (pending.has(delegatee)) return;
-    setPending((set) => new Set(set).add(delegatee));
+    const attempt = ++attempts.current;
+    setPending((map) => new Map(map).set(delegatee, attempt));
     delegate({ delegatee, vestingShares: "0.000000 VESTS" })
       .then(() => setUndelegated((set) => new Set(set).add(delegationKey(item))))
       .catch((err) => {
@@ -67,8 +83,9 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
         error(...formatError(err));
       })
       .finally(() =>
-        setPending((set) => {
-          const next = new Set(set);
+        setPending((map) => {
+          if (map.get(delegatee) !== attempt) return map;
+          const next = new Map(map);
           next.delete(delegatee);
           return next;
         })
@@ -84,9 +101,11 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       ) ?? [],
     [delegations, searchText, undelegated]
   );
+  // Hiding the last row of the last page moves back a page.
+  const shownPage = Math.min(page, Math.max(1, Math.ceil(data.length / pageSize)));
   const sliced = useMemo(
-    () => data.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize),
-    [data, page, pageSize]
+    () => data.slice((shownPage - 1) * pageSize, (shownPage - 1) * pageSize + pageSize),
+    [data, shownPage, pageSize]
   );
 
   useEffect(() => {
@@ -184,7 +203,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                 dataLength={data.length}
                 pageSize={pageSize}
                 maxItems={4}
-                page={page}
+                page={shownPage}
                 onPageChange={(page: number) => setPage(page)}
               />
             </div>
