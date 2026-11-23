@@ -131,6 +131,26 @@ describe("DelegatedVesting rows (#2198)", () => {
     expect(await screen.findByText("bob")).toBeTruthy();
   });
 
+  it("shows a new delegation of the same amount when the refresh landed before the broadcast resolved", async () => {
+    // Sync mode: the SDK awaits the refetch before the mutation resolves.
+    const { queryClient } = renderDialog();
+    delegate.mutateAsync.mockImplementation(async () => {
+      queryClient.setQueryData(["hp-delegates", "alice"], [CAROL]);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    await screen.findByText("bob");
+    await undelegateBob();
+    // Let the broadcast resolve, after the refreshed list rendered.
+    await act(async () => {
+      await delegate.mutateAsync.mock.results[0].value;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    await refresh(queryClient, [BOB, CAROL]);
+
+    expect(await screen.findByText("bob")).toBeTruthy();
+  });
+
   it("shows a new delegation of another amount at once", async () => {
     delegate.mutateAsync.mockResolvedValue(undefined);
     const { queryClient } = renderDialog();

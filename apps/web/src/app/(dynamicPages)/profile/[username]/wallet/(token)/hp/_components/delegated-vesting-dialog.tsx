@@ -68,7 +68,9 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       const kept = new Set([...set].filter((key) => live.has(key)));
       return kept.size === set.size ? set : kept;
     });
-  }, [delegations]);
+    // Also when a key is added: in sync mode the refreshed list lands before
+    // the broadcast resolves.
+  }, [delegations, undelegated]);
 
   const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
     const { delegatee } = item;
