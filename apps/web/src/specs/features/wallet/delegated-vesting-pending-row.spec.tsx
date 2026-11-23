@@ -9,12 +9,10 @@ import { useActiveAccount } from "@/core/hooks/use-active-account";
 vi.mock("@/utils", async () => ({
   ...(await vi.importActual<Record<string, unknown>>("@/utils")),
   random: vi.fn(),
-  getAccessToken: vi.fn(() => "mock-token"),
-  getLoginType: loginType
+  getAccessToken: vi.fn(() => "mock-token")
 }));
 // The real hook's isPending is one flag for the whole mutation: true while
 // any row's undelegation runs.
-const loginType = vi.hoisted(() => vi.fn(() => "keychain"));
 const delegate = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: true }));
 const BOB = { delegator: "alice", delegatee: "bob", vesting_shares: "2000.000000 VESTS" };
 const CAROL = { delegator: "alice", delegatee: "carol", vesting_shares: "1000.000000 VESTS" };
@@ -39,6 +37,7 @@ vi.mock("@/features/shared", () => ({
 }));
 vi.mock("@/core/sentry/lazy-sentry", () => ({ sentry: { captureMessage: vi.fn() } }));
 
+import { notifyUnsettledSigning } from "@/providers/sdk/unsettled-signing";
 import { DelegatedVesting } from "@/app/(dynamicPages)/profile/[username]/wallet/(token)/hp/_components/delegated-vesting-dialog";
 
 function renderDialog() {
@@ -56,7 +55,6 @@ const rowOf = (name: string) => screen.getByText(name).closest(".list-item") as 
 
 beforeEach(() => {
   rows.current = [BOB, CAROL];
-  loginType.mockReturnValue("keychain");
   delegate.mutateAsync.mockReset();
   vi.mocked(useActiveAccount).mockReturnValue({
     activeUser: { username: "alice" },
@@ -178,9 +176,12 @@ describe("DelegatedVesting rows (#2198)", () => {
     expect(screen.queryByText("bob")).toBeNull();
   });
 
-  it("offers Undelegate again on reopening after a HiveSigner signing, which never settles", async () => {
-    loginType.mockReturnValue("hivesigner");
-    delegate.mutateAsync.mockReturnValue(new Promise(() => {}));
+  it("offers Undelegate again on reopening after a signing handed elsewhere, which never settles", async () => {
+    // Any login: the auth upgrade can route an active op to HiveSigner.
+    delegate.mutateAsync.mockImplementation(() => {
+      notifyUnsettledSigning();
+      return new Promise(() => {});
+    });
     const { setShow } = renderDialog();
     await screen.findByText("bob");
     await act(async () => {
@@ -237,10 +238,12 @@ describe("DelegatedVesting rows (#2198)", () => {
   });
 
   it("keeps a retry pending when the abandoned attempt settles late", async () => {
-    loginType.mockReturnValue("hivesigner");
     let failFirst: (e: Error) => void = () => {};
     delegate.mutateAsync
-      .mockReturnValueOnce(new Promise((_, reject) => (failFirst = reject)))
+      .mockImplementationOnce(() => {
+        notifyUnsettledSigning();
+        return new Promise((_, reject) => (failFirst = reject));
+      })
       .mockReturnValueOnce(new Promise(() => {}));
     const { setShow } = renderDialog();
     await screen.findByText("bob");

@@ -3,7 +3,8 @@ import { DEFAULT_DYNAMIC_PROPS } from "@/consts/default-dynamic-props";
 import { error, LinearProgress, ProfileLink, UserAvatar } from "@/features/shared";
 import { formatError } from "@/api/format-error";
 import { List, ListItem } from "@/features/ui/list";
-import { formattedNumber, getLoginType, parseAsset, vestsToHp } from "@/utils";
+import { formattedNumber, parseAsset, vestsToHp } from "@/utils";
+import { onUnsettledSigning } from "@/providers/sdk/unsettled-signing";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { getHivePowerDelegatesInfiniteQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
@@ -22,7 +23,7 @@ interface PendingRow {
   attempt: number;
   /** delegationKey of the row the request was for. */
   key: string;
-  /** Released when the dialog closes (a HiveSigner signing never settles here). */
+  /** Its signing went to another tab or app and never settles here: released on close. */
   released: boolean;
   /** Succeeded after its opening ended: waits for a refresh without the row. */
   settled: boolean;
@@ -63,8 +64,8 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   const opening = useRef(0);
   useEffect(() => {
     opening.current++;
-    // A HiveSigner signing happens in another tab and never settles here:
-    // closing ends the wait, so reopening offers Undelegate again.
+    // A signing handed to another tab or app never settles here: closing
+    // ends the wait, so reopening offers Undelegate again.
     if (!show) {
       setPending((map) => {
         const next = new Map([...map].filter(([, row]) => !row.released || row.settled));
@@ -72,6 +73,21 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       });
     }
   }, [show]);
+  // Whatever the login, a request can end up signed elsewhere (HiveSigner, a
+  // Keychain Mobile deep link, the auth upgrade's choice): the rows in flight
+  // when that happens are released.
+  useEffect(
+    () =>
+      onUnsettledSigning(() =>
+        setPending((map) => {
+          if (![...map.values()].some((row) => !row.settled && !row.released)) return map;
+          return new Map(
+            [...map].map(([name, row]) => [name, row.settled ? row : { ...row, released: true }])
+          );
+        })
+      ),
+    []
+  );
   // Undelegated rows stay hidden while the cached list still holds them (the
   // refresh lands seconds after the broadcast), whether or not the dialog was
   // closed in between, so Undelegate is not offered on a delegation that is
@@ -114,7 +130,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       new Map(map).set(delegatee, {
         attempt,
         key,
-        released: getLoginType(by) === "hivesigner",
+        released: false,
         settled: false
       })
     );
