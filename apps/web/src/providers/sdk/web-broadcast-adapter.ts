@@ -17,6 +17,7 @@ import * as ls from '@/utils/local-storage';
 import { requestAuthUpgrade, getTempActiveKey, takeHandedPostingKey } from '@/features/shared/auth-upgrade';
 import { error, success } from '@/features/shared/feedback/feedback-events';
 import { broadcastWithExtension, hasAnyHiveExtension } from '@/utils/hive-extensions';
+import { notifyUnsettledSigning } from './unsettled-signing';
 
 /**
  * Web platform adapter for SDK mutations.
@@ -219,6 +220,7 @@ function broadcastWithKeychainMobileDeepLink(
   // on a new page load, so the promise never settles (HiveSigner hot-sign
   // does the same, from a new tab).
   window.location.href = hiveUri;
+  notifyUnsettledSigning(ops);
   return new Promise(() => {});
 }
 
@@ -439,6 +441,8 @@ export function createWebBroadcastAdapter(): PlatformAdapter {
           { callback: `${window.location.origin}${window.location.pathname}` },
           () => {}
         );
+        // Only a tab that opened is a hand-off; a blocked popup threw above.
+        notifyUnsettledSigning(ops);
       });
     },
 

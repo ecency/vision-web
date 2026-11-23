@@ -1,2 +1,0 @@
-import {a}from'./chunk-PDIUUNDQ.js';import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function p(o,r,n="blog",e=100){return queryOptions({queryKey:a.accounts.following(o,r,n,e),queryFn:()=>m("condenser_api.get_following",[o,r,n,e]),enabled:!!o})}export{p as a};//# sourceMappingURL=chunk-FZYPW3AD.js.map
-//# sourceMappingURL=chunk-FZYPW3AD.js.map

@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { AccountDelegations } from "../types";
 import { callREST } from "@/modules/core/hive-tx";
+import { QueryKeys } from "@/modules/core";
 
 /**
  * Account vesting delegations via the HAF balance-api REST endpoint
@@ -13,7 +14,7 @@ import { callREST } from "@/modules/core/hive-tx";
  */
 export function getAccountDelegationsQueryOptions(username: string | undefined) {
   return queryOptions({
-    queryKey: ["assets", "account-delegations", username],
+    queryKey: QueryKeys.assets.accountDelegations(username),
     enabled: !!username,
     queryFn: ({ signal }) =>
       callREST(

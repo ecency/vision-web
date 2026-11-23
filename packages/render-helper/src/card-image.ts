@@ -596,13 +596,20 @@ interface HtmlImageMatch {
   src: string
   /** The attribute's name only ends in `src` (`data-src`). */
   dashed: boolean
+  /** An `<img` inside another tag, maybe in a quoted attribute: the render's to read (#2195). */
+  undecided?: boolean
 }
-function matchHtmlImage(text: string): HtmlImageMatch | null {
+// `marksOf` gives markInsideTags of `text`, computed once per body (rawTagsOf).
+function matchHtmlImage(text: string, marksOf: () => Uint8Array): HtmlImageMatch | null {
   const footnotes = text.includes('[^')
   IMG_OPEN_RE.lastIndex = 0
   let m: RegExpExecArray | null
+  let tagMarks: Uint8Array | null = null
   while ((m = IMG_OPEN_RE.exec(text)) !== null) {
     const start = m.index
+    // `<div title='<img src="A">'>` shows no image: the attribute is text.
+    tagMarks ??= marksOf()
+    if (tagMarks[start] === 1) return { index: start, src: '', dashed: false, undecided: true }
     let i = start + 4
     let found: HtmlImageMatch | null = null
     let srcSeen = false
@@ -741,7 +748,9 @@ function markInsideTags(text: string): Uint8Array {
       // it into a link, and an image or video URL in it into an image.
       if (c === '<' && i + 1 < text.length && /[A-Za-z/!?]/.test(text[i + 1]) && !isAutolinkAt(text, i + 1)) {
         inTag = true
-        marks[i] = 1
+        // 2 marks the `<` that opens the tag, so a `<` marked 1 sits inside
+        // a tag already open (#2195).
+        marks[i] = 2
       }
       continue
     }
@@ -1628,7 +1637,7 @@ function findFirstImageCandidate(prepared: PreparedBody): CandidateResult {
   if (!cleaned) return NONE
 
   const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G)
-  const htmlMatch = matchHtmlImage(cleaned)
+  const htmlMatch = matchHtmlImage(cleaned, () => rawTagsOf(prepared))
 
   // If markdown image syntax is present at all, it must be unambiguous. The
   // capture class `[^)\s]+` excludes `)`, so a captured URL containing `(`
@@ -1681,7 +1690,7 @@ function findFirstImageCandidate(prepared: PreparedBody): CandidateResult {
   // `data-src`, `x-src`: the pattern reads a name that only ends in `src`,
   // so which attribute the render takes is its own to say.
   // Only where it may come first: an image before it wins on source order.
-  const dashSrc = !!htmlMatch && htmlMatch.dashed
+  const dashSrc = !!htmlMatch && (htmlMatch.dashed || !!htmlMatch.undecided)
   if (dashSrc && !(mdMatch && mdUrl && (mdMatch.index ?? 0) < htmlMatch.index)) {
     return AMBIGUOUS
   }
@@ -1796,7 +1805,7 @@ function fastBodyImage(raw: string, width: number, height: number, format: strin
   if (poster && (!first || poster.pos < first.pos)) {
     // The rendered poster <img> carries the 0x0 proxied URL; re-proxying it at
     // the requested size is exactly what the full render path does with it.
-    return proxifyFound(proxifyImageSrc(poster.url, 0, 0, 'match'), width, height, format)
+    return proxifySource(proxifyImageSrc(poster.url, 0, 0, 'match'), width, height, format)
   }
   if (!first) return null
   const source = candidateSource(body, first)
@@ -1841,16 +1850,12 @@ function metaFingerprint(jsonMetadata: unknown): unknown {
   }
 }
 
-// Percent-decoded as the render decodes its <img> src before proxying
-// (decodeDomImageSrc), so `a%20b.png` preloads the image the body shows
-// (#2169). A legacy passthrough that carries the URL itself rather than a
-// /p/ hash keeps it as written: decoded, a `%20` or `%0A` would become raw
-// whitespace in it.
-function proxifyFound(src: string, width: number, height: number, format: string): string {
-  return proxifySource(decodeEntities(src), width, height, format)
-}
-
-// proxifyFound for a URL whose references are already decoded (candidateSource).
+// A URL whose references are already decoded (candidateSource, the rendered
+// DOM src), percent-decoded as the render decodes its <img> src before
+// proxying (decodeDomImageSrc), so `a%20b.png` preloads the image the body
+// shows (#2169). A legacy passthrough that carries the URL itself rather than
+// a /p/ hash keeps it as written: decoded, a `%20` or `%0A` would become raw
+// whitespace in it. Never entity-decoded again here (#2195).
 // As the body reads any image src (bodyImageSources): one already on the
 // proxy (/p/, /u/, a sized route) is kept as written, any other goes through
 // /p/ (#2185, #2191), legacy sized hosts included.
@@ -1949,8 +1954,9 @@ function getImage(entry: Entry, width: number, height: number, format: string, r
   // Fall back to the full markdown render (handles edge cases the regex missed)
   const src = renderFirstImage(entry)
   // A kept proxy URL the proxy would not take again (over its length limit)
-  // is the rendered src as it stands.
-  return src ? proxifyFound(src, width, height, format) || src : null
+  // is the rendered src as it stands. The DOM already decoded its references,
+  // so they are not decoded again (#2195).
+  return src ? proxifySource(src, width, height, format) || src : null
 }
 
 /**
@@ -2091,7 +2097,7 @@ export function lookupPostImage(
       return fast
     }
     const src = renderFirstImage(obj)
-    return src ? proxifyFound(src, width, height, format) || src : null
+    return src ? proxifySource(src, width, height, format) || src : null
   }
   // Fast and full lookups can legitimately disagree (null vs a markdown-only
   // find), so they get separate slots rather than the first caller deciding for

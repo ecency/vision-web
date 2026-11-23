@@ -38,7 +38,7 @@ export interface DelegateVestingSharesPayload {
  * - Removing delegation has a 5-day cooldown before HP returns to delegator
  *
  * **Post-Broadcast Actions:**
- * - Invalidates delegations list cache to show updated delegation
+ * - Invalidates the delegator's delegations list to show the updated delegation
  * - Invalidates account data for both delegator and delegatee
  *
  * @example
@@ -85,6 +85,13 @@ export function useDelegateVestingShares(
       await invalidateAfterBroadcast(auth?.adapter, broadcastMode, [
         QueryKeys.accounts.full(username),
         QueryKeys.accounts.full(variables.delegatee),
+        // Every delegations list either side reads (#2198).
+        QueryKeys.assets.hivePowerDelegates(username!),
+        QueryKeys.wallet.vestingDelegationsAll(username!),
+        QueryKeys.assets.accountDelegations(username),
+        QueryKeys.assets.accountDelegations(variables.delegatee),
+        QueryKeys.assets.hivePowerDelegatings(variables.delegatee),
+        QueryKeys.wallet.receivedVestingShares(variables.delegatee),
         ["ecency-wallets", "asset-info", username],
         ["wallet", "portfolio", "v2", username]
       ]);

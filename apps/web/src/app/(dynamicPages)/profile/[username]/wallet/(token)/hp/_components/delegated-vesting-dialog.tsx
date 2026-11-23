@@ -4,6 +4,7 @@ import { error, LinearProgress, ProfileLink, UserAvatar } from "@/features/share
 import { formatError } from "@/api/format-error";
 import { List, ListItem } from "@/features/ui/list";
 import { formattedNumber, parseAsset, vestsToHp } from "@/utils";
+import { onUnsettledSigning } from "@/providers/sdk/unsettled-signing";
 import { getDynamicPropsQueryOptions } from "@ecency/sdk";
 import { getHivePowerDelegatesInfiniteQueryOptions } from "@ecency/sdk";
 import { useQuery } from "@tanstack/react-query";
@@ -11,9 +12,39 @@ import { Pagination, Tooltip } from "@ui/index";
 import { FormControl } from "@ui/input";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "@ui/modal";
 import i18next from "i18next";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { reportRcRejection } from "@/api/rc-shortfall-report";
+
+const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
+  `${item.delegatee} ${item.vesting_shares}`;
+
+// A transaction expires 60s after signing (hive-tx Transaction), plus margin:
+// a list read this long after an accepted undelegation that still holds the
+// delegation means it never landed. The expiry comes from the browser clock;
+// with a clock far ahead the first one can still land after the row is
+// offered again, and the second then fails on chain with an error, no harm.
+const TX_EXPIRY_MS = 65_000;
+
+// The op this dialog broadcasts: a delegation by `delegator` set to 0 VESTS.
+// A delegation of any other amount to the same account is another request.
+function isUndelegation(name: string, op: unknown, delegator: string): boolean {
+  if (name !== "delegate_vesting_shares" || typeof op !== "object" || op === null) return false;
+  const { delegator: by, vesting_shares } = op as { delegator?: unknown; vesting_shares?: unknown };
+  return by === delegator && typeof vesting_shares === "string" && parseAsset(vesting_shares).amount === 0;
+}
+
+interface PendingRow {
+  attempt: number;
+  /** delegationKey of the row the request was for. */
+  key: string;
+  /** Its signing went to another tab or app and never settles here: released on close. */
+  released: boolean;
+  /** Succeeded after its opening ended: waits for a refresh without the row. */
+  settled: boolean;
+  /** When it succeeded, for a settled row. */
+  settledAt?: number;
+}
 
 interface Props {
   username: string;
@@ -32,7 +63,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
-  const { data: delegations, isLoading } = useQuery({
+  const { data: delegations, isLoading, dataUpdatedAt, refetch } = useQuery({
     ...getHivePowerDelegatesInfiniteQueryOptions(username, 1000),
     select: (data) =>
       data?.sort(
@@ -40,18 +71,159 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       )
   });
 
-  const { mutateAsync: delegate, isPending: isDelegating } = useDelegateVestingSharesMutation();
+  const { mutateAsync: delegate } = useDelegateVestingSharesMutation();
+  // Per row: the mutation's isPending is one flag for every row (#2198).
+  // A row's request stays pending across a close and reopen, so it is not
+  // sent twice. Each attempt has its own number: only that attempt clears it.
+  const [pending, setPending] = useState<ReadonlyMap<string, PendingRow>>(new Map());
+  const attempts = useRef(0);
+  // Bumped on every open and close: a request answers the opening it started in.
+  const opening = useRef(0);
+  useEffect(() => {
+    opening.current++;
+    // A signing handed to another tab or app never settles here: closing or
+    // opening ends the wait (the hand-off may come after the close), so the
+    // next opening offers Undelegate again.
+    setPending((map) => {
+      const next = new Map([...map].filter(([, row]) => !row.released || row.settled));
+      return next.size === map.size ? map : next;
+    });
+  }, [show]);
+  // Whatever the login, a request can end up signed elsewhere (HiveSigner, a
+  // Keychain Mobile deep link, the auth upgrade's choice). Only the row whose
+  // own undelegation was handed off is released: another operation's
+  // hand-off leaves it waiting.
+  useEffect(
+    () =>
+      onUnsettledSigning((ops) => {
+        const handedOff = new Set(
+          ops.flatMap(([name, op]) =>
+            isUndelegation(name, op, username) ? [(op as { delegatee: string }).delegatee] : []
+          )
+        );
+        if (handedOff.size === 0) return;
+        setPending((map) => {
+          if (![...map].some(([name, row]) => handedOff.has(name) && !row.settled && !row.released)) {
+            return map;
+          }
+          return new Map(
+            [...map].map(([name, row]) => [
+              name,
+              handedOff.has(name) && !row.settled ? { ...row, released: true } : row
+            ])
+          );
+        });
+      }),
+    [username]
+  );
+  // Undelegated rows stay hidden while the cached list still holds them (the
+  // refresh lands seconds after the broadcast), whether or not the dialog was
+  // closed in between, so Undelegate is not offered on a delegation that is
+  // gone. Keyed by amount too, so a new delegation of another amount shows.
+  // Key -> when it was hidden.
+  const [undelegated, setUndelegated] = useState<ReadonlyMap<string, number>>(new Map());
+  // A list without the row confirms it gone: a later delegation of the same
+  // amount shows again, and a row waiting for that refresh stops waiting. A
+  // list read past the transaction's expiry that still holds it says the
+  // undelegation never landed: the row is offered again.
+  useEffect(() => {
+    if (!delegations) return;
+    const live = new Set(delegations.map(delegationKey));
+    const waiting = (key: string, since: number) => live.has(key) && dataUpdatedAt < since + TX_EXPIRY_MS;
+    setUndelegated((map) => {
+      const kept = new Map([...map].filter(([key, at]) => waiting(key, at)));
+      return kept.size === map.size ? map : kept;
+    });
+    setPending((map) => {
+      const next = new Map(
+        [...map].filter(([, row]) => !row.settled || waiting(row.key, row.settledAt ?? 0))
+      );
+      return next.size === map.size ? map : next;
+    });
+    // Also when a key is added: in sync mode the refreshed list lands before
+    // the broadcast resolves.
+  }, [delegations, dataUpdatedAt, undelegated, pending]);
+  // The SDK refreshes the list seconds after the broadcast; one more read
+  // past the expiry decides an undelegation that never landed.
+  const expiryChecks = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const timers = expiryChecks.current;
+    return () => {
+      mounted.current = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
+  const checkAfterExpiry = () => {
+    // A success after the page closed has nothing left to check.
+    if (!mounted.current) return;
+    const timer = setTimeout(() => {
+      expiryChecks.current.delete(timer);
+      void refetch();
+    }, TX_EXPIRY_MS);
+    expiryChecks.current.add(timer);
+  };
+
+  const undelegate = (item: { delegatee: string; vesting_shares: string }, by: string) => {
+    const { delegatee } = item;
+    if (pending.has(delegatee)) return;
+    const attempt = ++attempts.current;
+    const startedIn = opening.current;
+    const key = delegationKey(item);
+    const update = (change: (row: PendingRow) => PendingRow | null) =>
+      setPending((map) => {
+        const row = map.get(delegatee);
+        if (row?.attempt !== attempt) return map;
+        const next = new Map(map);
+        const changed = change(row);
+        if (changed) next.set(delegatee, changed);
+        else next.delete(delegatee);
+        return next;
+      });
+    setPending((map) =>
+      new Map(map).set(delegatee, {
+        attempt,
+        key,
+        released: false,
+        settled: false
+      })
+    );
+    delegate({ delegatee, vestingShares: "0.000000 VESTS" })
+      .then(() => {
+        if (opening.current === startedIn) {
+          setUndelegated((map) => new Map(map).set(key, Date.now()));
+          update(() => null);
+        } else {
+          // Answered after its opening ended: the row stays as listed, still
+          // not offered, until a refresh drops it.
+          update((row) => ({ ...row, settled: true, settledAt: Date.now() }));
+        }
+        checkAfterExpiry();
+      })
+      .catch((err) => {
+        // Was an unhandled rejection with no feedback at all.
+        reportRcRejection(err, "transfer", by);
+        error(...formatError(err));
+        update(() => null);
+      });
+  };
 
   const data = useMemo(
     () =>
-      delegations?.filter((item) =>
-        item.delegatee.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())
+      delegations?.filter(
+        (item) =>
+          !undelegated.has(delegationKey(item)) &&
+          item.delegatee.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())
       ) ?? [],
-    [delegations, searchText]
+    [delegations, searchText, undelegated]
   );
+  // Hiding the last row of the last page moves back a page.
+  const shownPage = Math.min(page, Math.max(1, Math.ceil(data.length / pageSize)));
   const sliced = useMemo(
-    () => data.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize),
-    [data, page, pageSize]
+    () => data.slice((shownPage - 1) * pageSize, (shownPage - 1) * pageSize + pageSize),
+    [data, shownPage, pageSize]
   );
 
   useEffect(() => {
@@ -132,17 +304,10 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                           className="undelegate"
                           onClick={(e) => {
                             e.preventDefault();
-                            delegate({
-                              delegatee: x.delegatee,
-                              vestingShares: "0.000000 VESTS"
-                            }).catch((err) => {
-                              // Was an unhandled rejection with no feedback at all.
-                              reportRcRejection(err, "transfer", activeUser.username);
-                              error(...formatError(err));
-                            });
+                            undelegate(x, activeUser.username);
                           }}
                         >
-                          {isDelegating
+                          {pending.has(x.delegatee)
                             ? "..."
                             : i18next.t("delegated-vesting.undelegate")}
                         </a>
@@ -156,7 +321,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                 dataLength={data.length}
                 pageSize={pageSize}
                 maxItems={4}
-                page={page}
+                page={shownPage}
                 onPageChange={(page: number) => setPage(page)}
               />
             </div>

@@ -421,6 +421,9 @@ export const QueryKeys = {
       ["wallet", "outgoing-rc-delegations", username, limit],
     vestingDelegations: (username: string, limit: number) =>
       ["wallet", "vesting-delegations", username, limit],
+    /** Prefix of {@link vestingDelegations} for every limit. */
+    vestingDelegationsAll: (username: string) =>
+      ["wallet", "vesting-delegations", username],
     withdrawRoutes: (account: string) =>
       ["wallet", "withdraw-routes", account],
     incomingRc: (username: string) =>
@@ -478,6 +481,8 @@ export const QueryKeys = {
       ["assets", "hive-power", "general-info", username],
     hivePowerDelegates: (username: string) =>
       ["assets", "hive-power", "delegates", username],
+    accountDelegations: (username: string | undefined) =>
+      ["assets", "account-delegations", username],
     hivePowerDelegatings: (username: string) =>
       ["assets", "hive-power", "delegatings", username],
     hivePowerTransactions: (

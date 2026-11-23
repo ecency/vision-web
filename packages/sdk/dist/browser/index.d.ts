@@ -876,6 +876,8 @@ declare const QueryKeys: {
     readonly wallet: {
         readonly outgoingRcDelegations: (username: string, limit: number) => (string | number)[];
         readonly vestingDelegations: (username: string, limit: number) => (string | number)[];
+        /** Prefix of {@link vestingDelegations} for every limit. */
+        readonly vestingDelegationsAll: (username: string) => string[];
         readonly withdrawRoutes: (account: string) => string[];
         readonly incomingRc: (username: string) => string[];
         readonly conversionRequests: (account: string) => string[];
@@ -897,6 +899,7 @@ declare const QueryKeys: {
         readonly hbdTransactions: (username: string, limit: number, filterKey: string) => (string | number)[];
         readonly hivePowerGeneralInfo: (username: string) => string[];
         readonly hivePowerDelegates: (username: string) => string[];
+        readonly accountDelegations: (username: string | undefined) => (string | undefined)[];
         readonly hivePowerDelegatings: (username: string) => string[];
         readonly hivePowerTransactions: (username: string, limit: number, filterKey: string) => (string | number)[];
         readonly pointsGeneralInfo: (username: string) => string[];
@@ -7215,7 +7218,7 @@ interface DelegateVestingSharesPayload {
  * - Removing delegation has a 5-day cooldown before HP returns to delegator
  *
  * **Post-Broadcast Actions:**
- * - Invalidates delegations list cache to show updated delegation
+ * - Invalidates the delegator's delegations list to show the updated delegation
  * - Invalidates account data for both delegator and delegatee
  *
  * @example

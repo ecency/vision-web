@@ -1,0 +1,2 @@
+import {a}from'./chunk-DGZJKXXC.js';import {r}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function u(e){return queryOptions({queryKey:a.assets.accountDelegations(e),enabled:!!e,queryFn:({signal:o})=>r("balance","/accounts/{account-name}/delegations",{"account-name":e},void 0,void 0,o)})}export{u as a};//# sourceMappingURL=chunk-6ZUADFUE.js.map
+//# sourceMappingURL=chunk-6ZUADFUE.js.map

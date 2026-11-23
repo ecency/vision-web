@@ -12072,12 +12072,15 @@ function skipSpaces3(text3, i2) {
   while (i2 < text3.length && SPACE_CHARS.includes(text3[i2])) i2++;
   return i2;
 }
-function matchHtmlImage(text3) {
+function matchHtmlImage(text3, marksOf) {
   const footnotes = text3.includes("[^");
   IMG_OPEN_RE.lastIndex = 0;
   let m;
+  let tagMarks = null;
   while ((m = IMG_OPEN_RE.exec(text3)) !== null) {
     const start = m.index;
+    tagMarks ??= marksOf();
+    if (tagMarks[start] === 1) return { index: start, src: "", dashed: false, undecided: true };
     let i2 = start + 4;
     let found = null;
     let srcSeen = false;
@@ -12169,7 +12172,7 @@ function markInsideTags(text3) {
     if (!inTag) {
       if (c === "<" && i2 + 1 < text3.length && /[A-Za-z/!?]/.test(text3[i2 + 1]) && !isAutolinkAt(text3, i2 + 1)) {
         inTag = true;
-        marks[i2] = 1;
+        marks[i2] = 2;
       }
       continue;
     }
@@ -12682,7 +12685,7 @@ function findFirstImageCandidate(prepared) {
   const { cleaned } = prepared;
   if (!cleaned) return NONE;
   const mdMatch = firstUnescapedImage(cleaned, MD_IMAGE_RE_G);
-  const htmlMatch = matchHtmlImage(cleaned);
+  const htmlMatch = matchHtmlImage(cleaned, () => rawTagsOf(prepared));
   const mdUrl = mdMatch ? mdMatch[1] !== void 0 || mdMatch[2].includes("\\") ? angleAsPlain(mdMatch[1] ?? mdMatch[2], !hasAmpSentinel(cleaned)) : mdMatch[2] : void 0;
   if (mdMatch) {
     const url = mdUrl;
@@ -12702,7 +12705,7 @@ function findFirstImageCandidate(prepared) {
   }
   const candidates = [];
   if (mdMatch && mdUrl) candidates.push({ url: mdUrl, pos: mdMatch.index ?? 0, destination: true, md: true });
-  const dashSrc = !!htmlMatch && htmlMatch.dashed;
+  const dashSrc = !!htmlMatch && (htmlMatch.dashed || !!htmlMatch.undecided);
   if (dashSrc && !(mdMatch && mdUrl && (mdMatch.index ?? 0) < htmlMatch.index)) {
     return AMBIGUOUS;
   }
@@ -12779,7 +12782,7 @@ function fastBodyImage(raw, width, height, format) {
   }
   if (first && !first.destination && loneSurrogateAt(first.url) !== -1 && !(poster && poster.pos < first.pos)) return null;
   if (poster && (!first || poster.pos < first.pos)) {
-    return proxifyFound(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
+    return proxifySource(proxifyImageSrc(poster.url, 0, 0, "match"), width, height, format);
   }
   if (!first) return null;
   const source = candidateSource(body, first);
@@ -12810,9 +12813,6 @@ function metaFingerprint(jsonMetadata) {
   } catch {
     return {};
   }
-}
-function proxifyFound(src, width, height, format) {
-  return proxifySource(decodeEntities(src), width, height, format);
 }
 function onProxy(src) {
   const base = getProxyBase();
@@ -12870,7 +12870,7 @@ function getImage(entry, width, height, format, renderFirstImage) {
     return fast;
   }
   const src = renderFirstImage(entry);
-  return src ? proxifyFound(src, width, height, format) || src : null;
+  return src ? proxifySource(src, width, height, format) || src : null;
 }
 function getEntryCardImageRawUrl(obj) {
   if (typeof obj === "string") {
@@ -12945,7 +12945,7 @@ function lookupPostImage(obj, width, height, format, renderFirstImage) {
       return fast;
     }
     const src = renderFirstImage(obj);
-    return src ? proxifyFound(src, width, height, format) || src : null;
+    return src ? proxifySource(src, width, height, format) || src : null;
   }
   const key = `${makeEntryCacheKey(obj)}-${width}x${height}-${format}${renderFirstImage ? "" : "-fast"}`;
   const meta = metaFingerprint(obj.json_metadata);
