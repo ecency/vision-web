@@ -40,14 +40,40 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       )
   });
 
-  const { mutateAsync: delegate, isPending: isDelegating } = useDelegateVestingSharesMutation();
+  const { mutateAsync: delegate } = useDelegateVestingSharesMutation();
+  // Per row: the mutation's isPending is one flag for every row (#2198).
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  // Undelegated here: hidden from the list, so Undelegate is not offered again
+  // on a delegation that is gone while the refreshed list is on its way.
+  const [undelegated, setUndelegated] = useState<ReadonlySet<string>>(new Set());
+
+  const undelegate = (delegatee: string, by: string) => {
+    if (pending.has(delegatee)) return;
+    setPending((set) => new Set(set).add(delegatee));
+    delegate({ delegatee, vestingShares: "0.000000 VESTS" })
+      .then(() => setUndelegated((set) => new Set(set).add(delegatee)))
+      .catch((err) => {
+        // Was an unhandled rejection with no feedback at all.
+        reportRcRejection(err, "transfer", by);
+        error(...formatError(err));
+      })
+      .finally(() =>
+        setPending((set) => {
+          const next = new Set(set);
+          next.delete(delegatee);
+          return next;
+        })
+      );
+  };
 
   const data = useMemo(
     () =>
-      delegations?.filter((item) =>
-        item.delegatee.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())
+      delegations?.filter(
+        (item) =>
+          !undelegated.has(item.delegatee) &&
+          item.delegatee.toLocaleLowerCase().includes(searchText.toLocaleLowerCase())
       ) ?? [],
-    [delegations, searchText]
+    [delegations, searchText, undelegated]
   );
   const sliced = useMemo(
     () => data.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize),
@@ -132,17 +158,10 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
                           className="undelegate"
                           onClick={(e) => {
                             e.preventDefault();
-                            delegate({
-                              delegatee: x.delegatee,
-                              vestingShares: "0.000000 VESTS"
-                            }).catch((err) => {
-                              // Was an unhandled rejection with no feedback at all.
-                              reportRcRejection(err, "transfer", activeUser.username);
-                              error(...formatError(err));
-                            });
+                            undelegate(x.delegatee, activeUser.username);
                           }}
                         >
-                          {isDelegating
+                          {pending.has(x.delegatee)
                             ? "..."
                             : i18next.t("delegated-vesting.undelegate")}
                         </a>
