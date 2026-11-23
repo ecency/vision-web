@@ -26,6 +26,14 @@ const delegationKey = (item: { delegatee: string; vesting_shares: string }) =>
 // offered again, and the second then fails on chain with an error, no harm.
 const TX_EXPIRY_MS = 65_000;
 
+// The op this dialog broadcasts: a delegation by `delegator` set to 0 VESTS.
+// A delegation of any other amount to the same account is another request.
+function isUndelegation(name: string, op: unknown, delegator: string): boolean {
+  if (name !== "delegate_vesting_shares" || typeof op !== "object" || op === null) return false;
+  const { delegator: by, vesting_shares } = op as { delegator?: unknown; vesting_shares?: unknown };
+  return by === delegator && typeof vesting_shares === "string" && parseAsset(vesting_shares).amount === 0;
+}
+
 interface PendingRow {
   attempt: number;
   /** delegationKey of the row the request was for. */
@@ -90,9 +98,7 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
       onUnsettledSigning((ops) => {
         const handedOff = new Set(
           ops.flatMap(([name, op]) =>
-            name === "delegate_vesting_shares" && (op as { delegator?: string }).delegator === username
-              ? [(op as { delegatee: string }).delegatee]
-              : []
+            isUndelegation(name, op, username) ? [(op as { delegatee: string }).delegatee] : []
           )
         );
         if (handedOff.size === 0) return;
@@ -140,11 +146,19 @@ export function DelegatedVesting({ username, show, setShow, totalDelegated }: Pr
   // The SDK refreshes the list seconds after the broadcast; one more read
   // past the expiry decides an undelegation that never landed.
   const expiryChecks = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const mounted = useRef(true);
   useEffect(() => {
+    mounted.current = true;
     const timers = expiryChecks.current;
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      mounted.current = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
   }, []);
   const checkAfterExpiry = () => {
+    // A success after the page closed has nothing left to check.
+    if (!mounted.current) return;
     const timer = setTimeout(() => {
       expiryChecks.current.delete(timer);
       void refetch();

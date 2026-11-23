@@ -201,6 +201,28 @@ describe("DelegatedVesting rows (#2198)", () => {
     }
   });
 
+  it("arms no expiry check when the success arrives after unmounting", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let succeed: () => void = () => {};
+      delegate.mutateAsync.mockReturnValue(new Promise<void>((resolve) => (succeed = resolve)));
+      const { unmount } = renderDialog();
+      await screen.findByText("bob");
+      await act(async () => {
+        fireEvent.click(within(rowOf("bob")).getByText("delegated-vesting.undelegate"));
+      });
+      const before = rows.fetches;
+
+      unmount();
+      await act(async () => succeed());
+      vi.advanceTimersByTime(70_000);
+
+      expect(rows.fetches).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("offers Undelegate again when a late success from an earlier opening never lands", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -324,6 +346,10 @@ describe("DelegatedVesting rows (#2198)", () => {
       notifyUnsettledSigning(undelegateOps("carol"));
       notifyUnsettledSigning(undelegateOps("bob", "mallory"));
       notifyUnsettledSigning([["vote", { voter: "alice", author: "bob", permlink: "p", weight: 1 }]] as never);
+      // A delegation (not an undelegation) to the same account.
+      notifyUnsettledSigning([
+        ["delegate_vesting_shares", { delegator: "alice", delegatee: "bob", vesting_shares: "1000.000000 VESTS" }]
+      ] as never);
       // Another operation naming the same delegator and delegatee.
       notifyUnsettledSigning([["custom_op", { delegator: "alice", delegatee: "bob" }]] as never);
     });
