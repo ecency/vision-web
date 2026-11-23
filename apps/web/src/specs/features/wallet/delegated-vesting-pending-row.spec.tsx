@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -196,6 +197,32 @@ describe("DelegatedVesting rows (#2198)", () => {
       vi.advanceTimersByTime(70_000);
 
       expect(rows.fetches).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still checks after the expiry under StrictMode's double mount", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      delegate.mutateAsync.mockResolvedValue(undefined);
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <StrictMode>
+          <QueryClientProvider client={queryClient}>
+            <DelegatedVesting username="alice" show={true} setShow={vi.fn()} totalDelegated="1.5 HP" />
+          </QueryClientProvider>
+        </StrictMode>
+      );
+      await screen.findByText("bob");
+      await undelegateBob();
+      const before = rows.fetches;
+
+      await act(async () => {
+        vi.advanceTimersByTime(70_000);
+      });
+
+      await waitFor(() => expect(rows.fetches).toBeGreaterThan(before));
     } finally {
       vi.useRealTimers();
     }
