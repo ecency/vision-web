@@ -1,2 +1,0 @@
-import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function s(r){return queryOptions({queryKey:["wallet","recurrent-transfers",r],queryFn:()=>m("condenser_api.find_recurrent_transfers",[r]),enabled:!!r})}export{s as a};//# sourceMappingURL=chunk-CW6U2KGW.js.map
-//# sourceMappingURL=chunk-CW6U2KGW.js.map

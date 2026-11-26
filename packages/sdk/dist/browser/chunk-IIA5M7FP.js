@@ -1,0 +1,2 @@
+import {p as p$1}from'./chunk-OFEZLGPZ.js';import {a}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function p(r,e,t=true){return queryOptions({queryKey:a.accounts.profiles(r,e??""),enabled:t&&r.length>0,queryFn:async()=>p$1(r,e)})}export{p as a};//# sourceMappingURL=chunk-IIA5M7FP.js.map
+//# sourceMappingURL=chunk-IIA5M7FP.js.map

@@ -54,10 +54,10 @@ export function buildEntryCardFields(entry: Entry): EntryCardFields {
 
   // Parsed rather than read off the value: this helper receives json_metadata in
   // BOTH shapes. `bridge.get_post` hands it over parsed, while
-  // `condenser_api.get_content` returns the raw string, and that is this page's
-  // FIRST source (it carries root_author/root_permlink, which bridge omits). A
-  // field read off a string is undefined, so every post page quietly ignored the
-  // description its author published and fell through to the body summary below.
+  // `condenser_api.get_content` (the oEmbed and agent paths) returns the raw
+  // string. A field read off a string is undefined, so every post page once
+  // quietly ignored the description its author published and fell through to
+  // the body summary below.
   const meta = parseJsonMetadata(entry.json_metadata);
 
   // Cap at 160 chars to match Google's desktop snippet width; consumers may
