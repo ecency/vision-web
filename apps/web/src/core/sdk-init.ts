@@ -13,7 +13,6 @@ import defaults from "@/defaults";
 // side-effect import, because webpack prunes those here: see core/dmca-lists.
 import { loadDmcaLists } from "@/core/dmca-lists";
 import publicNodes from "../../public/public-nodes.json";
-import { enableServerRpcProxy } from "@/core/server-rpc-proxy";
 
 // Configure SDK API host based on environment.
 //
@@ -26,6 +25,8 @@ const isMainProductionClient =
   (window.location.hostname === "ecency.com" || window.location.hostname.endsWith(".ecency.com"));
 
 const isServer = typeof window === "undefined";
+// Declared ahead of the server block below, which calls the reporter at import time.
+const RPC_PROXY_REPORT_MS = 5 * 60 * 1000;
 const privateApiHost = isMainProductionClient
   ? ""
   : isServer
@@ -64,10 +65,58 @@ if (isServer) {
   // instead of stalled renders piling up into heap exhaustion.
   ConfigManager.setResilience({ hedge: true });
 
-  // Server-side read-through RPC proxy (vapi's /private-api/ssr/rpc): see
-  // core/server-rpc-proxy. Middleware runs in its own bundle with its own SDK
-  // copy and switches it on there too.
-  enableServerRpcProxy();
+  // Server-side read-through RPC proxy (vapi's /private-api/ssr/rpc): the
+  // allowlisted reads every render makes (accounts, profiles, communities,
+  // per-tag feeds, posts) are answered from one cache per host instead of
+  // being fetched by every renderer process on its own. An optimization, not
+  // a dependency: the SDK falls back to the node pool on any proxy failure.
+  // On whenever the deployment hands this process the shared secret (vapi
+  // switches its side on from the same value) and the overlay route to vapi
+  // (INTERNAL_API_HOST). No separate switch: the secret is the switch, in one
+  // place, for both services. SSR_RPC_PROXY=0 is an explicit off for an
+  // on-box kill that leaves the secret alone.
+  // The timeout sits just above vapi's own lookup budget (1.5s), so a proxy
+  // that cannot answer in time is its 504, and the SDK's per-node timeout
+  // bounds it further; the prefetch's own abort signal bounds the whole call
+  // either way, so the proxy can never extend a render past the SSR cap.
+  const proxyHost = process.env.INTERNAL_API_HOST;
+  const proxySecret = process.env.SSR_INTERNAL_SECRET;
+  if (process.env.SSR_RPC_PROXY !== "0" && proxyHost && proxySecret) {
+    ConfigManager.setServerRpcProxy({
+      url: `${proxyHost.replace(/\/+$/, "")}/private-api/ssr/rpc`,
+      headers: { "X-Ecency-Internal": proxySecret },
+      timeoutMs: 1600
+    });
+    startRpcProxyReport();
+  }
+}
+
+/**
+ * One `[rpc-proxy]` summary line per interval, and only when the counters
+ * moved since the last line, so a quiet process writes nothing after its
+ * first report. The SDK's fallbacks are otherwise invisible: a read that went
+ * to the node pool because the proxy was down, timed out or answered an
+ * unusable body renders the page all the same, and the cache's own counters
+ * cannot see a request that never reached it. The first line (five minutes
+ * after boot, even at zero) shows the reporter is alive. Cumulative, never
+ * reset; per process.
+ */
+function startRpcProxyReport(): void {
+  let last = "";
+  const tick = () => {
+    const s = ConfigManager.getServerRpcProxyStats();
+    const r = s.fallbackByReason;
+    const line =
+      `served=${s.served} fallback=${s.fallback} ` +
+      `(status=${r.status} rpcerror=${r.rpcerror ?? 0} ratelimited=${r.ratelimited ?? 0} upstream=${r.upstream ?? 0} timeout=${r.timeout} transport=${r.transport} ` +
+      `validate=${r.validate} parse=${r.parse}) skipped=${s.skipped}`;
+    if (line === last) return;
+    last = line;
+    console.log(`[rpc-proxy] ${line}`);
+  };
+  // Node's timer has unref(); a numeric handle elsewhere simply has none.
+  const handle = setInterval(tick, RPC_PROXY_REPORT_MS) as { unref?: () => void };
+  handle.unref?.();
 }
 
 // NOTE: Web broadcast adapter is NOT initialized here.

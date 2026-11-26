@@ -9,7 +9,6 @@ vi.mock("@ecency/render-helper", () => ({
 import { Entry, EntryStat } from "@/entities";
 import {
   canonicalTarget,
-  withoutDeclaredCanonical,
   isIndexable,
   isContainerTree,
   CONTAINER_ACCOUNTS,
@@ -556,26 +555,5 @@ describe("isBelowReputationGate", () => {
     expect(isBelowReputationGate("300000000000000")).toBe(false); // ~74
     expect(isBelowReputationGate("5000000000")).toBe(true); // ~31
     expect(isBelowReputationGate(0)).toBe(true); // brand-new account = 25
-  });
-});
-
-describe("withoutDeclaredCanonical", () => {
-  it("drops a declared canonical_url from parsed metadata, as a copy", () => {
-    const entry = {
-      author: "alice",
-      permlink: "p",
-      json_metadata: { canonical_url: "https://elsewhere.example/x", tags: ["a"] }
-    } as unknown as Entry;
-    const out = withoutDeclaredCanonical(entry);
-    expect(out.json_metadata).toEqual({ tags: ["a"] });
-    expect(entry.json_metadata.canonical_url).toBe("https://elsewhere.example/x");
-    expect(canonicalTarget(out, "https://ecency.com")).toBe("https://ecency.com/@alice/p");
-  });
-
-  it("returns the same entry when there is nothing to drop", () => {
-    const raw = { author: "alice", permlink: "p", json_metadata: '{"canonical_url":"x"}' } as unknown as Entry;
-    expect(withoutDeclaredCanonical(raw)).toBe(raw);
-    const plain = { author: "alice", permlink: "p", json_metadata: { tags: [] } } as unknown as Entry;
-    expect(withoutDeclaredCanonical(plain)).toBe(plain);
   });
 });

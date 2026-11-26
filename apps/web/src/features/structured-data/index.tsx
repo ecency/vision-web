@@ -129,9 +129,7 @@ export function buildArticleJsonLd({
   base = defaults.base
 }: {
   entry: Entry;
-  // Only the display name is read: a full chain account or a bridge profile's
-  // metadata both carry it under `profile`.
-  account?: { profile?: { name?: unknown } } | null;
+  account?: FullAccount | null;
   url: string;
   base?: string;
 }): JsonLdData {

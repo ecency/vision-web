@@ -55,8 +55,8 @@ const entry = (author: string, permlink: string) => ({
 const serve = (author: string, permlink: string) =>
   prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) => {
     const [kind] = options.queryKey;
-    if (kind === "bridge") return entry(author, permlink);
-    if (kind === "condenser") throw new Error("a root post needs no condenser read");
+    if (kind === "condenser") return entry(author, permlink);
+    if (kind === "bridge") return null;
     return [{ name: author, reputation: 70, post_count: 120 }];
   });
 
@@ -64,7 +64,7 @@ describe("generateEntryMetadata and takedowns", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("noindexes a taken-down post", async () => {
-    // This reads the bridge post query, which the filter now censors: the
+    // This reads getContentQueryOptions, which the filter now censors: the
     // metadata is blanked and the body replaced with the notice, which removes
     // the NSFW tag and lifts the post over the thin-content floor. Without a
     // takedown check ahead of the gate a listed post becomes indexable and

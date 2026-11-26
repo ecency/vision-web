@@ -4,8 +4,8 @@ import { aJ as AuthContextV2, aK as PlatformAdapter, aL as BroadcastMode, A as A
 export { c as Asset, b as AssetOperation, aQ as AuthMethod, d as AuthorReward, aR as AuthorityLevel, aS as AuthorityType, C as CancelTransferFromSavings, e as ClaimRewardBalance, f as CollateralizedConvert, g as CommentBenefactor, h as CommentPayoutUpdate, i as CommentReward, j as CurationReward, D as DelegateVestingShares, E as EffectiveCommentVote, F as FillCollateralizedConvertRequest, l as FillConvertRequest, m as FillOrder, n as FillRecurrentTransfers, aT as FillTransferFromSavings, o as FillVestingWithdraw, G as GeneralAssetInfo, p as GeneralAssetTransaction, q as HIVE_ACCOUNT_OPERATION_GROUPS, r as HIVE_OPERATION_LIST, s as HIVE_OPERATION_NAME_BY_ID, t as HIVE_OPERATION_ORDERS, u as HiveBasedAssetSignType, v as HiveEngineMarketResponse, w as HiveEngineMetric, y as HiveEngineOrderBookEntry, z as HiveEngineToken, B as HiveEngineTokenBalance, I as HiveEngineTokenInfo, H as HiveEngineTokenMetadataResponse, J as HiveEngineTokenStatus, K as HiveEngineTransaction, L as HiveMarketMetric, M as HiveOperationFilter, N as HiveOperationFilterKey, O as HiveOperationFilterValue, P as HiveOperationGroup, Q as HiveOperationName, R as HiveTransaction, S as Interest, T as LimitOrderCancel, U as LimitOrderCreate, V as NaiMap, aU as OPERATION_AUTHORITY_MAP, X as PointTransaction, Y as PointTransactionType, Z as Points, _ as PointsResponse, $ as ProducerReward, a0 as ProposalPay, a2 as RecurrentTransfers, a3 as ReturnVestingDelegation, aV as SMTAsset, a4 as SetWithdrawRoute, a5 as Symbol, a6 as Token, a7 as TokenMetadata, a8 as Transfer, aW as TransferFromSavings, a9 as TransferToSavings, aa as TransferToVesting, ab as UpdateProposalVotes, aX as User, ac as VoteProxy, ad as WalletOperationPayload, ae as WithdrawVesting, aY as assertOperationsFitTransaction, aZ as broadcastOperations, a_ as broadcastOperationsAsync, a$ as broadcastOperationsWithKeys, b0 as broadcastWithMethod, b1 as calculateRCMana, b2 as calculateVPMana, b3 as claimPointsRequest, b4 as collectRequestedOperations, af as formattedNumber, ag as getAccountWalletAssetInfoQueryOptions, ah as getAllHiveEngineTokensQueryOptions, b5 as getCustomJsonAuthority, ai as getHbdAssetGeneralInfoQueryOptions, aj as getHbdAssetTransactionsQueryOptions, ak as getHiveAssetGeneralInfoQueryOptions, al as getHiveAssetMetricQueryOptions, am as getHiveAssetTransactionsQueryOptions, an as getHiveAssetWithdrawalRoutesQueryOptions, ao as getHiveEngineBalancesWithUsdQueryOptions, ap as getHiveEngineTokenGeneralInfoQueryOptions, aq as getHiveEngineTokenTransactionsQueryOptions, ar as getHiveEngineTokensBalancesQueryOptions, as as getHiveEngineTokensMarketQueryOptions, at as getHiveEngineTokensMetadataQueryOptions, au as getHiveEngineTokensMetricsQueryOptions, av as getHiveEngineUnclaimedRewardsQueryOptions, aw as getHivePowerAssetGeneralInfoQueryOptions, ax as getHivePowerAssetTransactionsQueryOptions, ay as getHivePowerDelegatesInfiniteQueryOptions, az as getHivePowerDelegatingsQueryOptions, b6 as getNextAccountHistoryPageParam, b7 as getOperationAuthority, aA as getPointsAssetGeneralInfoQueryOptions, aB as getPointsAssetTransactionsQueryOptions, aC as getPointsQueryOptions, b8 as getProposalAuthority, b9 as getRequiredAuthority, aD as isEmptyDate, ba as isWif, aE as parseAsset, bb as resolveAccountHistoryLimit, aF as resolveHiveOperationFilters, bc as sha256, bd as useBroadcastMutation, aG as useClaimPoints, aH as useWalletOperation, aI as vestsToHp } from './get-hive-engine-token-general-info-query-options-fZXv_92u.js';
 import { A as Authority, P as PrivateKey, b as PublicKey, O as Operation } from './utils-Cit-_MdN.js';
 export { c as AccountCreateOperation, d as AssetSymbol, B as BroadcastResult, C as CustomJsonOperation, e as OperationBody, a as OperationName, S as Signature, u as hiveTxUtils } from './utils-Cit-_MdN.js';
-import { A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, r as rpcProxyStats } from './hive-B-I-KNLc.js';
-export { C as CallRPCWithFallbackOptions, T as HiveTxTransaction, M as MIN_TRANSACTION_SIZE_LIMIT, a as Memo, Q as QuorumNodeOutcome, b as RpcBatchAnswer, c as RpcCallSpec, d as RpcFallbackResult, e as TransactionReference, f as TransactionTooLargeError, g as callREST, h as callRPC, i as callRPCBatch, j as callRPCBroadcast, k as callRPCWithFallback, l as callWithQuorum, m as getTransactionReference, n as hiveTxConfig } from './hive-B-I-KNLc.js';
+import { A as APIMethods, R as ResilienceOptions, S as ServerRpcProxyOptions, r as rpcProxyStats } from './hive-ByBQJs9s.js';
+export { C as CallRPCWithFallbackOptions, T as HiveTxTransaction, M as MIN_TRANSACTION_SIZE_LIMIT, a as Memo, Q as QuorumNodeOutcome, b as RpcBatchAnswer, c as RpcCallSpec, d as RpcFallbackResult, e as TransactionReference, f as TransactionTooLargeError, g as callREST, h as callRPC, i as callRPCBatch, j as callRPCBroadcast, k as callRPCWithFallback, l as callWithQuorum, m as getTransactionReference, n as hiveTxConfig } from './hive-ByBQJs9s.js';
 
 interface AiGenerationPrice {
     aspect_ratio: string;
@@ -535,16 +535,6 @@ declare namespace ConfigManager {
      * Read-only by contract: the web tier prints it, nothing resets it.
      */
     function getServerRpcProxyStats(): Readonly<typeof rpcProxyStats>;
-    /**
-     * What this process sent to each Hive node itself (outside the server proxy):
-     * lifetime requests per node URL, by outcome (answered, 429, failed). Read by a periodic report so a
-     * host's direct node traffic can be added to the proxy's.
-     */
-    function getNodeCallCounts(): Record<string, {
-        ok: number;
-        failed: number;
-        rateLimited: number;
-    }>;
     /**
      * Set DMCA filtering lists
      * @param lists - DMCA lists object containing accounts/tags/posts arrays
@@ -3658,9 +3648,7 @@ declare function getAccountPostsInfiniteQueryOptions(username: string | undefine
         [dataTagErrorSymbol]: Error;
     };
 };
-declare function getAccountPostsQueryOptions(username: string | undefined, filter?: string, start_author?: string, start_permlink?: string, limit?: number, observer?: string, enabled?: boolean, { resolvePosts }?: {
-    resolvePosts?: boolean;
-}): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<Entry$1[], Error, Entry$1[], (string | number)[]>, "queryFn"> & {
+declare function getAccountPostsQueryOptions(username: string | undefined, filter?: string, start_author?: string, start_permlink?: string, limit?: number, observer?: string, enabled?: boolean): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<Entry$1[], Error, Entry$1[], (string | number)[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<Entry$1[], (string | number)[], never> | undefined;
 } & {
     queryKey: (string | number)[] & {
@@ -3684,7 +3672,7 @@ declare function getPostsRankedInfiniteQueryOptions(sort: string, tag: string, l
         [dataTagErrorSymbol]: Error;
     };
 };
-declare function getPostsRankedQueryOptions(sort: string, start_author?: string, start_permlink?: string, limit?: number, tag?: string, observer?: string, enabled?: boolean, { resolvePosts }?: GetPostsRankedOptions): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<Entry$1[], Error, Entry$1[], (string | number)[]>, "queryFn"> & {
+declare function getPostsRankedQueryOptions(sort: string, start_author?: string, start_permlink?: string, limit?: number, tag?: string, observer?: string, enabled?: boolean): _tanstack_react_query.OmitKeyof<_tanstack_react_query.UseQueryOptions<Entry$1[], Error, Entry$1[], (string | number)[]>, "queryFn"> & {
     queryFn?: _tanstack_react_query.QueryFunction<Entry$1[], (string | number)[], never> | undefined;
 } & {
     queryKey: (string | number)[] & {
@@ -8185,15 +8173,10 @@ declare const POST_TOP_VOTES = 5;
  *
  * Endpoints: get_post, get_ranked_posts, get_account_posts, get_discussion.
  */
-declare function bridgeV2Call<T>(endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion", params: Record<string, unknown>, signal?: AbortSignal, onAnswer?: (node: string) => void, 
-/** Per-attempt timeout (ms) and retry count; the SDK defaults when omitted. */
-limits?: {
-    timeout?: number;
-    retry?: number;
-}): Promise<T>;
+declare function bridgeV2Call<T>(endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion", params: Record<string, unknown>, signal?: AbortSignal, onAnswer?: (node: string) => void): Promise<T>;
 declare function resolvePost(post: Entry$1, observer: string, num?: number, signal?: AbortSignal): Promise<Entry$1>;
-declare function getPostsRanked(sort: string, start_author?: string, start_permlink?: string, limit?: number, tag?: string, observer?: string, signal?: AbortSignal, resolve?: boolean): Promise<Entry$1[] | null>;
-declare function getAccountPosts(sort: string, account: string, start_author?: string, start_permlink?: string, limit?: number, observer?: string, signal?: AbortSignal, resolve?: boolean): Promise<Entry$1[] | null>;
+declare function getPostsRanked(sort: string, start_author?: string, start_permlink?: string, limit?: number, tag?: string, observer?: string, signal?: AbortSignal): Promise<Entry$1[] | null>;
+declare function getAccountPosts(sort: string, account: string, start_author?: string, start_permlink?: string, limit?: number, observer?: string, signal?: AbortSignal): Promise<Entry$1[] | null>;
 declare function getPost(author?: string, permlink?: string, observer?: string, num?: number, signal?: AbortSignal): Promise<Entry$1 | undefined>;
 declare function getPostHeader(author?: string, permlink?: string): Promise<Entry$1 | null>;
 declare function getDiscussion(author: string, permlink: string, observer?: string): Promise<Record<string, Entry$1> | null>;

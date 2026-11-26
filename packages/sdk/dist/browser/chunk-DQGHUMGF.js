@@ -1,2 +1,0 @@
-import {n}from'./chunk-NCGDSYDF.js';import {infiniteQueryOptions}from'@tanstack/react-query';function l(r,t=50){return infiniteQueryOptions({queryKey:["wallet","vesting-delegations",r,t],initialPageParam:"",queryFn:async({pageParam:e})=>{let i=e?t+1:t,n$1=await n("condenser_api.get_vesting_delegations",[r,e||"",i]);return e&&n$1.length>0&&n$1[0]?.delegatee===e?n$1.slice(1,t+1):n$1},getNextPageParam:e=>!e||e.length<t?void 0:e[e.length-1]?.delegatee,enabled:!!r})}export{l as a};//# sourceMappingURL=chunk-DQGHUMGF.js.map
-//# sourceMappingURL=chunk-DQGHUMGF.js.map

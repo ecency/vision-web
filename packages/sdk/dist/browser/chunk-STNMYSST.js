@@ -1,0 +1,2 @@
+import {c}from'./chunk-JCA2MDMY.js';import {a}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function i(){return queryOptions({queryKey:a.notifications.announcements(),queryFn:async()=>{let n=await fetch(c.privateApiHost+"/private-api/announcements",{method:"GET",headers:{"Content-Type":"application/json"}});if(!n.ok)throw new Error(`Failed to fetch announcements: ${n.status}`);return await n.json()||[]},staleTime:36e5})}export{i as a};//# sourceMappingURL=chunk-STNMYSST.js.map
+//# sourceMappingURL=chunk-STNMYSST.js.map

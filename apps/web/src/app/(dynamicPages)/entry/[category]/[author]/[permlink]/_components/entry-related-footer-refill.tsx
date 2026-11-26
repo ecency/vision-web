@@ -72,19 +72,14 @@ export function EntryRelatedFooterRefill({
     enabled: failed.similar && !!similarInput
   });
   const authorPosts = useQuery({
-    // Rows only, like the server footer: a link never reads a cross-post's original.
-    ...withCardOnlyPageEntries(
-      getAccountPostsQueryOptions(author, "posts", "", "", RELATED_FETCH_LIMIT, "", true, { resolvePosts: false })
-    ),
+    ...withCardOnlyPageEntries(getAccountPostsQueryOptions(author, "posts", "", "", RELATED_FETCH_LIMIT)),
     ...REFILL_QUERY,
     ...FEED_RETRY,
     enabled: failed.author
   });
   const communityPosts = useQuery({
     ...withCardOnlyPageEntries(
-      getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source?.tag ?? "", "", true, {
-        resolvePosts: false
-      })
+      getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source?.tag ?? "")
     ),
     ...REFILL_QUERY,
     ...FEED_RETRY,

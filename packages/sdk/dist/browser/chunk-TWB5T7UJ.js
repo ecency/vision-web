@@ -1,0 +1,2 @@
+import {a as a$1}from'./chunk-DGZJKXXC.js';import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function a(e,i=50){return queryOptions({queryKey:a$1.assets.hivePowerDelegates(e),enabled:!!e,queryFn:()=>m("condenser_api.get_vesting_delegations",[e,"",i])})}export{a};//# sourceMappingURL=chunk-TWB5T7UJ.js.map
+//# sourceMappingURL=chunk-TWB5T7UJ.js.map
