@@ -64,17 +64,24 @@ export async function EntryRelatedFooter({ entry }: Props) {
     // button, payout or count anywhere in this footer, so both feeds are fetched
     // card-only: no bodies and no voter records, which together are the bulk of
     // what these two pages would otherwise retain (#1559). The similar-entries
-    // query above already answers with narrow rows.
+    // query above already answers with narrow rows. A row is also all a link
+    // shows, so a cross-post in either list is not resolved to its original
+    // (that is one more post read per cross-post, for a nested entry no link
+    // here reads).
     fetchQuery(
       withCardOnlyPageEntries(
-        getAccountPostsQueryOptions(entry.author, "posts", "", "", RELATED_FETCH_LIMIT)
+        getAccountPostsQueryOptions(entry.author, "posts", "", "", RELATED_FETCH_LIMIT, "", true, {
+          resolvePosts: false
+        })
       ),
       noMark
     ),
     source
       ? fetchQuery(
           withCardOnlyPageEntries(
-            getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source.tag)
+            getPostsRankedQueryOptions("created", "", "", RELATED_FETCH_LIMIT, source.tag, "", true, {
+              resolvePosts: false
+            })
           ),
           noMark
         )

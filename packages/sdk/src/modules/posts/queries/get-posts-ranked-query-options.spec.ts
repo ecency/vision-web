@@ -192,8 +192,19 @@ describe('getPostsRankedQueryOptions', () => {
     const options = getPostsRankedQueryOptions('created', '', '', 20, 'hive', 'obs')
     const result = await (options.queryFn as any)()
 
-    expect(mockGetPostsRanked).toHaveBeenCalledWith('created', '', '', 20, 'hive', 'obs', undefined)
+    expect(mockGetPostsRanked).toHaveBeenCalledWith('created', '', '', 20, 'hive', 'obs', undefined, true)
     expect(result).toEqual(mockEntries)
+  })
+
+  it('can skip resolving cross-posts, under a key of its own', async () => {
+    mockGetPostsRanked.mockResolvedValue([])
+    const resolved = getPostsRankedQueryOptions('created', '', '', 12, 'hive')
+    const rows = getPostsRankedQueryOptions('created', '', '', 12, 'hive', '', true, { resolvePosts: false })
+    await rows.queryFn!({ signal: undefined } as never)
+
+    expect(mockGetPostsRanked).toHaveBeenCalledWith('created', '', '', 12, 'hive', '', undefined, false)
+    expect(rows.queryKey).not.toEqual(resolved.queryKey)
+    expect(rows.queryKey.slice(0, resolved.queryKey.length)).toEqual(resolved.queryKey)
   })
 
   it('serves NOTHING for a taken-down tag here too', async () => {

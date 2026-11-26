@@ -1,0 +1,2 @@
+import {l}from'./chunk-3QZBKHPX.js';import {a}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function y(r,o=true){return queryOptions({queryKey:a.posts.normalize(r?.author??"",r?.permlink??""),enabled:o&&!!r,queryFn:async()=>l(r)})}export{y as a};//# sourceMappingURL=chunk-JRBID3MC.js.map
+//# sourceMappingURL=chunk-JRBID3MC.js.map

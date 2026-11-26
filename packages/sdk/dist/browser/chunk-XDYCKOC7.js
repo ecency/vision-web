@@ -1,2 +1,0 @@
-import {c}from'./chunk-JCA2MDMY.js';import {a}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function p(s){return queryOptions({queryKey:a.notifications.spotlights(),queryFn:async()=>{let t=await fetch(c.privateApiHost+"/private-api/spotlights",{method:"GET",headers:{"Content-Type":"application/json"}});if(!t.ok)throw new Error(`Failed to fetch spotlights: ${t.status}`);return await t.json()||[]},staleTime:36e5})}export{p as a};//# sourceMappingURL=chunk-XDYCKOC7.js.map
-//# sourceMappingURL=chunk-XDYCKOC7.js.map

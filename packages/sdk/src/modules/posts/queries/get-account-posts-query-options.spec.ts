@@ -122,8 +122,19 @@ describe('getAccountPostsQueryOptions', () => {
     const options = getAccountPostsQueryOptions('user', 'posts', 'sa', 'sp', 20, 'obs')
     const result = await (options.queryFn as any)()
 
-    expect(mockGetAccountPosts).toHaveBeenCalledWith('posts', 'user', 'sa', 'sp', 20, 'obs', undefined)
+    expect(mockGetAccountPosts).toHaveBeenCalledWith('posts', 'user', 'sa', 'sp', 20, 'obs', undefined, true)
     expect(result).toEqual(mockEntries)
+  })
+
+  it('can skip resolving cross-posts, under a key of its own', async () => {
+    mockGetAccountPosts.mockResolvedValue([])
+    const resolved = getAccountPostsQueryOptions('user', 'posts', '', '', 12)
+    const rows = getAccountPostsQueryOptions('user', 'posts', '', '', 12, '', true, { resolvePosts: false })
+    await rows.queryFn!({ signal: undefined } as never)
+
+    expect(mockGetAccountPosts).toHaveBeenCalledWith('posts', 'user', '', '', 12, '', undefined, false)
+    expect(rows.queryKey).not.toEqual(resolved.queryKey)
+    expect(rows.queryKey.slice(0, resolved.queryKey.length)).toEqual(resolved.queryKey)
   })
 
   it('should return [] when getAccountPosts returns null', async () => {

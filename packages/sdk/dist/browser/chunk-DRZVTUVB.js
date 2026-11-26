@@ -1,0 +1,2 @@
+import {a as a$1}from'./chunk-3DN4FULK.js';import {a}from'./chunk-7VCEW3I5.js';function m(e){return !e||!a$1(e.author,e.permlink)?e:{...e,title:"",title_marked:null,body:a,body_marked:null,img_url:""}}function i(e){let t=false,u=e.results.map(r=>{let a=m(r);return a!==r&&(t=true),a});return t?{...e,results:u}:e}export{m as a,i as b};//# sourceMappingURL=chunk-DRZVTUVB.js.map
+//# sourceMappingURL=chunk-DRZVTUVB.js.map

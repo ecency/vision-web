@@ -12,6 +12,7 @@ const stats = {
   served: 0,
   fallback: 0,
   skipped: 0,
+  parkedOut: 0,
   fallbackByReason: { status: 0, rpcerror: 0, ratelimited: 0, upstream: 0, timeout: 0, transport: 0, validate: 0, parse: 0 }
 };
 const manager = {
@@ -23,6 +24,7 @@ const manager = {
   setResilience: vi.fn(),
   setServerRpcProxy: vi.fn(),
   getServerRpcProxyStats: vi.fn(() => stats),
+  getNodeCallCounts: vi.fn((): Record<string, { ok: number; failed: number; rateLimited: number }> => ({})),
   setDmcaLists: vi.fn()
 };
 vi.mock("@ecency/sdk", () => ({ ConfigManager: manager }));
@@ -57,6 +59,9 @@ afterEach(() => {
   stats.served = 0;
   stats.fallback = 0;
   stats.skipped = 0;
+  stats.parkedOut = 0;
+  manager.getNodeCallCounts.mockReset();
+  manager.getNodeCallCounts.mockImplementation(() => ({}));
   for (const reason of Object.keys(stats.fallbackByReason) as (keyof typeof stats.fallbackByReason)[]) {
     stats.fallbackByReason[reason] = 0;
   }
@@ -116,7 +121,7 @@ describe("sdk-init server rpc proxy", () => {
       await vi.advanceTimersByTimeAsync(REPORT_MS);
       expect(log).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenLastCalledWith(
-        "[rpc-proxy] served=0 fallback=0 (status=0 rpcerror=0 ratelimited=0 upstream=0 timeout=0 transport=0 validate=0 parse=0) skipped=0"
+        "[rpc-proxy] served=0 fallback=0 (status=0 rpcerror=0 ratelimited=0 upstream=0 timeout=0 transport=0 validate=0 parse=0) skipped=0 parked_out=0"
       );
 
       // Nothing moved: silence, not a repeat.
@@ -130,10 +135,18 @@ describe("sdk-init server rpc proxy", () => {
       stats.fallbackByReason.ratelimited = 4;
       stats.fallbackByReason.upstream = 6;
       stats.skipped = 7;
+      stats.parkedOut = 8;
+      // The process's own node traffic, per host: added to the proxy's own
+      // per-node counters it is the host's whole load on each node.
+      manager.getNodeCallCounts.mockImplementation(() => ({
+        "https://b.node.test": { ok: 9, failed: 1, rateLimited: 2 },
+        "https://a.node.test:8443": { ok: 3, failed: 0, rateLimited: 0 }
+      }));
       await vi.advanceTimersByTimeAsync(REPORT_MS);
       expect(log).toHaveBeenCalledTimes(2);
       expect(log).toHaveBeenLastCalledWith(
-        "[rpc-proxy] served=41 fallback=5 (status=0 rpcerror=3 ratelimited=4 upstream=6 timeout=0 transport=2 validate=0 parse=0) skipped=7"
+        "[rpc-proxy] served=41 fallback=5 (status=0 rpcerror=3 ratelimited=4 upstream=6 timeout=0 transport=2 validate=0 parse=0) skipped=7 parked_out=8" +
+          " nodes(ok/failed/429)=a.node.test:8443=3/0/0,b.node.test=9/1/2"
       );
     });
 

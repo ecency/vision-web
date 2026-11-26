@@ -1,0 +1,2 @@
+import {b}from'./chunk-Z6HCXX2D.js';import {a}from'./chunk-JCJTWCDG.js';import {b as b$1}from'./chunk-N5OKK64Q.js';import {a as a$1}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function p(e){return queryOptions({queryKey:a$1.wallet.receivedVestingShares(e),enabled:!!e,queryFn:async()=>b(e,await b$1().fetchQuery({...a(e),staleTime:6e4}))})}export{p as a};//# sourceMappingURL=chunk-YVEHHOJT.js.map
+//# sourceMappingURL=chunk-YVEHHOJT.js.map
