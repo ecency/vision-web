@@ -55,6 +55,9 @@ export const rpcProxyStats = {
   fallback: 0,
   /** Reads that went straight to the nodes because the breaker was open. */
   skipped: 0,
+  /** RATELIMITED proxy answers that ended without a node call: every
+   *  configured node was one the answer named as rate limiting. */
+  parkedOut: 0,
   fallbackByReason: { status: 0, rpcerror: 0, ratelimited: 0, upstream: 0, timeout: 0, transport: 0, validate: 0, parse: 0 } as Record<string, number>
 }
 
@@ -90,10 +93,55 @@ class ProxyMiss extends Error {
     /** The relayed node error says the method does not exist there. */
     public unknownMethod = false,
     /** A plain 404 from the proxy itself: its route table has no such method. */
-    public notFound = false
+    public notFound = false,
+    /** Configured nodes the proxy named as rate-limited in this answer, with
+     *  the epoch ms each park ends. */
+    public parked: ReadonlyMap<string, number> = new Map()
   ) {
     super(message)
   }
+}
+
+/**
+ * Longest a proxy hint may keep a node out: the proxy may relay a node's own
+ * Retry-After, which no one caps, and this client re-learns a node's state from
+ * its own calls anyway once the hint lapses.
+ */
+const PROXY_PARK_MAX_MS = 60_000
+
+/**
+ * Read the proxy's `X-Ssr-Node-Parks` (`authority=ms,...`: the nodes rate
+ * limiting the proxy's client, and for how long), park the matching configured
+ * nodes in this process's tracker, and return them with the epoch ms each park
+ * ends. The authority is host plus any non-default port, which is exactly
+ * URL#host for a node URL. Anything malformed is skipped: a hint must never
+ * cost a read.
+ */
+function applyProxyParks(header: string | null): ReadonlyMap<string, number> {
+  const parked = new Map<string, number>()
+  if (!header) return parked
+  const ms = new Map<string, number>()
+  for (const pair of header.split(',')) {
+    const eq = pair.lastIndexOf('=')
+    if (eq <= 0) continue
+    const value = Number(pair.slice(eq + 1).trim())
+    if (!Number.isFinite(value) || value <= 0) continue
+    ms.set(pair.slice(0, eq).trim().toLowerCase(), Math.min(value, PROXY_PARK_MAX_MS))
+  }
+  if (ms.size === 0) return parked
+  for (const node of config.nodes) {
+    let host: string
+    try {
+      host = new URL(node).host.toLowerCase()
+    } catch {
+      continue
+    }
+    const park = ms.get(host)
+    if (park === undefined) continue
+    rpcHealthTracker.recordExternalPark(node, park)
+    parked.set(node, Date.now() + park)
+  }
+  return parked
 }
 
 const errorMessage = (e: unknown): string =>
@@ -148,6 +196,9 @@ async function proxyRpcCall<T>(
       if (externalSignal?.aborted) throw e
       throw new ProxyMiss(tSignal.aborted ? 'timeout' : 'transport', errorMessage(e))
     }
+    // On every answer, served or not: a node the proxy just saw throttle is one
+    // this process should not be first to try for its other reads either.
+    const parked = applyProxyParks(res.headers.get('x-ssr-node-parks'))
     if (res.status !== 200) {
       const tag = (res.headers.get('x-ssr-cache') ?? '').toUpperCase()
       const relayed = res.status === 502 && tag === 'RPCERROR'
@@ -182,7 +233,8 @@ async function proxyRpcCall<T>(
               ? 'proxy upstream failed'
               : `proxy answered ${res.status}`,
         unknownMethod,
-        !relayed && res.status === 404
+        !relayed && res.status === 404,
+        parked
       )
     }
     let result: unknown
@@ -683,6 +735,25 @@ export const __LATENCY_TUNING__ = Object.freeze({
 /** @internal Exported for testing only. */
 export class NodeHealthTracker {
   private health = new Map<string, NodeHealth>()
+  /** Lifetime answers per node, by outcome: what this process itself sent to
+   *  each node, for a periodic report beside the server proxy's own counters. */
+  private counts = new Map<string, { ok: number; failed: number; rateLimited: number }>()
+
+  private count(node: string, outcome: 'ok' | 'failed' | 'rateLimited'): void {
+    let c = this.counts.get(node)
+    if (!c) {
+      c = { ok: 0, failed: 0, rateLimited: 0 }
+      this.counts.set(node, c)
+    }
+    c[outcome]++
+  }
+
+  /** Copy of the per-node answer counts (see `counts`). */
+  callCounts(): Record<string, { ok: number; failed: number; rateLimited: number }> {
+    const out: Record<string, { ok: number; failed: number; rateLimited: number }> = {}
+    for (const [node, c] of this.counts) out[node] = { ...c }
+    return out
+  }
 
   private getOrCreate(node: string): NodeHealth {
     let h = this.health.get(node)
@@ -717,6 +788,7 @@ export class NodeHealthTracker {
 
   recordSuccess(node: string, api?: string, durationMs?: number, profileKey?: string): void {
     const h = this.getOrCreate(node)
+    this.count(node, 'ok')
     h.consecutiveFailures = 0
     // A success means the node recovered — clear the escalation streak so the next
     // throttle starts from the base cooldown. We deliberately do NOT clear an active
@@ -843,6 +915,7 @@ export class NodeHealthTracker {
 
   recordFailure(node: string, api?: string): void {
     const h = this.getOrCreate(node)
+    this.count(node, 'failed')
     if (api) {
       // API-specific failure: only update the per-API tracker.
       // This prevents e.g. 3 rc_api failures from marking the node
@@ -914,6 +987,7 @@ export class NodeHealthTracker {
    */
   recordRateLimit(node: string, retryAfterMs?: number): void {
     const h = this.getOrCreate(node)
+    this.count(node, 'rateLimited')
     const now = Date.now()
     // Expire a stale streak so an occasional throttle hours apart doesn't compound.
     if (h.rateLimitStreak > 0 && now - h.lastRateLimitAt > RATE_LIMIT_STREAK_RESET_MS) {
@@ -938,6 +1012,18 @@ export class NodeHealthTracker {
       : Math.max(h.rateLimitedUntil, now + cooldown)
     h.consecutiveFailures++
     h.lastFailureTime = now
+  }
+
+  /**
+   * Keep a node out of the healthy order for `ms`, on another client's word (the
+   * server proxy, which talks to the same nodes from the same address and has
+   * just seen this one throttle or fail). Extend-only, and no failure is counted:
+   * nothing went wrong on THIS client's own calls to the node.
+   */
+  recordExternalPark(node: string, ms: number): void {
+    if (!Number.isFinite(ms) || ms <= 0) return
+    const h = this.getOrCreate(node)
+    h.rateLimitedUntil = Math.max(h.rateLimitedUntil, Date.now() + ms)
   }
 
   /** Record an observed head_block_number for this node. */
@@ -1820,6 +1906,12 @@ const callRPCCore = async <T = any>(
   // The proxy is one more "node" for the method fallback: once it relayed an
   // `unknown method` for the primary, it is asked for the fallback directly.
   let proxySpec: RpcCallSpec | undefined = primary
+  // After a RATELIMITED answer: the nodes it named as rate limiting, with when
+  // each park ends. The fallback below skips them while parked: the proxy
+  // reached them from this same address moments ago, so asking them again only
+  // draws the same 429 and deepens the throttle. Any other miss (a relayed node
+  // error, a timeout) falls back to every node as before.
+  let proxyParked: ReadonlyMap<string, number> = new Map()
   if (proxy && fallback && lacksMethod(proxy.url, primary.method)) proxySpec = fallback
   if (proxy && isNodeRuntime && proxySpec && proxy.methodSet.has(proxySpec.method)) {
     if (Date.now() < proxyOpenUntil) {
@@ -1854,6 +1946,7 @@ const callRPCCore = async <T = any>(
               continue
             }
           }
+          if (e instanceof ProxyMiss && e.reason === 'ratelimited') proxyParked = e.parked
           rpcProxyStats.fallback++
           const reason: string = e instanceof ProxyMiss ? e.reason : 'transport'
           rpcProxyStats.fallbackByReason[reason] = (rpcProxyStats.fallbackByReason[reason] ?? 0) + 1
@@ -1886,7 +1979,19 @@ const callRPCCore = async <T = any>(
     }
     // Re-evaluate node order each attempt so health changes are respected.
     // Pass api so nodes with an API-specific cooldown are deprioritized.
-    const orderedNodes = rpcHealthTracker.getOrderedNodes(config.nodes, api)
+    const orderedNodes =
+      proxyParked.size === 0
+        ? rpcHealthTracker.getOrderedNodes(config.nodes, api)
+        : rpcHealthTracker
+            .getOrderedNodes(config.nodes, api)
+            .filter((n) => !((proxyParked.get(n) ?? 0) > Date.now()))
+    if (orderedNodes.length === 0) {
+      // Every node this process would try is rate limiting this address right
+      // now, per the proxy: fail now, as the nodes would, without sending them
+      // another request.
+      rpcProxyStats.parkedOut++
+      throw lastError ?? new NodeError('', 'every node is out of rotation per the server proxy', { isRateLimit: true })
+    }
     // Pick the healthiest untried node. If all tried, start a new round.
     let node = orderedNodes.find((n) => !triedInRound.has(n))
     if (!node) {

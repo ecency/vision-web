@@ -151,10 +151,14 @@ export function getPostsRankedQueryOptions(
   limit: number = 20,
   tag: string = "",
   observer: string = "",
-  enabled = true
+  enabled = true,
+  { resolvePosts = true }: GetPostsRankedOptions = {}
 ) {
+  const pageKey = QueryKeys.posts.postsRankedPage(sort, start_author, start_permlink, limit, tag, observer);
   return queryOptions({
-    queryKey: QueryKeys.posts.postsRankedPage(sort, start_author, start_permlink, limit, tag, observer),
+    // Unresolved rows lack original_entry, so they must not share a cache
+    // entry with resolved ones.
+    queryKey: resolvePosts ? pageKey : ([...pageKey, "unresolved"] as unknown as typeof pageKey),
     enabled,
     queryFn: async ({ signal } = {} as any) => {
       // A taken-down tag serves NOTHING, not everything. Blanking it here used
@@ -176,7 +180,8 @@ export function getPostsRankedQueryOptions(
         limit,
         tag,
         observer,
-        signal
+        signal,
+        resolvePosts
       );
 
       return filterDmcaEntry(response ?? []) as Entry[];

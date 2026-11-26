@@ -85,6 +85,36 @@ describe("bridge requests — non-array API responses", () => {
     });
   });
 
+  describe("cross-post resolution", () => {
+    const CROSS_POST = {
+      author: "alice",
+      permlink: "xp",
+      json_metadata: { tags: ["cross-post"], original_author: "bob", original_permlink: "orig" },
+    };
+    const bridgeReads = () =>
+      mockCallRPCWithFallback.mock.calls.map(([primary]) => (primary as { method: string }).method);
+
+    it.each([
+      ["getPostsRanked", () => getPostsRanked("created", "", "", 12, "", "", undefined, false)],
+      ["getAccountPosts", () => getAccountPosts("posts", "alice", "", "", 12, "", undefined, false)],
+    ])("%s with resolve=false reads only the list, not each original", async (_, run) => {
+      mockCallRPC.mockResolvedValue([CROSS_POST]);
+      const result = await run();
+      expect(result).toHaveLength(1);
+      expect(result?.[0]?.original_entry).toBeUndefined();
+      expect(bridgeReads().filter((m) => m.includes("get_post"))).toEqual([]);
+    });
+
+    it("resolves a cross-post's original by default", async () => {
+      mockCallRPC.mockImplementation(async (method: string) =>
+        method.includes("get_post") ? { author: "bob", permlink: "orig", json_metadata: {} } : [CROSS_POST]
+      );
+      const result = await getPostsRanked("created");
+      expect(bridgeReads().some((m) => m.includes("get_post"))).toBe(true);
+      expect(result?.[0]?.original_entry?.author).toBe("bob");
+    });
+  });
+
   describe("getAccountPosts", () => {
     it("returns null and warns when the response is a truthy non-array", async () => {
       mockCallRPC.mockResolvedValue({ error: "unexpected shape" });

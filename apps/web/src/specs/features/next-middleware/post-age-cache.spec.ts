@@ -9,12 +9,15 @@ import {
 
 // Minimal mock — importing the real @ecency/sdk fails in jsdom because
 // ByteBuffer.ts uses TextEncoder at module level (not available in jsdom).
-// Only callRPC is used by post-age-cache, so a stub is sufficient.
+// Only bridgeV2Call is used by post-age-cache (its SDK setup is skipped under
+// Vitest), so a stub is sufficient.
 vi.mock("@ecency/sdk", () => ({
-  callRPC: vi.fn()
+  bridgeV2Call: vi.fn(),
+  POST_TOP_VOTES: 5,
+  ConfigManager: {}
 }));
 
-import { callRPC } from "@ecency/sdk";
+import { bridgeV2Call } from "@ecency/sdk";
 
 // Minimal stand-in for the bits of ioredis we touch on the request path.
 type FakeRedis = {
@@ -25,7 +28,7 @@ type FakeRedis = {
 describe("post-age-cache", () => {
   beforeEach(() => {
     __resetPostAgeCacheForTests();
-    vi.mocked(callRPC).mockReset();
+    vi.mocked(bridgeV2Call).mockReset();
   });
 
   afterEach(() => {
@@ -37,7 +40,7 @@ describe("post-age-cache", () => {
   });
 
   it("caches createdMs after successful refresh", async () => {
-    vi.mocked(callRPC).mockResolvedValue({ created: "2025-01-15T12:00:00" });
+    vi.mocked(bridgeV2Call).mockResolvedValue({ created: "2025-01-15T12:00:00" });
 
     await refreshPostCreatedMs("alice", "post");
 
@@ -45,15 +48,20 @@ describe("post-age-cache", () => {
   });
 
   it("passes correct RPC method, params, timeout, retries", async () => {
-    vi.mocked(callRPC).mockResolvedValue({ created: "2025-01-15T12:00:00" });
+    vi.mocked(bridgeV2Call).mockResolvedValue({ created: "2025-01-15T12:00:00" });
 
     await refreshPostCreatedMs("alice", "post");
 
-    expect(callRPC).toHaveBeenCalledWith("condenser_api.get_content", ["alice", "post"], 2000, 2);
+    // The entry page's own read, so the proxy serves both from one call.
+    expect(bridgeV2Call).toHaveBeenCalledWith(
+      "get_post",
+      { author: "alice", permlink: "post", observer: "ecency", top_votes: 5 },
+      expect.any(AbortSignal)
+    );
   });
 
   it("does not cache on transient RPC failure (allows retry)", async () => {
-    vi.mocked(callRPC).mockRejectedValue(new Error("all nodes failed"));
+    vi.mocked(bridgeV2Call).mockRejectedValue(new Error("all nodes failed"));
 
     await refreshPostCreatedMs("alice", "post");
 
@@ -64,8 +72,28 @@ describe("post-age-cache", () => {
     expect(getCachedPostCreatedMs("alice", "post")).toBeUndefined();
   });
 
+  it("negative-caches a node's answer that the post does not exist", async () => {
+    // bridge answers a missing post with an RPC error, where get_content
+    // answered a blank row: both are a definite no, not a transient failure.
+    const notFound = Object.assign(new Error("Assert Exception:Post alice/post does not exist"), { name: "RPCError" });
+    vi.mocked(bridgeV2Call).mockRejectedValue(notFound);
+
+    await refreshPostCreatedMs("alice", "post");
+
+    expect(getCachedPostCreatedMs("alice", "post")).toBeNull();
+  });
+
+  it("keeps any other RPC error transient", async () => {
+    const internal = Object.assign(new Error("Internal Error"), { name: "RPCError", code: -32603 });
+    vi.mocked(bridgeV2Call).mockRejectedValue(internal);
+
+    await refreshPostCreatedMs("alice", "post");
+
+    expect(getCachedPostCreatedMs("alice", "post")).toBeUndefined();
+  });
+
   it("negative-caches when created field is missing", async () => {
-    vi.mocked(callRPC).mockResolvedValue({});
+    vi.mocked(bridgeV2Call).mockResolvedValue({});
 
     await refreshPostCreatedMs("alice", "post");
 
@@ -73,7 +101,7 @@ describe("post-age-cache", () => {
   });
 
   it("negative-caches when result is null", async () => {
-    vi.mocked(callRPC).mockResolvedValue(null);
+    vi.mocked(bridgeV2Call).mockResolvedValue(null);
 
     await refreshPostCreatedMs("alice", "post");
 
@@ -85,8 +113,8 @@ describe("post-age-cache", () => {
     const pending = new Promise((r) => {
       resolve = r;
     });
-    vi.mocked(callRPC).mockReturnValue(
-      pending.then(() => ({ created: "2025-01-15T12:00:00" })) as ReturnType<typeof callRPC>
+    vi.mocked(bridgeV2Call).mockReturnValue(
+      pending.then(() => ({ created: "2025-01-15T12:00:00" })) as ReturnType<typeof bridgeV2Call>
     );
 
     const p1 = refreshPostCreatedMs("alice", "post");
@@ -96,11 +124,11 @@ describe("post-age-cache", () => {
     resolve!(undefined);
     await Promise.all([p1, p2, p3]);
 
-    expect(callRPC).toHaveBeenCalledTimes(1);
+    expect(bridgeV2Call).toHaveBeenCalledTimes(1);
   });
 
   it("separates cache entries by author/permlink", async () => {
-    vi.mocked(callRPC)
+    vi.mocked(bridgeV2Call)
       .mockResolvedValueOnce({ created: "2025-01-01T00:00:00" })
       .mockResolvedValueOnce({ created: "2025-06-01T00:00:00" });
 
@@ -115,7 +143,7 @@ describe("post-age-cache", () => {
 describe("awaitPostCreatedMs", () => {
   beforeEach(() => {
     __resetPostAgeCacheForTests();
-    vi.mocked(callRPC).mockReset();
+    vi.mocked(bridgeV2Call).mockReset();
   });
 
   afterEach(() => {
@@ -124,7 +152,7 @@ describe("awaitPostCreatedMs", () => {
   });
 
   it("returns L1 value without consulting Redis on hit", async () => {
-    vi.mocked(callRPC).mockResolvedValue({ created: "2025-01-15T12:00:00" });
+    vi.mocked(bridgeV2Call).mockResolvedValue({ created: "2025-01-15T12:00:00" });
     await refreshPostCreatedMs("alice", "post"); // populate L1
 
     const get = vi.fn();

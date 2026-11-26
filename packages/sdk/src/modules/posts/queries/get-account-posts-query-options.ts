@@ -75,10 +75,15 @@ export function getAccountPostsQueryOptions(
   start_permlink: string = "",
   limit = 20,
   observer = "",
-  enabled = true
+  enabled = true,
+  // false: rows only, no get_post per cross-post (see resolvePosts).
+  { resolvePosts = true }: { resolvePosts?: boolean } = {}
 ) {
+  const pageKey = QueryKeys.posts.accountPostsPage(username ?? "", filter, start_author, start_permlink, limit, observer);
   return queryOptions({
-    queryKey: QueryKeys.posts.accountPostsPage(username ?? "", filter, start_author, start_permlink, limit, observer),
+    // Unresolved rows lack original_entry, so they must not share a cache
+    // entry with resolved ones.
+    queryKey: resolvePosts ? pageKey : ([...pageKey, "unresolved"] as unknown as typeof pageKey),
     enabled: !!username && enabled,
     queryFn: async ({ signal } = {} as any) => {
       if (!username) {
@@ -92,7 +97,8 @@ export function getAccountPostsQueryOptions(
         start_permlink,
         limit,
         observer,
-        signal
+        signal,
+        resolvePosts
       );
 
       return filterDmcaEntry(response ?? []) as Entry[];

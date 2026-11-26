@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callRPC, callRPCWithFallback, resetRpcProxyBreaker, rpcProxyStats, __METHOD_FALLBACK__ } from "./call";
+import { callRPC, callRPCWithFallback, resetRpcProxyBreaker, rpcHealthTracker, rpcProxyStats, __METHOD_FALLBACK__ } from "./call";
 import { config, serverRpcProxy, setServerRpcProxy, DEFAULT_SERVER_RPC_PROXY_METHODS } from "../config";
 import { ConfigManager } from "../../modules/core/config";
 
@@ -30,6 +30,7 @@ function resetStats(): void {
   rpcProxyStats.served = 0;
   rpcProxyStats.fallback = 0;
   rpcProxyStats.skipped = 0;
+  rpcProxyStats.parkedOut = 0;
   for (const k of Object.keys(rpcProxyStats.fallbackByReason)) rpcProxyStats.fallbackByReason[k] = 0;
   resetRpcProxyBreaker();
 }
@@ -573,5 +574,109 @@ describe("server-side RPC proxy: a 404 for the primary of a fallback pair", () =
     );
     await callRPC("bridge.get_profile", { account: "a" });
     expect(rpcProxyStats.fallbackByReason.status).toBe(1);
+  });
+});
+
+describe("node parks named by the proxy", () => {
+  // Hosts of their own: a park lives in the process-wide tracker, so these
+  // must not touch the nodes the other specs use.
+  const B = "https://park-b.test:8443";
+  let parkSeq = 0;
+  const throttledNaming = (parks: string) =>
+    new Response(JSON.stringify({ error: "Upstream Rate Limited" }), {
+      status: 503,
+      headers: { "X-Ssr-Cache": "RATELIMITED", "Retry-After": "5", "X-Ssr-Node-Parks": parks }
+    });
+
+  it("falls back only to the nodes the proxy did not name, matching a non-default port", async () => {
+    const a = `https://park-a${++parkSeq}.test`;
+    config.nodes = [a, B];
+    const urls: string[] = [];
+    mockFetch(async (input, init) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) return throttledNaming(`${new URL(a).host}=4000`);
+      return rpcOk(idOf(init), { from: String(input) });
+    });
+    expect(await callRPC("bridge.get_post", { author: "a", permlink: "p" })).toEqual({ from: B });
+    expect(urls).not.toContain(a);
+    // Parked in this process too, for reads that never reach the proxy.
+    expect(rpcHealthTracker.isNodeHealthy(a)).toBe(false);
+    expect(rpcHealthTracker.isNodeHealthy(B)).toBe(true);
+  });
+
+  it("does not call any node when the proxy named every one, and counts it", async () => {
+    const a = `https://park-a${++parkSeq}.test`;
+    const b = `https://park-b${parkSeq}.test:8443`;
+    config.nodes = [a, b];
+    const urls: string[] = [];
+    mockFetch(async (input) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) {
+        return throttledNaming(`${new URL(a).host}=4000,${new URL(b).host}=4000,unrelated.test=4000`);
+      }
+      throw new Error("a parked node was called");
+    });
+    await expect(callRPC("bridge.get_post", { author: "a", permlink: "p" })).rejects.toThrow(/out of rotation/);
+    expect(urls).toEqual([PROXY]);
+    expect(rpcProxyStats.parkedOut).toBe(1);
+    expect(rpcProxyStats.fallbackByReason.ratelimited).toBe(1);
+  });
+
+  it("only a RATELIMITED answer narrows the fallback: a relayed node error still asks the nodes", async () => {
+    // A relayed RPC error (a missing post) is the node's answer, not throttling;
+    // the caller must get that answer, not a manufactured rate-limit error.
+    const a = `https://park-a${++parkSeq}.test`;
+    const b = `https://park-b${parkSeq}.test`;
+    config.nodes = [a, b];
+    const nodeCalls: string[] = [];
+    mockFetch(async (input, init) => {
+      if (String(input) === PROXY) {
+        return new Response(JSON.stringify({ error: "post does not exist" }), {
+          status: 502,
+          headers: {
+            "X-Ssr-Cache": "RPCERROR",
+            "X-Ssr-Node-Parks": `${new URL(a).host}=4000,${new URL(b).host}=4000`
+          }
+        });
+      }
+      nodeCalls.push(String(input));
+      return rpcOk(idOf(init), { from: String(input) });
+    });
+    expect(await callRPC("bridge.get_post", { author: "a", permlink: "p" })).toEqual({ from: expect.any(String) });
+    expect(nodeCalls.length).toBeGreaterThan(0);
+    expect(rpcProxyStats.parkedOut).toBe(0);
+  });
+
+  it("parks from a served answer too, never longer than a minute, and skips malformed pairs", async () => {
+    const a = `https://park-a${++parkSeq}.test`;
+    const b = `https://park-b${parkSeq}.test`;
+    config.nodes = [a, b];
+    mockFetch(async () =>
+      new Response(JSON.stringify({ ok: 1 }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ssr-Node-Parks": `${new URL(a).host}=99999999999,garbage,${new URL(b).host}=abc,=5`
+        }
+      })
+    );
+    expect(await callRPC("bridge.get_post", { author: "a", permlink: "p" })).toEqual({ ok: 1 });
+    expect(rpcHealthTracker.isNodeHealthy(a)).toBe(false);
+    expect(rpcHealthTracker.isNodeHealthy(b)).toBe(true);
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 61_000);
+    expect(rpcHealthTracker.isNodeHealthy(a)).toBe(true);
+  });
+
+  it("a park never shortens a longer one and counts no failure", () => {
+    const n = `https://park-x${++parkSeq}.test`;
+    rpcHealthTracker.recordExternalPark(n, 30_000);
+    rpcHealthTracker.recordExternalPark(n, 1_000);
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 10_000);
+    expect(rpcHealthTracker.isNodeHealthy(n)).toBe(false);
+    vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
+    // Healthy again once the park lapses: no failure streak was left behind.
+    expect(rpcHealthTracker.isNodeHealthy(n)).toBe(true);
   });
 });
