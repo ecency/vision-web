@@ -1,11 +1,5 @@
 # Changelog
 
-## 2.9.9
-
-### Patch Changes
-
-- Fewer Hive reads per post render, no fallback into throttled nodes (#2202)
-
 ## 2.9.8
 
 ### Patch Changes

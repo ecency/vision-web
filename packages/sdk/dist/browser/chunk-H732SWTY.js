@@ -1,2 +1,0 @@
-import {n}from'./chunk-NCGDSYDF.js';import {queryOptions}from'@tanstack/react-query';function p(t){return queryOptions({queryKey:["proposals","proposal",t],queryFn:async()=>{let e=(await n("condenser_api.find_proposals",[[t]]))[0];return new Date(e.start_date)<new Date&&new Date(e.end_date)>=new Date?e.status="active":new Date(e.end_date)<new Date?e.status="expired":e.status="inactive",e}})}export{p as a};//# sourceMappingURL=chunk-H732SWTY.js.map
-//# sourceMappingURL=chunk-H732SWTY.js.map

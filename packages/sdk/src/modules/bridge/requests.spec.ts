@@ -85,36 +85,6 @@ describe("bridge requests — non-array API responses", () => {
     });
   });
 
-  describe("cross-post resolution", () => {
-    const CROSS_POST = {
-      author: "alice",
-      permlink: "xp",
-      json_metadata: { tags: ["cross-post"], original_author: "bob", original_permlink: "orig" },
-    };
-    const bridgeReads = () =>
-      mockCallRPCWithFallback.mock.calls.map(([primary]) => (primary as { method: string }).method);
-
-    it.each([
-      ["getPostsRanked", () => getPostsRanked("created", "", "", 12, "", "", undefined, false)],
-      ["getAccountPosts", () => getAccountPosts("posts", "alice", "", "", 12, "", undefined, false)],
-    ])("%s with resolve=false reads only the list, not each original", async (_, run) => {
-      mockCallRPC.mockResolvedValue([CROSS_POST]);
-      const result = await run();
-      expect(result).toHaveLength(1);
-      expect(result?.[0]?.original_entry).toBeUndefined();
-      expect(bridgeReads().filter((m) => m.includes("get_post"))).toEqual([]);
-    });
-
-    it("resolves a cross-post's original by default", async () => {
-      mockCallRPC.mockImplementation(async (method: string) =>
-        method.includes("get_post") ? { author: "bob", permlink: "orig", json_metadata: {} } : [CROSS_POST]
-      );
-      const result = await getPostsRanked("created");
-      expect(bridgeReads().some((m) => m.includes("get_post"))).toBe(true);
-      expect(result?.[0]?.original_entry?.author).toBe("bob");
-    });
-  });
-
   describe("getAccountPosts", () => {
     it("returns null and warns when the response is a truthy non-array", async () => {
       mockCallRPC.mockResolvedValue({ error: "unexpected shape" });
@@ -216,19 +186,6 @@ describe("getPost on a node that serves bridge.get_post_v2", () => {
 // v1 bridge methods reject v2-only params ("got an unexpected keyword argument
 // 'top_votes'", verified live on api.hive.blog and api.deathwing.me), so the
 // same-node v1 fallback must not carry them.
-describe("bridgeV2Call: per-attempt limits", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("passes a caller's timeout and retry count through, and leaves the defaults otherwise", async () => {
-    mockCallRPCWithFallback.mockResolvedValue({ result: null, method: "bridge.get_post_v2" });
-    await bridgeV2Call("get_post", { author: "a", permlink: "p" }, undefined, undefined, { timeout: 2000, retry: 2 });
-    expect(mockCallRPCWithFallback.mock.calls[0][2]).toMatchObject({ timeout: 2000, retry: 2 });
-
-    await bridgeV2Call("get_post", { author: "a", permlink: "p" });
-    expect(mockCallRPCWithFallback.mock.calls[1][2]).toMatchObject({ timeout: undefined, retry: undefined });
-  });
-});
-
 describe("bridgeV2Call: the v1 fallback carries no v2-only params", () => {
   const ORIGINAL_NODES = [...config.nodes];
 

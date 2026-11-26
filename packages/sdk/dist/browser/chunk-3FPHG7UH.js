@@ -1,0 +1,2 @@
+import {m}from'./chunk-FFXUIWP2.js';import {queryOptions}from'@tanstack/react-query';function n(o){return queryOptions({queryKey:["proposals","votes","by-user",o],enabled:!!o&&o!=="",staleTime:60*1e3,queryFn:async()=>!o||o===""?[]:((await m("database_api.list_proposal_votes",{start:[o],limit:1e3,order:"by_voter_proposal",order_direction:"ascending",status:"votable"})).proposal_votes||[]).filter(r=>r.voter===o)})}export{n as a};//# sourceMappingURL=chunk-3FPHG7UH.js.map
+//# sourceMappingURL=chunk-3FPHG7UH.js.map

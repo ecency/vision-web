@@ -39,16 +39,14 @@ export async function bridgeV2Call<T>(
   endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion",
   params: Record<string, unknown>,
   signal?: AbortSignal,
-  onAnswer?: (node: string) => void,
-  /** Per-attempt timeout (ms) and retry count; the SDK defaults when omitted. */
-  limits: { timeout?: number; retry?: number } = {}
+  onAnswer?: (node: string) => void
 ): Promise<T> {
   const v1Params: Record<string, unknown> = { ...params };
   for (const key of BRIDGE_V2_ONLY_PARAMS) delete v1Params[key];
   const { result } = await callRPCWithFallback<T>(
     { method: `bridge.${endpoint}_v2`, params },
     { method: `bridge.${endpoint}`, params: v1Params },
-    { signal, onAnswer, timeout: limits.timeout, retry: limits.retry }
+    { signal, onAnswer }
   );
   return result;
 }
@@ -86,22 +84,8 @@ export async function resolvePost(
   return { ...post, num };
 }
 
-/**
- * Normalize a page of bridge rows and, when `resolve` is set, attach each
- * cross-post's original (one get_post per cross-post on the page). A caller
- * that shows only the row itself (author, permlink, title, thumbnail) passes
- * false and skips those extra reads.
- */
-async function resolvePosts(
-  posts: Entry[],
-  observer: string,
-  signal?: AbortSignal,
-  resolve = true
-): Promise<Entry[]> {
+async function resolvePosts(posts: Entry[], observer: string, signal?: AbortSignal): Promise<Entry[]> {
   const validatedPosts = posts.map((p) => validateEntry(normalizeEntry(p, observer)));
-  if (!resolve) {
-    return filterDmcaEntry(validatedPosts) as Entry[];
-  }
   const resolved = await Promise.all(validatedPosts.map((p) => resolvePost(p, observer, undefined, signal)));
   return filterDmcaEntry(resolved) as Entry[];
 }
@@ -113,8 +97,7 @@ export async function getPostsRanked(
   limit: number = 20,
   tag: string = "",
   observer: string = "",
-  signal?: AbortSignal,
-  resolve = true
+  signal?: AbortSignal
 ): Promise<Entry[] | null> {
   const resp = await bridgeV2Call<Entry[] | null>("get_ranked_posts", {
     sort,
@@ -126,7 +109,7 @@ export async function getPostsRanked(
   }, signal);
 
   if (Array.isArray(resp)) {
-    return resolvePosts(resp, observer, signal, resolve);
+    return resolvePosts(resp, observer, signal);
   }
 
   if (resp != null) {
@@ -145,8 +128,7 @@ export async function getAccountPosts(
   start_permlink: string = "",
   limit: number = 20,
   observer: string = "",
-  signal?: AbortSignal,
-  resolve = true
+  signal?: AbortSignal
 ): Promise<Entry[] | null> {
   if (CONFIG.dmcaAccounts.includes(account)) {
     return [];
@@ -162,7 +144,7 @@ export async function getAccountPosts(
   }, signal);
 
   if (Array.isArray(resp)) {
-    return resolvePosts(resp, observer, signal, resolve);
+    return resolvePosts(resp, observer, signal);
   }
 
   if (resp != null) {

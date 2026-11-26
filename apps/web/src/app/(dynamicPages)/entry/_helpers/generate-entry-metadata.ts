@@ -1,11 +1,6 @@
 import { parseDate, safeDecodeURIComponent } from "@/utils";
 import { entryCanonical } from "@/utils/entry-canonical";
-import {
-  isIndexable,
-  ReputationSource,
-  threadRoot,
-  withoutDeclaredCanonical
-} from "@/utils/entry-indexability";
+import { isIndexable, ReputationSource, threadRoot } from "@/utils/entry-indexability";
 import { isTakenDownPost } from "@/core/dmca-posts";
 import { isValidPermlink } from "@ecency/render-helper";
 import { buildEntryCardFields } from "./entry-card-fields";
@@ -33,48 +28,36 @@ export async function generateEntryMetadata(
   try {
     const cleanAuthor = username.replace(/%40/g, "");
 
-    // The author's profile, from the URL so it does not wait for the post. The
-    // page prefetches this same query (same key) in the same request, so the
-    // render makes one profile lookup for both.
-    const profilesPromise = prefetchQuery(getProfilesQueryOptions([cleanAuthor]));
-
-    // The post, from the same query the page prefetches (same key, same
-    // arguments: the page passes the raw permlink too), so React Query runs it
-    // once per render. The one thing bridge.get_post omits is root_author /
-    // root_permlink, which canonical and the container-tree check need for a
-    // reply two or more levels deep (a post is its own root and a direct
-    // reply's parent is its root, see threadRoot). Only then is
-    // condenser_api.get_content read, for those two fields.
-    let entry: Entry | null | undefined = await prefetchQuery(
-      EcencyEntriesCacheManagement.getEntryQueryByPath(cleanAuthor, permlink)
-    );
-    if (!entry || !entry.body || !entry.created) {
-      console.warn("generateEntryMetadata: post lookup failed", {
-        username,
-        permlink: cleanPermlink
+    // Source from condenser_api.get_content first: it returns root_author /
+    // root_permlink (needed to canonical replies to their discussion root and
+    // to detect container/wave trees), which bridge.get_post omits. This is
+    // fetch-count-neutral — bridge is the fallback, already trusted here.
+    let entry = null;
+    try {
+      // Not marked on its own: the bridge prefetch below marks the response
+      // only if it fails too.
+      entry = await prefetchQuery(getContentQueryOptions(cleanAuthor, cleanPermlink), {
+        degradeOnFailure: false
       });
-      return {};
+    } catch (e) {
+      console.warn("generateEntryMetadata: get_content failed, trying bridge", e);
     }
-    if (!threadRoot(entry)) {
-      try {
-        // Not marked on its own: an incomplete thread is marked just below.
-        // condenser's row carries root_*, which the SDK's Entry type omits.
-        const content = (await prefetchQuery(getContentQueryOptions(cleanAuthor, cleanPermlink), {
-          degradeOnFailure: false
-        })) as { root_author?: string; root_permlink?: string } | null | undefined;
-        if (content?.root_author && content.root_permlink) {
-          entry = { ...entry, root_author: content.root_author, root_permlink: content.root_permlink };
-        }
-      } catch (e) {
-        console.warn("generateEntryMetadata: get_content failed for a deep reply", e);
+
+    if (!entry || !entry.body || !entry.created) {
+      entry = await prefetchQuery(
+        EcencyEntriesCacheManagement.getEntryQueryByPath(cleanAuthor, cleanPermlink)
+      );
+      if (!entry || !entry.body || !entry.created) {
+        console.warn("generateEntryMetadata: both content sources failed", {
+          username,
+          permlink: cleanPermlink
+        });
+        return {};
       }
-      // Without its root a deeper reply has no canonical and would be
-      // noindexed, which must not be cached for the entry tier.
-      if (!threadRoot(entry)) markSsrDegraded("fallback-incomplete");
+      // bridge omits root_*: a deeper reply served from it has no canonical
+      // and would be noindexed, which must not be cached for the entry tier.
+      if (!threadRoot(entry as Entry)) markSsrDegraded("fallback-incomplete");
     }
-    // bridge hands json_metadata over parsed, so a declared canonical_url would
-    // now reach canonicalTarget; the page keeps its own (see its ⛔ note).
-    entry = withoutDeclaredCanonical(entry);
 
     // Shared with the oEmbed provider so the meta-tag card and the oEmbed
     // card can never drift (title/summary/image rules live in one place).
@@ -99,7 +82,9 @@ export async function generateEntryMetadata(
     let accountFetchFailed = false;
 
     try {
-      const profiles = await profilesPromise;
+      const profiles = await prefetchQuery(
+        getProfilesQueryOptions([entry.author])
+      );
       authorAccount = profiles?.[0] ?? null;
     } catch (e) {
       accountFetchFailed = true;
@@ -107,8 +92,8 @@ export async function generateEntryMetadata(
     }
 
     // The takedown decides before the gate does, for the same reason
-    // loadIndexableEntry checks first: the post queries this reads now filter,
-    // and the filter blanks the metadata and the title and
+    // loadIndexableEntry checks first: this reads getContentQueryOptions, which
+    // now filters, and the filter blanks the metadata and the title and
     // replaces the body with the notice. That removes two of isNsfwEntry's
     // three signals and lifts the body over the thin-content floor, so a
     // listed post that used to be noindex would become indexable, and would
