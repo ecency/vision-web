@@ -53,6 +53,50 @@ describe("TradingViewWidget", () => {
     expect(container.querySelectorAll(".tradingview-widget-host")).toHaveLength(1);
   });
 
+  it.each([
+    {
+      name: "theme",
+      change: () => {
+        store.theme = "night";
+      },
+      before: { theme: "light" },
+      after: { theme: "dark" }
+    },
+    {
+      name: "locale",
+      change: () => {
+        store.lang = "es-ES";
+      },
+      before: { locale: "en-US" },
+      after: { locale: "es-ES" }
+    }
+  ])("re-initialises the chart when only $name changes", ({ change, before, after }) => {
+    const { container, rerender } = render(<TradingViewWidget symbol="HIVE" />);
+    const [first] = scripts(container);
+    const firstHost = container.querySelector(".tradingview-widget-host");
+    expect(JSON.parse(first.textContent ?? "{}")).toMatchObject(before);
+
+    change();
+    act(() => {
+      rerender(<TradingViewWidget symbol="HIVE" />);
+    });
+
+    // Host replaced, old script detached from the document but still parented.
+    const hosts = container.querySelectorAll(".tradingview-widget-host");
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]).not.toBe(firstHost);
+    expect(container.contains(first)).toBe(false);
+    expect(first.parentNode).not.toBeNull();
+
+    const current = scripts(container);
+    expect(current).toHaveLength(1);
+    expect(current[0]).not.toBe(first);
+    expect(JSON.parse(current[0].textContent ?? "{}")).toMatchObject({
+      symbol: "CRYPTO:HIVEUSD",
+      ...after
+    });
+  });
+
   it("keeps the script parented after unmount", () => {
     const { container, unmount } = render(<TradingViewWidget symbol="HIVE" />);
     const [first] = scripts(container);
