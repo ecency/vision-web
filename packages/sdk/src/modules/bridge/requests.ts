@@ -84,8 +84,22 @@ export async function resolvePost(
   return { ...post, num };
 }
 
-async function resolvePosts(posts: Entry[], observer: string, signal?: AbortSignal): Promise<Entry[]> {
+/**
+ * Normalize a page of bridge rows and, when `resolve` is set, attach each
+ * cross-post's original (one get_post per cross-post on the page). A caller
+ * that shows only the row itself (author, permlink, title, thumbnail) passes
+ * false and skips those extra reads.
+ */
+async function resolvePosts(
+  posts: Entry[],
+  observer: string,
+  signal?: AbortSignal,
+  resolve = true
+): Promise<Entry[]> {
   const validatedPosts = posts.map((p) => validateEntry(normalizeEntry(p, observer)));
+  if (!resolve) {
+    return filterDmcaEntry(validatedPosts) as Entry[];
+  }
   const resolved = await Promise.all(validatedPosts.map((p) => resolvePost(p, observer, undefined, signal)));
   return filterDmcaEntry(resolved) as Entry[];
 }
@@ -97,7 +111,8 @@ export async function getPostsRanked(
   limit: number = 20,
   tag: string = "",
   observer: string = "",
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  resolve = true
 ): Promise<Entry[] | null> {
   const resp = await bridgeV2Call<Entry[] | null>("get_ranked_posts", {
     sort,
@@ -109,7 +124,7 @@ export async function getPostsRanked(
   }, signal);
 
   if (Array.isArray(resp)) {
-    return resolvePosts(resp, observer, signal);
+    return resolvePosts(resp, observer, signal, resolve);
   }
 
   if (resp != null) {
@@ -128,7 +143,8 @@ export async function getAccountPosts(
   start_permlink: string = "",
   limit: number = 20,
   observer: string = "",
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  resolve = true
 ): Promise<Entry[] | null> {
   if (CONFIG.dmcaAccounts.includes(account)) {
     return [];
@@ -144,7 +160,7 @@ export async function getAccountPosts(
   }, signal);
 
   if (Array.isArray(resp)) {
-    return resolvePosts(resp, observer, signal);
+    return resolvePosts(resp, observer, signal, resolve);
   }
 
   if (resp != null) {

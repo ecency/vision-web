@@ -137,9 +137,10 @@ const isContainerAnchorPost = (entry: Entry): boolean =>
 
 /** Cheap media-presence check — any image/video signal ⇒ has media (pass). */
 const hasMedia = (entry: Entry): boolean => {
-  // Parsed for the same reason as the NSFW gate: on the entry page this value
-  // arrives as a raw string from condenser_api, so the metadata signal was
-  // never read and a media-only post leaned on the body regexes alone.
+  // Parsed for the same reason as the NSFW gate: this value arrives in both
+  // shapes (a raw string from condenser_api, an object from bridge), and read
+  // off the string the metadata signal was never seen, so a media-only post
+  // leaned on the body regexes alone.
   if (metaStringList(parseJsonMetadata(entry.json_metadata)?.image).length > 0) return true;
   const body = entry.body || "";
   return (
@@ -159,6 +160,21 @@ const hasMedia = (entry: Entry): boolean => {
  */
 const isEffectivelyEmpty = (entry: Entry): boolean =>
   plainBodyLen(entry) < EFFECTIVELY_EMPTY_MAX_BODY && !hasMedia(entry);
+
+/**
+ * The entry with any declared json_metadata.canonical_url removed (a copy; the
+ * input is never mutated, it may be the cached entry the page renders). The
+ * entry page reads bridge.get_post, which hands json_metadata over parsed, so
+ * without this canonicalTarget would honor the declared URL there. It used to
+ * read condenser's raw string, which hid the field; see the ⛔ note in
+ * canonicalTarget for why the page must keep its own canonical.
+ */
+export function withoutDeclaredCanonical<T extends Pick<Entry, "json_metadata">>(entry: T): T {
+  const meta = entry.json_metadata as unknown;
+  if (!meta || typeof meta !== "object" || !("canonical_url" in meta)) return entry;
+  const { canonical_url: _declared, ...rest } = meta as Record<string, unknown>;
+  return { ...entry, json_metadata: rest as T["json_metadata"] };
+}
 
 /**
  * The canonical URL for an entry, or null when it has no canonical target and
@@ -187,11 +203,12 @@ export function canonicalTarget(
   // Sitemap mode never looks at json_metadata.canonical_url — see doc above.
   //
   // ⛔ Deliberately NOT parsed, unlike every other json_metadata reader on this
-  // request. On the entry page the value arrives as a raw string, so this branch
-  // does not fire and the page keeps emitting its own canonical. Parsing here
-  // would hand rel=canonical to third-party frontends for a large share of posts
-  // in one deploy, which is a product decision and not a cleanup: do not "fix"
-  // it in passing.
+  // request. The entry page (metadata and JSON-LD) passes its entry through
+  // withoutDeclaredCanonical first, so this branch does not fire there and the
+  // page keeps emitting its own canonical. Honoring it there would hand
+  // rel=canonical to third-party frontends for a large share of posts in one
+  // deploy, which is a product decision and not a cleanup: do not "fix" it in
+  // passing.
   const declared = ignoreDeclaredCanonical
     ? undefined
     : entry.json_metadata?.canonical_url;

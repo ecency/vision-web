@@ -36,12 +36,19 @@
  *     L1+RPC. Bounded reconnect with singleton reset on `end` so transient
  *     Redis outages self-heal without requiring a vision_web restart.
  *   - Bounded L1: FIFO eviction at MAX_ENTRIES.
- *   - Uses `callRPC` from @ecency/sdk for the upstream lookup. Tree-shakes
- *     to just the RPC call logic with built-in node failover and per-node
- *     health tracking.
+ *   - The upstream lookup is the entry page's own post read (bridge get_post,
+ *     same params), sent through the server RPC proxy. The middleware runs in
+ *     its own bundle with its own SDK copy, so the proxy and the node pool are
+ *     configured here as well. A cold post's lookup then coalesces in the
+ *     proxy with the render that follows it, instead of being one more read
+ *     sent to the nodes directly.
  */
 
-import { callRPC } from "@ecency/sdk";
+import { bridgeV2Call, ConfigManager, POST_TOP_VOTES } from "@ecency/sdk";
+import { DEFAULT_OBSERVER } from "@/consts/observer";
+import { enableServerRpcProxy } from "@/core/server-rpc-proxy";
+import { isHiveNotFoundError } from "@/utils/hive-not-found-error";
+import publicNodes from "../../../public/public-nodes.json";
 import Redis, { type Redis as RedisClient } from "ioredis";
 
 const MAX_ENTRIES = 2000;
@@ -52,6 +59,14 @@ const FETCH_RETRIES = 2;
 // sub-ms when healthy; 50ms protects middleware from a degraded Redis without
 // regressing to today's behavior (we just fall through to entry-unknown).
 const REQUEST_PATH_REDIS_TIMEOUT_MS = 50;
+
+// This module is the middleware's only Hive reader; under Vitest the SDK is
+// left alone so specs control it.
+if (!process.env.VITEST) {
+  ConfigManager.setHiveNodes(publicNodes);
+  ConfigManager.setUserAgent("ecency-web-ssr (+https://ecency.com)");
+  enableServerRpcProxy("rpc-proxy:middleware");
+}
 
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
 const REDIS_KEY_PREFIX = "postage:";
@@ -277,12 +292,21 @@ async function fetchPostCreatedMs(
   author: string,
   permlink: string
 ): Promise<number | null> {
-  const result = (await callRPC(
-    "condenser_api.get_content",
-    [author, permlink],
-    FETCH_TIMEOUT_MS,
-    FETCH_RETRIES
-  )) as { created?: string } | null | undefined;
+  let result: { created?: string } | null | undefined;
+  try {
+    // Exactly the entry page's read (getPostQueryOptions): same method, same
+    // params, so the proxy answers both from one upstream call.
+    result = await bridgeV2Call<{ created?: string } | null>(
+      "get_post",
+      { author, permlink: permlink.trim(), observer: DEFAULT_OBSERVER, top_votes: POST_TOP_VOTES },
+      AbortSignal.timeout(FETCH_TIMEOUT_MS * (FETCH_RETRIES + 1))
+    );
+  } catch (e) {
+    // A node's answer that the post does not exist is a definite "no", the same
+    // as get_content's blank row was; anything else stays transient.
+    if (isHiveNotFoundError(e)) return null;
+    throw e;
+  }
 
   const createdStr = result?.created;
   if (!createdStr) return null;
