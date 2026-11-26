@@ -1,2 +1,0 @@
-import {i}from'./chunk-3ZTGH7SD.js';import {useMutation}from'@tanstack/react-query';function s(t,r){return useMutation({mutationKey:["posts","images","upload"],mutationFn:async({file:i$1,token:a,signal:n})=>i(i$1,a,n),onSuccess:t,onError:r})}export{s as a};//# sourceMappingURL=chunk-2K2AQYDS.js.map
-//# sourceMappingURL=chunk-2K2AQYDS.js.map

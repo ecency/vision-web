@@ -1,0 +1,2 @@
+import {b}from'./chunk-T2HQJUQG.js';import {a}from'./chunk-DGZJKXXC.js';import {queryOptions}from'@tanstack/react-query';function m(s,e){let r=s?.replace("@","");return queryOptions({queryKey:a.newsletter.subscriptions(r),enabled:!!r&&!!e,queryFn:async()=>{if(!e)throw new Error("[SDK][Newsletter] \u2013 missing auth");return b(e)},staleTime:6e4,retry:false})}export{m as a};//# sourceMappingURL=chunk-LOJ3CVUV.js.map
+//# sourceMappingURL=chunk-LOJ3CVUV.js.map

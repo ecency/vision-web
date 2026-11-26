@@ -1,0 +1,2 @@
+import {b}from'./chunk-KCICGWDR.js';import {f}from'./chunk-L4Q4QPBK.js';import {a}from'./chunk-DGZJKXXC.js';import {n}from'./chunk-NCGDSYDF.js';import {queryOptions}from'@tanstack/react-query';function u(t,r){return queryOptions({queryKey:a.posts.contentReplies(t,r),enabled:!!t&&!!r,queryFn:async()=>{let s=await n("condenser_api.get_content_replies",{author:t,permlink:r});return b((s??[]).map(m=>f(m,"",{completeVoteList:true})))}})}export{u as a};//# sourceMappingURL=chunk-O3QGQBA3.js.map
+//# sourceMappingURL=chunk-O3QGQBA3.js.map
