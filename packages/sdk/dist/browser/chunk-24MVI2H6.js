@@ -1,2 +1,0 @@
-import {c}from'./chunk-JCA2MDMY.js';import {queryOptions}from'@tanstack/react-query';function n(r){return queryOptions({queryKey:["promotions","promote-price"],queryFn:async()=>{let o=await fetch(c.privateApiHost+"/private-api/promote-price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:r})});if(!o.ok)throw new Error(`Failed to fetch promote prices: ${o.status}`);return await o.json()},enabled:!!r})}export{n as a};//# sourceMappingURL=chunk-24MVI2H6.js.map
-//# sourceMappingURL=chunk-24MVI2H6.js.map
