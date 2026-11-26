@@ -21,6 +21,7 @@ import defaults from "@/defaults.json";
 import { getServerAppBase } from "@/utils/server-app-base";
 import { entryCanonical } from "@/utils/entry-canonical";
 import { withoutDeclaredCanonical } from "@/utils/entry-indexability";
+import { safeDecodeURIComponent } from "@/utils/safe-decode-uri";
 import { JsonLd, buildArticleJsonLd, buildBreadcrumbJsonLd } from "@/features/structured-data";
 import {
   EntryPageContextProvider,
@@ -60,10 +61,9 @@ interface Props {
 // there are or where they sit, so a reshaped key (say ["posts","v2","content",…])
 // still yields the right discriminator.
 //
-// Matching the family rather than one exact key is deliberate: generateMetadata
-// resolves the permlink with safeDecodeURIComponent().trim() while this page uses
-// the raw param, so an exact-key comparison would silently miss whenever those
-// differ and let the duplicate copy back in.
+// Matching the family rather than one exact key is deliberate: it does not
+// depend on generateMetadata and this page normalizing the permlink identically,
+// so a future drift between them cannot silently let the duplicate copy back in.
 const METADATA_CONTENT_KEY_PREFIX = (() => {
   const a = QueryKeys.posts.content("\u0000a", "\u0000b");
   const b = QueryKeys.posts.content("\u0000c", "\u0000d");
@@ -147,7 +147,13 @@ export default async function EntryPage({ params, searchParams }: Props) {
   // (useViewerVote). Reading the cookie costs nothing here: this route already
   // awaits searchParams, so it renders dynamically regardless.
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
-  const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink);
+  // The same normalized permlink generateEntryMetadata reads with, so the two
+  // share one query (one post read per render), and an encoded permlink in the
+  // URL resolves to the post rather than to a miss.
+  const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(
+    author,
+    safeDecodeURIComponent(permlink).trim()
+  );
   const [fetchedEntry, profiles] = await Promise.all([
     prefetchQuery(entryQueryOptions),
     // The author's bridge profile: the same query (same key) generateMetadata

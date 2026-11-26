@@ -211,6 +211,13 @@ describe("generateEntryMetadata reads the page's bridge query", () => {
     expect((meta.openGraph as { url?: string } | undefined)?.url).toBe("https://ecency.com/@alice/a-post");
   });
 
+  it("reads the post by the decoded permlink, so an encoded URL still resolves", async () => {
+    serveBridgeFirst(ROOT_POST);
+    const meta = await generateEntryMetadata("alice", "%61-post");
+    expect((callFor("bridge")?.[0] as { queryKey: string[] }).queryKey).toEqual(["bridge", "alice", "a-post"]);
+    expect(meta.title).toBeDefined();
+  });
+
   it("returns no metadata when the post cannot be read", async () => {
     prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) =>
       (options.queryKey as string[])[0] === "profiles" ? [] : undefined

@@ -39,14 +39,14 @@ export async function generateEntryMetadata(
     const profilesPromise = prefetchQuery(getProfilesQueryOptions([cleanAuthor]));
 
     // The post, from the same query the page prefetches (same key, same
-    // arguments: the page passes the raw permlink too), so React Query runs it
-    // once per render. The one thing bridge.get_post omits is root_author /
+    // arguments: the page normalizes the permlink the same way), so React
+    // Query runs it once per render. The one thing bridge.get_post omits is root_author /
     // root_permlink, which canonical and the container-tree check need for a
     // reply two or more levels deep (a post is its own root and a direct
     // reply's parent is its root, see threadRoot). Only then is
     // condenser_api.get_content read, for those two fields.
     let entry: Entry | null | undefined = await prefetchQuery(
-      EcencyEntriesCacheManagement.getEntryQueryByPath(cleanAuthor, permlink)
+      EcencyEntriesCacheManagement.getEntryQueryByPath(cleanAuthor, cleanPermlink)
     );
     if (!entry || !entry.body || !entry.created) {
       console.warn("generateEntryMetadata: post lookup failed", {
