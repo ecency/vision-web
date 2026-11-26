@@ -86,6 +86,15 @@ describe("post-age-cache", () => {
     expect(getCachedPostCreatedMs("alice", "post")).toBeNull();
   });
 
+  it("negative-caches a node's answer that the post was deleted", async () => {
+    const deleted = Object.assign(new Error("Assert Exception:Post alice/post was deleted"), { name: "RPCError" });
+    vi.mocked(bridgeV2Call).mockRejectedValue(deleted);
+
+    await refreshPostCreatedMs("alice", "post");
+
+    expect(getCachedPostCreatedMs("alice", "post")).toBeNull();
+  });
+
   it("keeps any other RPC error transient", async () => {
     const internal = Object.assign(new Error("Internal Error"), { name: "RPCError", code: -32603 });
     vi.mocked(bridgeV2Call).mockRejectedValue(internal);

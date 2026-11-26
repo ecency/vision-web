@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callRPC, callWithQuorum, nodeCallCounts } from "./call";
+import { callRPC, callRPCBatch, callWithQuorum, nodeCallCounts } from "./call";
 import { config, setServerRpcProxy } from "../config";
 
 const ORIGINAL_NODES = [...config.nodes];
@@ -48,5 +48,37 @@ describe("per-node request counts", () => {
     const counts = nodeCallCounts();
     expect(counts[a].failed).toBeGreaterThanOrEqual(1);
     expect(counts[b].ok).toBeGreaterThanOrEqual(2);
+  });
+
+  it("counts a 200 whose body does not parse as failed, and an RPC error reply as answered", async () => {
+    const a = `https://count-a${++seq}.test`;
+    const b = `https://count-b${seq}.test`;
+    config.nodes = [a, b];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === a) return new Response("<html>oops", { status: 200 });
+      const id = (JSON.parse(String(init?.body)) as { id: number }).id;
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32602, message: "Assert Exception:Post a/b does not exist" } }), {
+        status: 200
+      });
+    });
+    await callRPC("condenser_api.get_content", ["a", "b"]).catch(() => undefined);
+    const counts = nodeCallCounts();
+    expect(counts[a]).toEqual({ ok: 0, failed: 1, rateLimited: 0 });
+    expect(counts[b].ok).toBeGreaterThanOrEqual(1);
+    expect(counts[b].failed).toBe(0);
+  });
+
+  it("counts one batch request once", async () => {
+    const a = `https://count-a${++seq}.test`;
+    config.nodes = [a];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const reqs = JSON.parse(String(init?.body)) as Array<{ id: number }>;
+      return new Response(JSON.stringify(reqs.map((r) => ({ jsonrpc: "2.0", id: r.id, result: 1 }))), { status: 200 });
+    });
+    await callRPCBatch([
+      { method: "condenser_api.get_accounts", params: [["x"]] },
+      { method: "condenser_api.get_accounts", params: [["y"]] }
+    ]);
+    expect(nodeCallCounts()[a]).toEqual({ ok: 1, failed: 0, rateLimited: 0 });
   });
 });

@@ -68,6 +68,10 @@ if (!process.env.VITEST) {
   enableServerRpcProxy("rpc-proxy:middleware");
 }
 
+// bridge's answer for a post that was deleted (not covered by
+// isHiveNotFoundError, which pages also use to decide on a 404).
+const DELETED_POST = /Assert Exception:\s*Post \S+ was deleted/i;
+
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
 const REDIS_KEY_PREFIX = "postage:";
 // Skip Redis under Vitest so unit tests don't open real TCP connections.
@@ -306,9 +310,13 @@ async function fetchPostCreatedMs(
       { timeout: FETCH_TIMEOUT_MS, retry: FETCH_RETRIES }
     );
   } catch (e) {
-    // A node's answer that the post does not exist is a definite "no", the same
-    // as get_content's blank row was; anything else stays transient.
-    if (isHiveNotFoundError(e)) return null;
+    // A node's answer that the post does not exist, or was deleted, is a
+    // definite "no", the same as get_content's blank row was; anything else
+    // stays transient. Like that row, it is only an L1 negative entry (five
+    // minutes, never shared through Redis), because one node may simply lag.
+    if (isHiveNotFoundError(e) || DELETED_POST.test(String((e as { message?: unknown })?.message ?? ""))) {
+      return null;
+    }
     throw e;
   }
 

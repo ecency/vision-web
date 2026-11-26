@@ -1,2 +1,0 @@
-import {a}from'./chunk-MAZYFB6X.js';function o(r,e,t){let n=r.trim().toLowerCase();return a(`ecency-recovery:${n}:${e}:${t}`)}function g(r,e,t,n){return r.sign(o(e,t,n)).customToString()}export{o as a,g as b};//# sourceMappingURL=chunk-CSD3DVCG.js.map
-//# sourceMappingURL=chunk-CSD3DVCG.js.map

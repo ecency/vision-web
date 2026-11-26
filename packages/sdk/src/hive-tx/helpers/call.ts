@@ -1426,20 +1426,19 @@ const jsonRPCCall = async (
     cleanupMerge()
   }
 
+  let sent = false
+  let outcome: keyof NodeCallCount = 'failed'
   try {
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
-        signal
-      })
-    } catch (e) {
-      countNodeCall(url, 'failed')
-      throw e
-    }
-    countNodeCall(url, res.status === 429 ? 'rateLimited' : res.status >= 500 ? 'failed' : 'ok')
+    // Counted once, in `finally`: `ok` only once a well-formed reply has been
+    // read, so a 200 whose body stalls or does not parse counts as failed.
+    sent = true
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
+      signal
+    })
+    if (res.status === 429) outcome = 'rateLimited'
 
     // Handle HTTP-level errors before parsing JSON.
     // Throw NodeError so callers can record health exactly once.
@@ -1488,6 +1487,8 @@ const jsonRPCCall = async (
     ) {
       throw new Error('JSONRPC id mismatch')
     }
+    // A well-formed reply to this request: answered, an RPC error included.
+    outcome = 'ok'
     if ('result' in result) {
       return result.result
     }
@@ -1516,6 +1517,7 @@ const jsonRPCCall = async (
     }
     throw e
   } finally {
+    if (sent) countNodeCall(url, outcome)
     cleanup()
   }
 }
@@ -2406,20 +2408,19 @@ async function jsonRPCBatchCall<T>(
   const body = calls.map((c, i) => ({ jsonrpc: '2.0', method: c.method, params: c.params, id: base + i }))
   const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(timeout)
   const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
+  let sent = false
+  let outcome: keyof NodeCallCount = 'failed'
   try {
-    let res: Response
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
-        signal
-      })
-    } catch (e) {
-      countNodeCall(url, 'failed')
-      throw e
-    }
-    countNodeCall(url, res.status === 429 ? 'rateLimited' : res.status >= 500 ? 'failed' : 'ok')
+    // Counted once, in `finally`: `ok` only once a well-formed reply has been
+    // read, so a 200 whose body stalls or does not parse counts as failed.
+    sent = true
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
+      signal
+    })
+    if (res.status === 429) outcome = 'rateLimited'
     const release = async () => {
       // An unconsumed body pins a pooled connection.
       try {
@@ -2462,6 +2463,8 @@ async function jsonRPCBatchCall<T>(
       }
     }
     const parsed: unknown = parsedBody !== undefined ? parsedBody : await res.json()
+    // A JSON-RPC answer (an array, or a whole-batch error object): answered.
+    if (Array.isArray(parsed) || rpcErrorOf(parsed) !== undefined) outcome = 'ok'
     if (!Array.isArray(parsed)) {
       const e = rpcErrorOf(parsed)
       if (e) {
@@ -2485,6 +2488,7 @@ async function jsonRPCBatchCall<T>(
       return { error: e ? new RPCError(e) : new Error(String(message ?? item.error)) }
     })
   } finally {
+    if (sent) countNodeCall(url, outcome)
     cleanupTimeout()
     cleanupMerge()
   }

@@ -1,0 +1,2 @@
+import {n}from'./chunk-SZIQ6UF7.js';import {queryOptions}from'@tanstack/react-query';function s(r){return queryOptions({queryKey:["wallet","open-orders",r],queryFn:()=>n("condenser_api.get_open_orders",[r]),select:o=>o.sort((t,n)=>t.orderid-n.orderid),enabled:!!r})}export{s as a};//# sourceMappingURL=chunk-N6KOKLIR.js.map
+//# sourceMappingURL=chunk-N6KOKLIR.js.map
