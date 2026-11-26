@@ -8,7 +8,7 @@ import {
   setResilience as setHiveTxResilience,
   setServerRpcProxy as setHiveTxServerRpcProxy,
   rpcProxyStats,
-  rpcHealthTracker,
+  nodeCallCounts,
   type ResilienceOptions,
   type ServerRpcProxyOptions,
 } from "../../hive-tx";
@@ -363,11 +363,11 @@ export namespace ConfigManager {
 
   /**
    * What this process sent to each Hive node itself (outside the server proxy):
-   * lifetime answers per node URL, by outcome. Read by a periodic report so a
+   * lifetime requests per node URL, by outcome (answered, 429, failed). Read by a periodic report so a
    * host's direct node traffic can be added to the proxy's.
    */
   export function getNodeCallCounts(): Record<string, { ok: number; failed: number; rateLimited: number }> {
-    return rpcHealthTracker.callCounts();
+    return nodeCallCounts();
   }
 
   /**

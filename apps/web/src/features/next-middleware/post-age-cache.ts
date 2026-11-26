@@ -299,7 +299,11 @@ async function fetchPostCreatedMs(
     result = await bridgeV2Call<{ created?: string } | null>(
       "get_post",
       { author, permlink: permlink.trim(), observer: DEFAULT_OBSERVER, top_votes: POST_TOP_VOTES },
-      AbortSignal.timeout(FETCH_TIMEOUT_MS * (FETCH_RETRIES + 1))
+      AbortSignal.timeout(FETCH_TIMEOUT_MS * (FETCH_RETRIES + 1)),
+      undefined,
+      // Per attempt, as before: a stalled node must not use up the whole budget
+      // before the next one is tried.
+      { timeout: FETCH_TIMEOUT_MS, retry: FETCH_RETRIES }
     );
   } catch (e) {
     // A node's answer that the post does not exist is a definite "no", the same
