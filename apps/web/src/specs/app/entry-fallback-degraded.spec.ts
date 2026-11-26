@@ -1,9 +1,13 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Both entry loaders read condenser get_content first and fall back to
-// bridge.get_post. The first source must not mark the response degraded on
+// loadEntry (agent endpoints) reads condenser get_content first and falls back
+// to bridge.get_post. The first source must not mark the response degraded on
 // its own; the fallback keeps the default, so it marks when it fails too.
+//
+// generateEntryMetadata reads the page's own bridge query (one lookup per
+// render) and asks condenser only for a reply too deep for bridge to name its
+// thread root.
 const { prefetchQuery, markSsrDegraded } = vi.hoisted(() => ({
   prefetchQuery: vi.fn(),
   markSsrDegraded: vi.fn()
@@ -85,10 +89,7 @@ const serveFromCondenser = () =>
     return [{ name: author, reputation: 70, post_count: 120 }];
   });
 
-const LOADERS = [
-  ["generateEntryMetadata", () => generateEntryMetadata("alice", "a-post")],
-  ["loadEntry", () => loadEntry("alice", "a-post")]
-] as const;
+const LOADERS = [["loadEntry", () => loadEntry("alice", "a-post")]] as const;
 
 const callFor = (kind: string) =>
   prefetchQuery.mock.calls.find(
@@ -139,5 +140,89 @@ describe("entry loaders with a condenser -> bridge fallback", () => {
     await run();
     expect(callFor("bridge")).toBeUndefined();
     expect(markSsrDegraded).not.toHaveBeenCalled();
+  });
+});
+
+// bridge answers with `thread`; condenser answers `content` (undefined = failed).
+const serveBridgeFirst = (thread: Record<string, unknown>, content?: Record<string, unknown>) =>
+  prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) => {
+    const [kind, author, permlink] = options.queryKey as string[];
+    if (kind === "bridge") return post(author, permlink, thread);
+    if (kind === "condenser") return content && post(author, permlink, { ...thread, ...content });
+    return [{ name: author, reputation: 70, post_count: 120 }];
+  });
+
+describe("generateEntryMetadata reads the page's bridge query", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const run = () => generateEntryMetadata("alice", "a-post");
+
+  it.each([
+    ["a root post", ROOT_POST],
+    ["a depth-1 reply", DEPTH1_REPLY]
+  ])("reads only bridge and the profile for %s, and stays cacheable", async (_, thread) => {
+    serveBridgeFirst(thread);
+    const meta = await run();
+    expect(callFor("bridge")).toBeDefined();
+    // The page's own call: default marking, so a failed read is marked.
+    expect(callFor("bridge")?.[1]).toBeUndefined();
+    expect(callFor("condenser")).toBeUndefined();
+    expect(markSsrDegraded).not.toHaveBeenCalled();
+    expect(meta.title).toBeDefined();
+  });
+
+  it("asks for the profile by the URL author, without waiting for the post", async () => {
+    let releaseBridge: () => void = () => {};
+    prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) => {
+      const [kind, author, permlink] = options.queryKey as string[];
+      if (kind === "bridge") {
+        await new Promise<void>((resolve) => (releaseBridge = resolve));
+        return post(author, permlink, ROOT_POST);
+      }
+      return [{ name: author, reputation: 70, post_count: 120 }];
+    });
+    const pending = run();
+    await Promise.resolve();
+    expect(callFor("profiles")?.[0]).toEqual({ queryKey: ["profiles", "alice"] });
+    releaseBridge();
+    await pending;
+  });
+
+  it("completes a deep reply's thread root from condenser, opted out of marking", async () => {
+    serveBridgeFirst(DEPTH2_REPLY, { root_author: "bob", root_permlink: "the-post" });
+    const meta = await run();
+    expect(callFor("condenser")?.[1]).toEqual({ degradeOnFailure: false });
+    expect(markSsrDegraded).not.toHaveBeenCalled();
+    expect(meta.alternates?.canonical).toBe("https://ecency.com/@bob/the-post");
+  });
+
+  it("marks a deep reply whose thread root stays unknown", async () => {
+    serveBridgeFirst(DEPTH2_REPLY);
+    await run();
+    expect(markSsrDegraded).toHaveBeenCalledTimes(1);
+    expect(markSsrDegraded).toHaveBeenCalledWith("fallback-incomplete");
+  });
+
+  it("keeps its own canonical when the post declares a third-party one", async () => {
+    // bridge hands json_metadata over parsed; the page must not hand
+    // rel=canonical or og:url to another frontend (canonicalTarget's ⛔ note).
+    serveBridgeFirst({ ...ROOT_POST, json_metadata: { canonical_url: "https://elsewhere.example/@alice/a-post" } });
+    const meta = await run();
+    expect(meta.alternates?.canonical).toBe("https://ecency.com/@alice/a-post");
+    expect((meta.openGraph as { url?: string } | undefined)?.url).toBe("https://ecency.com/@alice/a-post");
+  });
+
+  it("reads the post by the decoded permlink, so an encoded URL still resolves", async () => {
+    serveBridgeFirst(ROOT_POST);
+    const meta = await generateEntryMetadata("alice", "%61-post");
+    expect((callFor("bridge")?.[0] as { queryKey: string[] }).queryKey).toEqual(["bridge", "alice", "a-post"]);
+    expect(meta.title).toBeDefined();
+  });
+
+  it("returns no metadata when the post cannot be read", async () => {
+    prefetchQuery.mockImplementation(async (options: { queryKey: readonly unknown[] }) =>
+      (options.queryKey as string[])[0] === "profiles" ? [] : undefined
+    );
+    expect(await run()).toEqual({});
+    expect(callFor("condenser")).toBeUndefined();
   });
 });

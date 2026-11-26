@@ -1,2 +1,0 @@
-import {a as a$1}from'./chunk-7ZBIPZVU.js';import {a}from'./chunk-OS3FCYZY.js';var e={};a(e,{useRecordActivity:()=>a$1});export{e as a};//# sourceMappingURL=chunk-OBJZN6XE.js.map
-//# sourceMappingURL=chunk-OBJZN6XE.js.map

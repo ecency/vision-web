@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { prefetchQuery, getQueryClient } from "@/core/react-query";
-import { getAccountFullQueryOptions, QueryKeys } from "@ecency/sdk";
+import { getProfilesQueryOptions, QueryKeys } from "@ecency/sdk";
 import { buildPictureSources, IMAGE_SIZES } from "@ecency/render-helper";
 import { entryLcpMatch, entryLcpPreload } from "@/app/(dynamicPages)/entry/_helpers/entry-lcp-match";
 import { EcencyEntriesCacheManagement } from "@/core/caches";
@@ -20,6 +20,8 @@ import { generateEntryMetadata } from "../../../_helpers";
 import defaults from "@/defaults.json";
 import { getServerAppBase } from "@/utils/server-app-base";
 import { entryCanonical } from "@/utils/entry-canonical";
+import { withoutDeclaredCanonical } from "@/utils/entry-indexability";
+import { safeDecodeURIComponent } from "@/utils/safe-decode-uri";
 import { JsonLd, buildArticleJsonLd, buildBreadcrumbJsonLd } from "@/features/structured-data";
 import {
   EntryPageContextProvider,
@@ -38,9 +40,10 @@ interface Props {
 }
 
 /**
- * generateMetadata resolves the entry through `condenser_api.get_content`
- * because it is the only source of root_author / root_permlink — bridge.get_post
- * returns them empty, and the canonical logic needs them to point a reply at its
+ * generateMetadata reads the entry from the same bridge query as this page, and
+ * for a reply two or more levels deep also reads `condenser_api.get_content`,
+ * the only source of root_author / root_permlink — bridge.get_post returns them
+ * empty, and the canonical logic needs them to point such a reply at its
  * discussion root and to detect container/wave trees. That fetch lands in the
  * same request-scoped query cache the page dehydrates, so a SECOND full copy of
  * the entry (post body and voter array included) was being serialized to the
@@ -58,10 +61,9 @@ interface Props {
 // there are or where they sit, so a reshaped key (say ["posts","v2","content",…])
 // still yields the right discriminator.
 //
-// Matching the family rather than one exact key is deliberate: generateMetadata
-// resolves the permlink with safeDecodeURIComponent().trim() while this page uses
-// the raw param, so an exact-key comparison would silently miss whenever those
-// differ and let the duplicate copy back in.
+// Matching the family rather than one exact key is deliberate: it does not
+// depend on generateMetadata and this page normalizing the permlink identically,
+// so a future drift between them cannot silently let the duplicate copy back in.
 const METADATA_CONTENT_KEY_PREFIX = (() => {
   const a = QueryKeys.posts.content("\u0000a", "\u0000b");
   const b = QueryKeys.posts.content("\u0000c", "\u0000d");
@@ -145,13 +147,24 @@ export default async function EntryPage({ params, searchParams }: Props) {
   // (useViewerVote). Reading the cookie costs nothing here: this route already
   // awaits searchParams, so it renders dynamically regardless.
   const loggedInUser = (await cookies()).get(ACTIVE_USER_COOKIE_NAME)?.value;
-  const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(author, permlink);
-  const [fetchedEntry, account] = await Promise.all([
+  // The same normalized permlink generateEntryMetadata reads with, so the two
+  // share one query (one post read per render), and an encoded permlink in the
+  // URL resolves to the post rather than to a miss.
+  const entryQueryOptions = EcencyEntriesCacheManagement.getEntryQueryByPath(
+    author,
+    safeDecodeURIComponent(permlink).trim()
+  );
+  const [fetchedEntry, profiles] = await Promise.all([
     prefetchQuery(entryQueryOptions),
-    // Warm the query cache for child components that read account data.
-    // Use author from URL params so this runs in parallel with the entry fetch.
-    prefetchQuery(getAccountFullQueryOptions(author))
+    // The author's bridge profile: the same query (same key) generateMetadata
+    // reads for the noindex gate, so one render makes one profile lookup. The
+    // page itself needs only the display name, for the Article JSON-LD; the
+    // full chain account (balances, keys) is read on the client by the one
+    // component that shows it, the hover popover. Use author from URL params so
+    // this runs in parallel with the entry fetch.
+    prefetchQuery(getProfilesQueryOptions([author]))
   ]);
+  const authorProfile = profiles?.[0]?.metadata?.profile;
 
   // Strip at the SOURCE, so the render only ever has ONE entry object.
   //
@@ -233,7 +246,10 @@ export default async function EntryPage({ params, searchParams }: Props) {
   // Use the canonical bare /@author/permlink URL (matches generateEntryMetadata)
   // rather than the category-prefixed path, which only 307-redirects to it.
   const base = (await getServerAppBase()).replace(/\/+$/, "");
-  const entryUrl = entryCanonical(entry, base) ?? `${base}/@${entry.author}/${entry.permlink}`;
+  // The page's own canonical, never a declared third-party one: the same rule
+  // as rel=canonical in generateEntryMetadata (see canonicalTarget's ⛔ note).
+  const entryUrl =
+    entryCanonical(withoutDeclaredCanonical(entry), base) ?? `${base}/@${entry.author}/${entry.permlink}`;
   // Breadcrumb trail shared by the visible <nav> and the BreadcrumbList JSON-LD
   // so the two never drift (and never surface a raw hive-id section).
   const breadcrumbs = buildEntryBreadcrumbs(entry, {
@@ -245,7 +261,7 @@ export default async function EntryPage({ params, searchParams }: Props) {
   const structuredData = entry.parent_author
     ? null
     : [
-        buildArticleJsonLd({ entry, account, url: entryUrl, base }),
+        buildArticleJsonLd({ entry, account: { profile: authorProfile }, url: entryUrl, base }),
         buildBreadcrumbJsonLd(breadcrumbs.map((c) => ({ name: c.name, url: c.url })))
       ];
 

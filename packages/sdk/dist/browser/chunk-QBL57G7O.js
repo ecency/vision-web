@@ -1,0 +1,2 @@
+import {a}from'./chunk-RJBWXH67.js';function o(r,e,t){let n=r.trim().toLowerCase();return a(`ecency-recovery:${n}:${e}:${t}`)}function g(r,e,t,n){return r.sign(o(e,t,n)).customToString()}export{o as a,g as b};//# sourceMappingURL=chunk-QBL57G7O.js.map
+//# sourceMappingURL=chunk-QBL57G7O.js.map

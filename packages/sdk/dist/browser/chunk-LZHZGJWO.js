@@ -1,0 +1,2 @@
+import {n}from'./chunk-SZIQ6UF7.js';import {queryOptions}from'@tanstack/react-query';function s(){return queryOptions({queryKey:["market","statistics"],queryFn:()=>n("condenser_api.get_ticker",[])})}export{s as a};//# sourceMappingURL=chunk-LZHZGJWO.js.map
+//# sourceMappingURL=chunk-LZHZGJWO.js.map
