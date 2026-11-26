@@ -94,9 +94,8 @@ class ProxyMiss extends Error {
     public unknownMethod = false,
     /** A plain 404 from the proxy itself: its route table has no such method. */
     public notFound = false,
-    /** Configured nodes the proxy named as rate-limited in this answer, with
-     *  the epoch ms each park ends. */
-    public parked: ReadonlyMap<string, number> = new Map()
+    /** Configured nodes the proxy named as rate-limited in this answer. */
+    public parked: ReadonlySet<string> = new Set()
   ) {
     super(message)
   }
@@ -112,13 +111,12 @@ const PROXY_PARK_MAX_MS = 60_000
 /**
  * Read the proxy's `X-Ssr-Node-Parks` (`authority=ms,...`: the nodes rate
  * limiting the proxy's client, and for how long), park the matching configured
- * nodes in this process's tracker, and return them with the epoch ms each park
- * ends. The authority is host plus any non-default port, which is exactly
- * URL#host for a node URL. Anything malformed is skipped: a hint must never
- * cost a read.
+ * nodes in this process's tracker, and return them. The authority is host plus
+ * any non-default port, which is exactly URL#host for a node URL. Anything
+ * malformed is skipped: a hint must never cost a read.
  */
-function applyProxyParks(header: string | null): ReadonlyMap<string, number> {
-  const parked = new Map<string, number>()
+function applyProxyParks(header: string | null): ReadonlySet<string> {
+  const parked = new Set<string>()
   if (!header) return parked
   const ms = new Map<string, number>()
   for (const pair of header.split(',')) {
@@ -139,7 +137,7 @@ function applyProxyParks(header: string | null): ReadonlyMap<string, number> {
     const park = ms.get(host)
     if (park === undefined) continue
     rpcHealthTracker.recordExternalPark(node, park)
-    parked.set(node, Date.now() + park)
+    parked.add(node)
   }
   return parked
 }
@@ -252,6 +250,33 @@ async function proxyRpcCall<T>(
     cleanupTimeout()
     cleanupMerge()
   }
+}
+
+// ── Per-node request counts ─────────────────────────────────────────────────
+
+type NodeCallCount = { ok: number; failed: number; rateLimited: number }
+const nodeCalls = new Map<string, NodeCallCount>()
+
+/**
+ * Count one HTTP request this process sent to a Hive node, by how it ended: an
+ * answer (any JSON-RPC reply, error replies included), a 429, or anything else
+ * (transport failure, timeout, 5xx). Counted where every single and batch
+ * request is sent, so quorum checks, v1 retries and hedges all show up.
+ */
+function countNodeCall(node: string, outcome: keyof NodeCallCount): void {
+  let c = nodeCalls.get(node)
+  if (!c) {
+    c = { ok: 0, failed: 0, rateLimited: 0 }
+    nodeCalls.set(node, c)
+  }
+  c[outcome]++
+}
+
+/** Lifetime per-node request counts for this process (a copy). */
+export function nodeCallCounts(): Record<string, NodeCallCount> {
+  const out: Record<string, NodeCallCount> = {}
+  for (const [node, c] of nodeCalls) out[node] = { ...c }
+  return out
 }
 
 // ── Error Types ─────────────────────────────────────────────────────────────
@@ -735,25 +760,6 @@ export const __LATENCY_TUNING__ = Object.freeze({
 /** @internal Exported for testing only. */
 export class NodeHealthTracker {
   private health = new Map<string, NodeHealth>()
-  /** Lifetime answers per node, by outcome: what this process itself sent to
-   *  each node, for a periodic report beside the server proxy's own counters. */
-  private counts = new Map<string, { ok: number; failed: number; rateLimited: number }>()
-
-  private count(node: string, outcome: 'ok' | 'failed' | 'rateLimited'): void {
-    let c = this.counts.get(node)
-    if (!c) {
-      c = { ok: 0, failed: 0, rateLimited: 0 }
-      this.counts.set(node, c)
-    }
-    c[outcome]++
-  }
-
-  /** Copy of the per-node answer counts (see `counts`). */
-  callCounts(): Record<string, { ok: number; failed: number; rateLimited: number }> {
-    const out: Record<string, { ok: number; failed: number; rateLimited: number }> = {}
-    for (const [node, c] of this.counts) out[node] = { ...c }
-    return out
-  }
 
   private getOrCreate(node: string): NodeHealth {
     let h = this.health.get(node)
@@ -788,7 +794,6 @@ export class NodeHealthTracker {
 
   recordSuccess(node: string, api?: string, durationMs?: number, profileKey?: string): void {
     const h = this.getOrCreate(node)
-    this.count(node, 'ok')
     h.consecutiveFailures = 0
     // A success means the node recovered — clear the escalation streak so the next
     // throttle starts from the base cooldown. We deliberately do NOT clear an active
@@ -915,7 +920,6 @@ export class NodeHealthTracker {
 
   recordFailure(node: string, api?: string): void {
     const h = this.getOrCreate(node)
-    this.count(node, 'failed')
     if (api) {
       // API-specific failure: only update the per-API tracker.
       // This prevents e.g. 3 rc_api failures from marking the node
@@ -987,7 +991,6 @@ export class NodeHealthTracker {
    */
   recordRateLimit(node: string, retryAfterMs?: number): void {
     const h = this.getOrCreate(node)
-    this.count(node, 'rateLimited')
     const now = Date.now()
     // Expire a stale streak so an occasional throttle hours apart doesn't compound.
     if (h.rateLimitStreak > 0 && now - h.lastRateLimitAt > RATE_LIMIT_STREAK_RESET_MS) {
@@ -1012,6 +1015,11 @@ export class NodeHealthTracker {
       : Math.max(h.rateLimitedUntil, now + cooldown)
     h.consecutiveFailures++
     h.lastFailureTime = now
+  }
+
+  /** Whether the node is inside a rate-limit park right now, however it was set. */
+  isRateLimited(node: string): boolean {
+    return (this.health.get(node)?.rateLimitedUntil ?? 0) > Date.now()
   }
 
   /**
@@ -1419,12 +1427,19 @@ const jsonRPCCall = async (
   }
 
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
-      signal
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
+        signal
+      })
+    } catch (e) {
+      countNodeCall(url, 'failed')
+      throw e
+    }
+    countNodeCall(url, res.status === 429 ? 'rateLimited' : res.status >= 500 ? 'failed' : 'ok')
 
     // Handle HTTP-level errors before parsing JSON.
     // Throw NodeError so callers can record health exactly once.
@@ -1906,12 +1921,13 @@ const callRPCCore = async <T = any>(
   // The proxy is one more "node" for the method fallback: once it relayed an
   // `unknown method` for the primary, it is asked for the fallback directly.
   let proxySpec: RpcCallSpec | undefined = primary
-  // After a RATELIMITED answer: the nodes it named as rate limiting, with when
-  // each park ends. The fallback below skips them while parked: the proxy
-  // reached them from this same address moments ago, so asking them again only
-  // draws the same 429 and deepens the throttle. Any other miss (a relayed node
-  // error, a timeout) falls back to every node as before.
-  let proxyParked: ReadonlyMap<string, number> = new Map()
+  // After a RATELIMITED answer: the nodes it named as rate limiting. The
+  // fallback below skips them while the tracker still has them parked (the
+  // longer of this hint and any park already recorded): the proxy reached them
+  // from this same address moments ago, so asking them again only draws the
+  // same 429 and deepens the throttle. Any other miss (a relayed node error, a
+  // timeout) falls back to every node as before.
+  let proxyParked: ReadonlySet<string> = new Set()
   if (proxy && fallback && lacksMethod(proxy.url, primary.method)) proxySpec = fallback
   if (proxy && isNodeRuntime && proxySpec && proxy.methodSet.has(proxySpec.method)) {
     if (Date.now() < proxyOpenUntil) {
@@ -1984,7 +2000,7 @@ const callRPCCore = async <T = any>(
         ? rpcHealthTracker.getOrderedNodes(config.nodes, api)
         : rpcHealthTracker
             .getOrderedNodes(config.nodes, api)
-            .filter((n) => !((proxyParked.get(n) ?? 0) > Date.now()))
+            .filter((n) => !(proxyParked.has(n) && rpcHealthTracker.isRateLimited(n)))
     if (orderedNodes.length === 0) {
       // Every node this process would try is rate limiting this address right
       // now, per the proxy: fail now, as the nodes would, without sending them
@@ -2391,12 +2407,19 @@ async function jsonRPCBatchCall<T>(
   const { signal: tSignal, cleanup: cleanupTimeout } = createTimeoutSignal(timeout)
   const { signal, cleanup: cleanupMerge } = mergeSignals(tSignal, externalSignal)
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
-      signal
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...serverIdentityHeaders() },
+        signal
+      })
+    } catch (e) {
+      countNodeCall(url, 'failed')
+      throw e
+    }
+    countNodeCall(url, res.status === 429 ? 'rateLimited' : res.status >= 500 ? 'failed' : 'ok')
     const release = async () => {
       // An unconsumed body pins a pooled connection.
       try {

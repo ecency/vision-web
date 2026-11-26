@@ -200,7 +200,7 @@ describe('getPostsRankedQueryOptions', () => {
     mockGetPostsRanked.mockResolvedValue([])
     const resolved = getPostsRankedQueryOptions('created', '', '', 12, 'hive')
     const rows = getPostsRankedQueryOptions('created', '', '', 12, 'hive', '', true, { resolvePosts: false })
-    await (rows.queryFn as any)()
+    await rows.queryFn!({ signal: undefined } as never)
 
     expect(mockGetPostsRanked).toHaveBeenCalledWith('created', '', '', 12, 'hive', '', undefined, false)
     expect(rows.queryKey).not.toEqual(resolved.queryKey)

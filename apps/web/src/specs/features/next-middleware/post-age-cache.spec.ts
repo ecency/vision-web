@@ -56,7 +56,10 @@ describe("post-age-cache", () => {
     expect(bridgeV2Call).toHaveBeenCalledWith(
       "get_post",
       { author: "alice", permlink: "post", observer: "ecency", top_votes: 5 },
-      expect.any(AbortSignal)
+      expect.any(AbortSignal),
+      undefined,
+      // Per-attempt limits, so one stalled node cannot use the whole budget.
+      { timeout: 2000, retry: 2 }
     );
   });
 

@@ -216,6 +216,19 @@ describe("getPost on a node that serves bridge.get_post_v2", () => {
 // v1 bridge methods reject v2-only params ("got an unexpected keyword argument
 // 'top_votes'", verified live on api.hive.blog and api.deathwing.me), so the
 // same-node v1 fallback must not carry them.
+describe("bridgeV2Call: per-attempt limits", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("passes a caller's timeout and retry count through, and leaves the defaults otherwise", async () => {
+    mockCallRPCWithFallback.mockResolvedValue({ result: null, method: "bridge.get_post_v2" });
+    await bridgeV2Call("get_post", { author: "a", permlink: "p" }, undefined, undefined, { timeout: 2000, retry: 2 });
+    expect(mockCallRPCWithFallback.mock.calls[0][2]).toMatchObject({ timeout: 2000, retry: 2 });
+
+    await bridgeV2Call("get_post", { author: "a", permlink: "p" });
+    expect(mockCallRPCWithFallback.mock.calls[1][2]).toMatchObject({ timeout: undefined, retry: undefined });
+  });
+});
+
 describe("bridgeV2Call: the v1 fallback carries no v2-only params", () => {
   const ORIGINAL_NODES = [...config.nodes];
 

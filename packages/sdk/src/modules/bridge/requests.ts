@@ -39,14 +39,16 @@ export async function bridgeV2Call<T>(
   endpoint: "get_post" | "get_ranked_posts" | "get_account_posts" | "get_discussion",
   params: Record<string, unknown>,
   signal?: AbortSignal,
-  onAnswer?: (node: string) => void
+  onAnswer?: (node: string) => void,
+  /** Per-attempt timeout (ms) and retry count; the SDK defaults when omitted. */
+  limits: { timeout?: number; retry?: number } = {}
 ): Promise<T> {
   const v1Params: Record<string, unknown> = { ...params };
   for (const key of BRIDGE_V2_ONLY_PARAMS) delete v1Params[key];
   const { result } = await callRPCWithFallback<T>(
     { method: `bridge.${endpoint}_v2`, params },
     { method: `bridge.${endpoint}`, params: v1Params },
-    { signal, onAnswer }
+    { signal, onAnswer, timeout: limits.timeout, retry: limits.retry }
   );
   return result;
 }

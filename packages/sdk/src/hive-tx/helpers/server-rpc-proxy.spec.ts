@@ -622,6 +622,26 @@ describe("node parks named by the proxy", () => {
     expect(rpcProxyStats.fallbackByReason.ratelimited).toBe(1);
   });
 
+  it("a shorter hint does not end a longer park already recorded", async () => {
+    const a = `https://park-a${++parkSeq}.test`;
+    config.nodes = [a, B];
+    rpcHealthTracker.recordExternalPark(a, 30_000);
+    // Time moves on between reading the hint and choosing a node.
+    let t = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => (t += 5));
+    const urls: string[] = [];
+    mockFetch(async (input) => {
+      urls.push(String(input));
+      if (String(input) === PROXY) return throttledNaming(`${new URL(a).host}=1`);
+      // The one node left fails, so the loop would move on to `a` if the
+      // hint's own 1 ms were what kept it out.
+      return new Response("bad gateway", { status: 502 });
+    });
+    await expect(callRPC("bridge.get_post", { author: "a", permlink: "p" })).rejects.toThrow();
+    expect(urls).toContain(B);
+    expect(urls).not.toContain(a);
+  });
+
   it("only a RATELIMITED answer narrows the fallback: a relayed node error still asks the nodes", async () => {
     // A relayed RPC error (a missing post) is the node's answer, not throttling;
     // the caller must get that answer, not a manufactured rate-limit error.

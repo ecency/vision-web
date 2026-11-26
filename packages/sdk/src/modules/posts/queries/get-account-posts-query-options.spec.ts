@@ -130,7 +130,7 @@ describe('getAccountPostsQueryOptions', () => {
     mockGetAccountPosts.mockResolvedValue([])
     const resolved = getAccountPostsQueryOptions('user', 'posts', '', '', 12)
     const rows = getAccountPostsQueryOptions('user', 'posts', '', '', 12, '', true, { resolvePosts: false })
-    await (rows.queryFn as any)()
+    await rows.queryFn!({ signal: undefined } as never)
 
     expect(mockGetAccountPosts).toHaveBeenCalledWith('posts', 'user', '', '', 12, '', undefined, false)
     expect(rows.queryKey).not.toEqual(resolved.queryKey)
