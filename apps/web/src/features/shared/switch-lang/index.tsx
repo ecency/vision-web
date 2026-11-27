@@ -29,7 +29,7 @@ export function SwitchLang({ label, onSelect }: Props) {
             {label ?? lang.split("-")[0]}
           </Button>
         </DropdownToggle>
-        <DropdownMenu align="top" className="max-h-[200px] overflow-y-auto right-0">
+        <DropdownMenu align="rightBottom" className="max-h-[200px] overflow-y-auto">
           {langOptions.map((locale) => (
             <DropdownItem
               key={locale.code}

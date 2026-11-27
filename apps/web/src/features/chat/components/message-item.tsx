@@ -403,7 +403,7 @@ function MessageItemInner({
           </>
         )}
         {!isChannelNoticePost(post) && (
-          <div className="absolute -right-2 -top-2 flex gap-1 rounded-md bg-[--surface-color] opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <div className="absolute -right-2 -top-2 flex gap-1 rounded-md bg-[--surface-color] opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 has-[[data-dropdown-open]]:pointer-events-auto has-[[data-dropdown-open]]:opacity-100">
             {(() => {
               const isReactionPickerOpen = openReactionPostId === post.id;
 

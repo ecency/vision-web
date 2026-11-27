@@ -1,6 +1,6 @@
 "use client";
 
-import React, { HTMLProps, useContext, useRef, useState } from "react";
+import React, { HTMLProps, useCallback, useContext, useRef, useState } from "react";
 import { DropdownContext } from "@ui/dropdown/dropdown-context";
 import useClickAway from "react-use/lib/useClickAway";
 import { UIContext } from "@ui/core";
@@ -23,6 +23,11 @@ export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
   // it and popovers anchored in it count as inside through menuRef.
   const menuRef = useRef<HTMLElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+  const keyboardOpenRef = useRef(false);
+  const setRootRef = useCallback((el: HTMLDivElement | null) => {
+    ref.current = el;
+    setAnchor(el);
+  }, []);
   const { openPopovers } = useContext(UIContext);
 
   useClickAway(ref, (e) => {
@@ -68,6 +73,7 @@ export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
         show: isOpen,
         anchor,
         menuRef,
+        keyboardOpenRef,
         setShow: (v) => {
           setShow(v);
           props.setShow?.(v);
@@ -76,10 +82,8 @@ export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
     >
       <div
         {...nativeProps}
-        ref={(el) => {
-          ref.current = el;
-          setAnchor(el);
-        }}
+        ref={setRootRef}
+        data-dropdown-open={isOpen || undefined}
         className={classNameObject({
           relative: true,
           "z-[10]": isOpen,

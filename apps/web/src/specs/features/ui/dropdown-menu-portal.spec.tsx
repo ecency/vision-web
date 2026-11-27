@@ -56,4 +56,21 @@ describe("DropdownMenu portal", () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByText("Delete")).not.toBeInTheDocument();
   });
+
+  it("moves focus into the menu when it is opened from the keyboard", () => {
+    renderInClippingBox();
+    // A keyboard-activated click (Enter/Space on the toggle) has detail 0.
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+
+    expect(document.activeElement).toBe(document.querySelector('.ecency-dropdown-menu [role="menuitem"]'));
+  });
+
+  it("leaves focus alone when it is opened with the mouse", () => {
+    renderInClippingBox();
+    const toggle = screen.getByText("menu");
+    toggle.focus();
+    fireEvent.click(toggle, { detail: 1 });
+
+    expect(document.activeElement).toBe(toggle);
+  });
 });

@@ -30,7 +30,7 @@ export const DeckAddColumnThreadSettings = ({ deckKey }: SettingsProps) => {
         </DropdownToggle>
         <DropdownMenu>
           {["all", ...AVAILABLE_THREAD_HOSTS].map((v) => (
-            <DropdownItem key={v} onClick={() => setHost(v)} className="thread-host-item">
+            <DropdownItem key={v} onClick={() => setHost(v)} className="thread-host-item flex items-center gap-4 font-medium">
               <UserAvatar size="small" username={v === "all" ? "ecency" : v} />
               {v === "all" ? i18next.t("decks.columns.all-thread-hosts") : v}
             </DropdownItem>
