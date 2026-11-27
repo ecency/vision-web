@@ -20,8 +20,7 @@ import {
   useMattermostUpdatePost,
   useMattermostPostsAround,
   useMattermostThread,
-  useMattermostUsersByIds,
-  useMattermostJoinChannel
+  useMattermostUsersByIds
 } from "./mattermost-api";
 import { usePendingPosts } from "./hooks/use-pending-posts";
 import { BAN_NOTICE_TICK_MS, ChatBanInfo, getChatBanInfo } from "./chat-ban-notice";
@@ -50,8 +49,8 @@ import { type PostItem } from "./components/message-list";
 import { VirtualizedMessageList } from "./components/virtualized-message-list";
 import type { VirtuosoHandle } from "react-virtuoso";
 import { DmWarningBanner } from "./components/dm-warning-banner";
+import { ChannelJoinPrompt } from "./components/channel-join-prompt";
 import { setProxyBase } from "@ecency/render-helper";
-import { Button } from "@ui/button";
 import { Modal, ModalBody } from "@ui/modal";
 import { useActiveAccount } from "@/core/hooks/use-active-account";
 import { useQueryClient } from "@tanstack/react-query";
@@ -126,7 +125,6 @@ export function MattermostChannelView({ channelId }: Props) {
   const { activeUser } = useActiveAccount();
   const { data: channels } = useMattermostChannels(Boolean(channelId));
   const directChannelMutation = useMattermostDirectChannel();
-  const joinChannelMutation = useMattermostJoinChannel();
   const router = useRouter();
   const markViewedMutation = useMattermostMarkChannelViewed();
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
@@ -1155,10 +1153,13 @@ export function MattermostChannelView({ channelId }: Props) {
               <div className="p-4 text-sm text-[--text-muted]">No messages yet. Say hello!</div>
             )}
             {showJoinPrompt && (
-              <div className="flex flex-col items-center justify-center p-8 gap-4">
-                <p className="text-[--text-muted]">You need to join this channel to view messages</p>
-                <Button onClick={() => { joinChannelMutation.mutate(channelId, { onSuccess: () => { setShowJoinPrompt(false); setNeedsAroundFetch(true); } }); }} isLoading={joinChannelMutation.isPending}>Join Channel</Button>
-              </div>
+              <ChannelJoinPrompt
+                channelId={channelId}
+                onJoined={() => {
+                  setShowJoinPrompt(false);
+                  setNeedsAroundFetch(true);
+                }}
+              />
             )}
             {aroundQuery.isLoading && (
               <div className="flex items-center justify-center p-8 gap-2">

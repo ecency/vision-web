@@ -9,6 +9,10 @@ interface MattermostUser {
   id: string;
 }
 
+interface MattermostChannel {
+  type: string;
+}
+
 export async function POST(_: Request, { params }: { params: Promise<{ channelId?: string }> }) {
   const token = await getMattermostTokenFromCookies();
   if (!token) {
@@ -21,6 +25,12 @@ export async function POST(_: Request, { params }: { params: Promise<{ channelId
   }
 
   try {
+    // A direct or group conversation has fixed members, so nobody can join it.
+    const channel = await mmUserFetch<MattermostChannel>(`/channels/${encodeURIComponent(channelId)}`, token);
+    if (channel.type === "D" || channel.type === "G") {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
     const currentUser = await mmUserFetch<MattermostUser>(`/users/me`, token);
 
     await mmUserFetch(`/channels/${encodeURIComponent(channelId)}/members`, token, {
