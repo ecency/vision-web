@@ -832,13 +832,15 @@ export const TenantService = {
       // level guard would be check-then-act, and a concurrent update could make
       // the read stale between the two. Setting a DIFFERENT domain still clears
       // the flag, which is what re-verification exists for.
+      // $2 is cast at every use: as an assignment Postgres deduces VARCHAR, in the comparison
+      // TEXT, and a parameter deduced two ways fails the whole statement (42P08).
       const result = await exec.query<TenantRow>(
         `UPDATE tenants
-         SET custom_domain = $2,
+         SET custom_domain = $2::text,
              custom_domain_verified =
-               CASE WHEN custom_domain = $2 THEN custom_domain_verified ELSE false END,
+               CASE WHEN custom_domain = $2::text THEN custom_domain_verified ELSE false END,
              custom_domain_verified_at =
-               CASE WHEN custom_domain = $2 THEN custom_domain_verified_at ELSE NULL END,
+               CASE WHEN custom_domain = $2::text THEN custom_domain_verified_at ELSE NULL END,
              updated_at = NOW()
          WHERE username = $1
          RETURNING *`,

@@ -13,29 +13,14 @@ const exec = { query: (sql: string, params?: any[]) => mocks.query(sql, params) 
 /**
  * Whether a re-submitted domain keeps its verification is decided inside the
  * UPDATE, not by the route, because a route-level guard would be check-then-act
- * on a read that a concurrent update can invalidate. There is no database in
- * this suite, so the statement is pinned here directly: if the conditional ever
- * turns back into an unconditional reset, a live blog loses its vhost and
- * certificate on a harmless repeat submit.
+ * on a read that a concurrent update can invalidate. That behaviour is pinned
+ * against real Postgres in tenant-custom-domain.pg.test.ts: matching the SQL
+ * text here once passed a statement Postgres refused to plan. This suite keeps
+ * the parts that need no database (parameters, error mapping).
  */
 describe('setCustomDomain', () => {
   beforeEach(() => {
     mocks.query.mockReset().mockResolvedValue({ rows: [{ id: 't1', username: 'alice' }] });
-  });
-
-  it('preserves verification only when the stored domain is unchanged', async () => {
-    await TenantService.setCustomDomain(exec, 'alice', 'mine.example.com');
-
-    const [sql, params] = mocks.query.mock.calls[0];
-    const normalised = sql.replace(/\s+/g, ' ');
-
-    expect(normalised).toContain(
-      'custom_domain_verified = CASE WHEN custom_domain = $2 THEN custom_domain_verified ELSE false END',
-    );
-    expect(normalised).toContain(
-      'custom_domain_verified_at = CASE WHEN custom_domain = $2 THEN custom_domain_verified_at ELSE NULL END',
-    );
-    expect(params).toEqual(['alice', 'mine.example.com']);
   });
 
   it('lowercases both the tenant and the domain', async () => {
