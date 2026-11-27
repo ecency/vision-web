@@ -19,16 +19,24 @@ interface Props {
 export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
   const [show, setShow] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  // The menu is portaled out of this element (see DropdownMenu), so clicks in
+  // it and popovers anchored in it count as inside through menuRef.
+  const menuRef = useRef<HTMLElement | null>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const { openPopovers } = useContext(UIContext);
 
   useClickAway(ref, (e) => {
+    if (menuRef.current?.contains(e.target as Node)) {
+      return;
+    }
+
     // An open click-popover anchored inside THIS dropdown (e.g. a confirm
     // popover whose buttons render in a portal outside our DOM) — keep the
     // menu mounted until the popover is answered; closing now would unmount
     // the popover before its buttons' click handlers can fire. Popovers open
     // elsewhere on the page don't block dismissal.
-    const hostsOpenPopover = Array.from(openPopovers).some((anchor) =>
-      ref.current?.contains(anchor)
+    const hostsOpenPopover = Array.from(openPopovers).some((popoverAnchor) =>
+      ref.current?.contains(popoverAnchor) || menuRef.current?.contains(popoverAnchor)
     );
     if (hostsOpenPopover) {
       return;
@@ -58,6 +66,8 @@ export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
     <DropdownContext.Provider
       value={{
         show: isOpen,
+        anchor,
+        menuRef,
         setShow: (v) => {
           setShow(v);
           props.setShow?.(v);
@@ -66,7 +76,10 @@ export function Dropdown(props: HTMLProps<HTMLDivElement> & Props) {
     >
       <div
         {...nativeProps}
-        ref={ref}
+        ref={(el) => {
+          ref.current = el;
+          setAnchor(el);
+        }}
         className={classNameObject({
           relative: true,
           "z-[10]": isOpen,

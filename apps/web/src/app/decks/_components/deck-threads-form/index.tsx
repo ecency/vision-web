@@ -47,7 +47,11 @@ export const DeckThreadsForm = ({
   persistable = false
 }: Props) => {
   const rootRef = useRef(null);
-  useClickAway(rootRef, () => setFocused(false));
+  useClickAway(rootRef, (e) => {
+    // Its toolbar menus render in a portal outside the form.
+    if ((e.target as Element | null)?.closest?.(".ecency-dropdown-menu")) return;
+    setFocused(false);
+  });
 
   const { activeUser } = useActiveAccount();
   const toggleUIProp = useGlobalStore((s) => s.toggleUiProp);
