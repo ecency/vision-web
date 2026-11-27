@@ -88,13 +88,25 @@ export function Modal(props: Omit<HTMLProps<HTMLDivElement>, "size"> & Props) {
   dismissRef.current = dismiss;
 
   useEffect(() => {
+    // An Escape whose keydown something inside already handled (a dropdown
+    // menu or a link form closing itself calls preventDefault) is not a
+    // dismiss: one press would otherwise close that popup and the modal.
+    let escapeHandled = false;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") escapeHandled = e.defaultPrevented;
+    };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && showRef.current === true) {
+      if (e.key !== "Escape") return;
+      const handled = escapeHandled;
+      escapeHandled = false;
+      if (!handled && showRef.current === true) {
         dismissRef.current();
       }
     };
+    document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
     return () => {
+      document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
     };
   }, []);
