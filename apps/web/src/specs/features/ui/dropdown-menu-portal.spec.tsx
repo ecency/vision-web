@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { UIManager } from "@ui/core";
-import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from "@ui/dropdown";
+import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle, isInOwnDropdownMenu } from "@ui/dropdown";
 
 // The menu used to render in place as position:absolute, so any clipping
 // ancestor (overflow hidden/auto, content-visibility) cut it off: the last
@@ -72,5 +72,117 @@ describe("DropdownMenu portal", () => {
     fireEvent.click(toggle, { detail: 1 });
 
     expect(document.activeElement).toBe(toggle);
+  });
+
+  it("focuses a native button when the menu has no menu items", () => {
+    render(
+      <UIManager>
+        <Dropdown>
+          <DropdownToggle>
+            <button type="button">menu</button>
+          </DropdownToggle>
+          <DropdownMenu>
+            <button type="button">Reset</button>
+          </DropdownMenu>
+        </Dropdown>
+      </UIManager>
+    );
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+
+    expect(document.activeElement).toBe(screen.getByText("Reset"));
+  });
+
+  it("closes on Escape and returns focus to the toggle", () => {
+    renderInClippingBox();
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+
+    expect(screen.queryByText("Delete")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByText("menu"));
+  });
+
+  it("keeps the menu open while Tab moves between its items", () => {
+    render(
+      <UIManager>
+        <Dropdown>
+          <DropdownToggle>
+            <button type="button">menu</button>
+          </DropdownToggle>
+          <DropdownMenu>
+            <button type="button">First</button>
+            <button type="button">Last</button>
+          </DropdownMenu>
+        </Dropdown>
+      </UIManager>
+    );
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+    expect(document.activeElement).toBe(screen.getByText("First"));
+
+    fireEvent.keyDown(screen.getByText("First"), { key: "Tab" });
+    expect(screen.getByText("Last")).toBeInTheDocument();
+
+    // Leaving forward from the last item closes and hands focus to the toggle,
+    // so the browser's Tab continues from there.
+    screen.getByText("Last").focus();
+    fireEvent.keyDown(screen.getByText("Last"), { key: "Tab" });
+    expect(screen.queryByText("Last")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByText("menu"));
+  });
+
+  it("closes on Shift+Tab from the first item and focuses the toggle", () => {
+    renderInClippingBox();
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab", shiftKey: true });
+
+    expect(screen.queryByText("Delete")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByText("menu"));
+  });
+
+  it("returns focus to the toggle after an item is chosen from the keyboard", () => {
+    const onItem = renderInClippingBox();
+    fireEvent.click(screen.getByText("menu"), { detail: 0 });
+    const focused = document.activeElement as HTMLElement;
+
+    fireEvent.keyDown(focused, { key: "Enter" });
+    fireEvent.click(focused);
+
+    expect(onItem).toHaveBeenCalled();
+    expect(screen.queryByText("Delete")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByText("menu"));
+  });
+
+  it("tells a container's own open menu apart from other menus", () => {
+    render(
+      <UIManager>
+        <div data-testid="form">
+          <Dropdown>
+            <DropdownToggle>
+              <button type="button">own</button>
+            </DropdownToggle>
+            <DropdownMenu>
+              <DropdownItem>own item</DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+        </div>
+        <Dropdown>
+          <DropdownToggle>
+            <button type="button">other</button>
+          </DropdownToggle>
+          <DropdownMenu>
+            <DropdownItem>other item</DropdownItem>
+          </DropdownMenu>
+        </Dropdown>
+      </UIManager>
+    );
+    const form = screen.getByTestId("form");
+
+    fireEvent.click(screen.getByText("own"));
+    expect(isInOwnDropdownMenu(form, screen.getByText("own item"))).toBe(true);
+    fireEvent.mouseDown(document.body);
+
+    fireEvent.click(screen.getByText("other"));
+    expect(isInOwnDropdownMenu(form, screen.getByText("other item"))).toBe(false);
   });
 });
