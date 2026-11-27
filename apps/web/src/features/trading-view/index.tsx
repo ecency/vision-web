@@ -18,7 +18,10 @@ const Symbols: Record<string, string> = {
 };
 
 export function TradingViewWidget({ symbol }: Props) {
-  const container = useRef<HTMLDivElement>(null);
+  // React-managed slot that stays empty from React's point of view. All DOM the
+  // TradingView embed script touches lives in a per-effect host node appended
+  // here, so React never reconciles it and we never detach a pending script.
+  const widgetSlot = useRef<HTMLDivElement>(null);
 
   const locale = useGlobalStore((s) => s.lang);
   const theme = useGlobalStore((s) => s.theme);
@@ -30,9 +33,26 @@ export function TradingViewWidget({ symbol }: Props) {
     : undefined;
 
   useEffect(() => {
-    if (!tradingViewSymbol) {
+    const slot = widgetSlot.current;
+    if (!tradingViewSymbol || !slot) {
       return;
     }
+
+    // TradingView's embed script resolves its config/target via its own
+    // <script> element's parentNode once the async download finishes. Build a
+    // fresh host (widget div + script) per run and, on cleanup, detach the whole
+    // host rather than clearing the slot: the stale script then keeps a non-null
+    // parent and initialises harmlessly against the detached host.
+    const host = document.createElement("div");
+    host.className = "tradingview-widget-host";
+    host.style.height = "100%";
+    host.style.width = "100%";
+
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    widget.style.height = "100%";
+    widget.style.width = "100%";
+    host.appendChild(widget);
 
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
@@ -64,10 +84,12 @@ export function TradingViewWidget({ symbol }: Props) {
     };
 
     script.textContent = JSON.stringify(widgetConfig);
-    if (container.current?.children.length) {
-      container.current.innerHTML = "";
-    }
-    container.current?.appendChild(script);
+    host.appendChild(script);
+    slot.appendChild(host);
+
+    return () => {
+      host.remove();
+    };
   }, [locale, theme, tradingViewSymbol]);
 
   if (!tradingViewSymbol) {
@@ -75,13 +97,10 @@ export function TradingViewWidget({ symbol }: Props) {
   }
 
   return (
-    <div
-      className="tradingview-widget-container"
-      ref={container}
-      style={{ height: "100%", width: "100%" }}
-    >
+    <div className="tradingview-widget-container" style={{ height: "100%", width: "100%" }}>
       <div
-        className="tradingview-widget-container__widget"
+        ref={widgetSlot}
+        className="tradingview-widget-slot"
         style={{ height: "calc(100% - 32px)", width: "100%" }}
       ></div>
       {tradingViewHref && (
