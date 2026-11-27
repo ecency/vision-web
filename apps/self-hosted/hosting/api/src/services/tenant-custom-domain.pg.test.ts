@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { uuid_ossp } from '@electric-sql/pglite/contrib/uuid_ossp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QueryResult, QueryResultRow } from 'pg';
 import type { SqlExecutor } from '../db/client';
 
 // The pooled client is never used here: every statement goes through the PGlite executor below.
@@ -37,7 +38,18 @@ beforeAll(async () => {
   }
   // pg.query in PGlite uses the extended protocol with untyped parameters, like node-postgres,
   // so Postgres deduces each parameter's type from the statement exactly as in production.
-  exec = { query: (text: string, params?: any[]) => pg.query(text, params) as any };
+  exec = {
+    async query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<QueryResult<T>> {
+      const result = await pg.query<T>(text, params);
+      return {
+        rows: result.rows,
+        rowCount: result.affectedRows ?? result.rows.length,
+        command: '',
+        oid: 0,
+        fields: [],
+      };
+    },
+  };
 });
 
 afterAll(async () => {
