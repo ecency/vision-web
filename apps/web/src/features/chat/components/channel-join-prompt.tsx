@@ -10,7 +10,9 @@ const isNoAccessError = (error: Error) => /forbidden|\(40[034]\)/i.test(error.me
 
 export function ChannelJoinPrompt({ channelId, onJoined }: { channelId: string; onJoined: () => void }) {
   const joinChannelMutation = useMattermostJoinChannel();
-  const error = joinChannelMutation.error as Error | null;
+  // The view can be reused for another channel; only show an error from a
+  // join of the channel on screen.
+  const error = joinChannelMutation.variables === channelId ? (joinChannelMutation.error as Error | null) : null;
 
   if (error && isNoAccessError(error)) {
     return (

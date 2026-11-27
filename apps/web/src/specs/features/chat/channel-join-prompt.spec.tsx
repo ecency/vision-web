@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const mutate = vi.fn();
-let joinState: { error: Error | null; isPending: boolean } = { error: null, isPending: false };
+let joinState: { error: Error | null; isPending: boolean; variables?: string } = { error: null, isPending: false };
 
 vi.mock("@/features/chat/mattermost-api", () => ({
   useMattermostJoinChannel: () => ({ mutate, reset: vi.fn(), ...joinState })
@@ -31,7 +31,7 @@ describe("ChannelJoinPrompt", () => {
   it.each(["forbidden", "Mattermost request failed (404): {}", "Mattermost request failed (400): {}"])(
     "says the conversation is not accessible and drops the button when the join fails with %s",
     (message) => {
-      joinState = { error: new Error(message), isPending: false };
+      joinState = { error: new Error(message), isPending: false, variables: "c-1" };
       render(<ChannelJoinPrompt channelId="c-1" onJoined={vi.fn()} />);
 
       expect(screen.getByText("chat.join-no-access")).toBeTruthy();
@@ -40,10 +40,21 @@ describe("ChannelJoinPrompt", () => {
   );
 
   it("shows any other join error and keeps the button for a retry", () => {
-    joinState = { error: new Error("Mattermost request timed out"), isPending: false };
+    joinState = { error: new Error("Mattermost request timed out"), isPending: false, variables: "c-1" };
     render(<ChannelJoinPrompt channelId="c-1" onJoined={vi.fn()} />);
 
     expect(screen.getByText("Mattermost request timed out")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "chat.join-channel-button" })).toBeTruthy();
+  });
+
+  it("does not carry a refused join over to another conversation", () => {
+    joinState = { error: new Error("forbidden"), isPending: false, variables: "c-1" };
+    const { rerender } = render(<ChannelJoinPrompt channelId="c-1" onJoined={vi.fn()} />);
+    expect(screen.getByText("chat.join-no-access")).toBeTruthy();
+
+    rerender(<ChannelJoinPrompt channelId="c-2" onJoined={vi.fn()} />);
+
+    expect(screen.queryByText("chat.join-no-access")).toBeNull();
     expect(screen.getByRole("button", { name: "chat.join-channel-button" })).toBeTruthy();
   });
 });
