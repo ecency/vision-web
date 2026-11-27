@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { success } from "../feedback";
 import { useMenuItemsGenerator } from "./menu-items-generator";
 import { Entry } from "@/entities";
@@ -86,24 +86,7 @@ export const EntryMenu = ({
   const router = useRouter();
   const pathname = usePathname();
 
-  const menuRef = useRef<HTMLDivElement>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  useEffect(() => {
-    // Only apply z-index and overflow styles if we're within a waves context
-    // This prevents errors on category pages and other contexts where .waves-list-item doesn't exist
-    if (!menuRef.current) return;
-
-    const parent = menuRef.current.closest(".waves-list-item") as HTMLElement | null;
-    if (parent && parent.style) {
-      try {
-        parent.style.zIndex = dropdownOpen ? "10" : "";
-        parent.style.overflow = dropdownOpen ? "visible" : "";
-      } catch (error) {
-        // Silently handle any style assignment errors
-        console.warn("EntryMenu: Could not apply styles to parent element", error);
-      }
-    }
-  }, [dropdownOpen]);
 
   const { data: community } = useQuery(getCommunityCache(entry.category));
   const { mutateAsync: pinToBlog } = usePinToBlog(entry, () => pinEntry?.(pin ? entry : null));
@@ -149,7 +132,7 @@ export const EntryMenu = ({
   } = useMenuItemsGenerator(entry, community, separatedSharing, extraMenuItems);
 
   return (
-    <div className="entry-menu" ref={menuRef}>
+    <div className="entry-menu">
       <Button
         icon={<UilShareAlt className={compact ? "!size-4" : undefined} />}
         appearance="gray-link"

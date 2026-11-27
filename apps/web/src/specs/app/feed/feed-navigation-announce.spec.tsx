@@ -79,6 +79,8 @@ function hrefToFeed(href: string): string {
   return `${first}|${second}`;
 }
 
+const openMenu = () => document.querySelector<HTMLElement>(".ecency-dropdown-menu")!;
+
 describe("feed navigation announcements", () => {
   beforeEach(() => {
     mockSections = [];
@@ -121,7 +123,8 @@ describe("feed navigation announcements", () => {
     // The sort dropdown is the second one (the first is the source dropdown).
     fireEvent.click(toggles[toggles.length - 1]);
 
-    const item = within(mobile as HTMLElement).getByText("entry-filter.filter-trending");
+    // The open menu renders in a portal, outside the mobile bar.
+    const item = within(openMenu()).getByText("entry-filter.filter-trending");
     fireEvent.click(item);
 
     expect(announce).toHaveBeenCalledWith({ filter: "trending", tag: "", noReblog: false });
@@ -152,7 +155,7 @@ describe("feed navigation announcements", () => {
     const mobile = container.querySelector(".feed-navigation-mobile")!;
     const toggles = mobile.querySelectorAll<HTMLElement>(".ecency-dropdown-toggle");
     fireEvent.click(toggles[toggles.length - 1]);
-    fireEvent.click(within(mobile as HTMLElement).getByText("entry-filter.filter-trending"));
+    fireEvent.click(within(openMenu()).getByText("entry-filter.filter-trending"));
 
     // Still in flight: the url has not moved, so nothing is withdrawn yet.
     expect(clear).not.toHaveBeenCalled();
@@ -191,10 +194,9 @@ describe("feed navigation announcements", () => {
     const toggles = mobile.querySelectorAll<HTMLElement>(".ecency-dropdown-toggle");
     fireEvent.click(toggles[toggles.length - 1]);
 
-    // The item for the feed we are already on. The toggle button carries the same
-    // label as the selected item, so take the one inside the open menu.
-    const matches = within(mobile as HTMLElement).getAllByText("entry-filter.filter-trending");
-    fireEvent.click(matches[matches.length - 1]);
+    // The item for the feed we are already on, inside the open (portaled) menu.
+    // The toggle button carries the same label, so do not search the bar.
+    fireEvent.click(within(openMenu()).getByText("entry-filter.filter-trending"));
 
     expect(announce).not.toHaveBeenCalled();
   });

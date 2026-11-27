@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function DropdownToggle(props: HTMLProps<HTMLElement> & Props) {
-  const { setShow, show } = useContext(DropdownContext);
+  const { setShow, show, keyboardOpenRef } = useContext(DropdownContext);
 
   const Component = props.as ?? "div";
 
@@ -25,6 +25,7 @@ export function DropdownToggle(props: HTMLProps<HTMLElement> & Props) {
         [props.className ?? ""]: !!props.className
       })}
       onClick={(e) => {
+        if (keyboardOpenRef) keyboardOpenRef.current = !show && e.detail === 0;
         setShow(!show);
         props.onClick?.(e);
       }}

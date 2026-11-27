@@ -7,6 +7,7 @@ import useLocalStorage from "react-use/lib/useLocalStorage";
 import { DeckThreadsCreatedRecently } from "./deck-threads-created-recently";
 import { IdentifiableEntry, ThreadItemEntry } from "../columns/deck-threads-manager";
 import useClickAway from "react-use/lib/useClickAway";
+import { isInOwnDropdownMenu } from "@ui/dropdown";
 import { Button } from "@ui/button";
 import { Alert } from "@ui/alert";
 import { Entry } from "@/entities";
@@ -47,7 +48,11 @@ export const DeckThreadsForm = ({
   persistable = false
 }: Props) => {
   const rootRef = useRef(null);
-  useClickAway(rootRef, () => setFocused(false));
+  useClickAway(rootRef, (e) => {
+    // Its toolbar menus render in a portal outside the form.
+    if (isInOwnDropdownMenu(rootRef.current, e.target)) return;
+    setFocused(false);
+  });
 
   const { activeUser } = useActiveAccount();
   const toggleUIProp = useGlobalStore((s) => s.toggleUiProp);
