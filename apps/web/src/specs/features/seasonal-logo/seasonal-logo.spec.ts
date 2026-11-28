@@ -166,6 +166,9 @@ describe("seasonal tables", () => {
     const last = ymd(2029, 12, 31);
     const changes = new Set<string>([first]);
     for (let y = 2025; y <= 2030; y++) {
+      // pickIcon reads the windows of the day's year and the two next to it, so the set it
+      // picks from changes on each 1 January
+      if (y > 2026 && y < 2030) changes.add(ymd(y, 1, 1));
       for (const { range } of windows(y)) {
         for (const day of [
           range.start,
