@@ -7,7 +7,6 @@ import {
     EntryListLoadingItem,
     LinearProgress
 } from "@/features/shared";
-import { ProfileCover } from "@/app/(dynamicPages)/profile/[username]/_components/profile-cover";
 import { getAccountVoteHistoryInfiniteQueryOptions } from "@ecency/sdk";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { hiveTxUtils } from "@ecency/sdk";
@@ -68,7 +67,6 @@ export function CurationTrail({ account, section }: Props) {
 
     return (
         <>
-            <ProfileCover account={account} />
             <EntryListContent
                 username={account.name}
                 loading={isLoading}

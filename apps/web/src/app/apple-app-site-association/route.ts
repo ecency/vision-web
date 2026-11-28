@@ -31,7 +31,15 @@ export function GET() {
             "/signup",
             "/signup/*",
             "/purchase",
-            "/purchase/*"
+            "/purchase/*",
+            // The chats page and a chat channel (/chats/<channel id>), for the app
+            // version that opens them (ecency/vision-mobile#3753). A community's
+            // chat (/chats/<community>/channel) stays on the web: "*" matches
+            // across "/", and Apple takes the first matching entry, so the NOT
+            // entry has to come before "/chats/*".
+            "/chats",
+            "NOT /chats/*/channel",
+            "/chats/*"
           ]
         }
       ]

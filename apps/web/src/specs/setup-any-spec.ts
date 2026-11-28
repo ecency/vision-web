@@ -125,6 +125,7 @@ vi.mock("@ecency/sdk", async () => ({
   },
   getBookmarksQueryOptions: vi.fn(),
   getAccountFullQueryOptions: vi.fn(() => ({ queryKey: ["account"], queryFn: vi.fn() })),
+  useAccountUpdate: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   // The entry page's author profile (bridge get_profiles): none by default.
   getProfilesQueryOptions: vi.fn((accounts: string[]) => ({
     queryKey: ["profiles", ...accounts],

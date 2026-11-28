@@ -198,7 +198,7 @@ function order(region: string | null): SeasonalIcon[] {
 }
 
 /// A browser never switches skin twice within a few days.
-const MIN_GAP_DAYS = 3;
+export const MIN_GAP_DAYS = 3;
 
 /// The days of `range` at least MIN_GAP_DAYS plain days away from `taken`: none, one or two parts.
 function without(range: DayRange, taken: DayRange): DayRange[] {

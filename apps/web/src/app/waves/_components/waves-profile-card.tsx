@@ -46,7 +46,7 @@ export function WavesProfileCard() {
   return (
     <div className="rounded-2xl overflow-hidden relative reading-surface p-4">
       <Image
-        className="absolute top-0 left-0 w-full h-[156px]"
+        className="absolute top-0 left-0 w-full h-[156px] object-cover"
         src={data?.profile.cover_image?.trim() ? data.profile.cover_image : imageSrc}
         alt=""
         width={300}
