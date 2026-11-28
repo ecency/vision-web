@@ -4,6 +4,7 @@ import {
   LAST_YEAR,
   ICONS,
   LANGUAGES,
+  MIN_GAP_DAYS,
   pickIcon,
   reaches,
   REGION_ORDER,
@@ -154,13 +155,35 @@ describe("seasonal tables", () => {
   });
 
   it("keeps each region's own order", () => {
+    // The pick can only change on a day where a window starts or ends, or where the gap kept
+    // around a window that took precedence starts or ends (see `without`). Asking only on those
+    // days gives the same runs as a walk over every day of 2026 to 2029, about 30x faster (#2201).
+    const shift = (day: string, n: number) => {
+      const t = new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000);
+      return ymd(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+    };
+    const first = ymd(2026, 1, 1);
+    const last = ymd(2029, 12, 31);
+    const changes = new Set<string>([first]);
+    for (let y = 2025; y <= 2030; y++) {
+      for (const { range } of windows(y)) {
+        for (const day of [
+          range.start,
+          shift(range.end, 1),
+          shift(range.start, -MIN_GAP_DAYS),
+          shift(range.end, MIN_GAP_DAYS + 1)
+        ]) {
+          if (day >= first && day <= last) changes.add(day);
+        }
+      }
+    }
+    const days = [...changes].sort();
     const runs = (region: string) => {
       const out: string[] = [];
-      for (let t = Date.UTC(2026, 0, 1); t <= Date.UTC(2029, 11, 31); t += 86_400_000) {
-        const d = new Date(t);
-        const icon = pickIcon(ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()), region, null);
-        const last = out[out.length - 1];
-        if (!last || !last.startsWith(icon + " ")) out.push(`${icon} ${d.toISOString().slice(0, 10)}`);
+      for (const day of days) {
+        const icon = pickIcon(day, region, null);
+        const prev = out[out.length - 1];
+        if (!prev || !prev.startsWith(icon + " ")) out.push(`${icon} ${day}`);
       }
       return out.filter((r) => !r.startsWith("Default"));
     };
