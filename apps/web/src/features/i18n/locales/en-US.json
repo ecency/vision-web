@@ -1547,7 +1547,7 @@
     "name": "Display Name",
     "about": "About",
     "cover-image": "Cover Image",
-    "cover-image-hint": "Best size 2688 × 480 px (at least 1344 × 240). Keep text and logos in the centre: phones crop the sides and wide screens crop the top and bottom.",
+    "cover-image-hint": "Best size 2688 × 480 px (at least 1344 × 240). Keep text and logos in the centre: every screen crops the edges, the sides in narrow boxes such as phones and the profile card, the top and bottom on wider ones such as tablets.",
     "profile-image": "Profile Image",
     "website": "Website",
     "location": "Location",
