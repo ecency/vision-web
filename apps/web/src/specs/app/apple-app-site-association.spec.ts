@@ -32,8 +32,16 @@ describe("apple-app-site-association", () => {
       "/signup",
       "/signup/*",
       "/purchase",
-      "/purchase/*"
+      "/purchase/*",
+      "/chats",
+      "/chats/*"
     ]);
+  });
+
+  it("lists the chats page and chat channels the app opens (#2206)", async (): Promise<void> => {
+    const body = (await GET().json()) as AppleAppSiteAssociation;
+    const [detail] = body.applinks.details;
+    expect(detail.paths).toEqual(expect.arrayContaining(["/chats", "/chats/*"]));
   });
 
   it("leaves out /auth, the web HiveSigner callback", async (): Promise<void> => {

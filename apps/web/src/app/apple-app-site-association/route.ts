@@ -31,7 +31,11 @@ export function GET() {
             "/signup",
             "/signup/*",
             "/purchase",
-            "/purchase/*"
+            "/purchase/*",
+            // The chats page and a chat channel (/chats/<channel id>), which the
+            // app opens since ecency/vision-mobile#3753.
+            "/chats",
+            "/chats/*"
           ]
         }
       ]
