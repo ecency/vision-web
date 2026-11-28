@@ -158,7 +158,7 @@ export function ProfileEdit() {
           <div>
             <label className="text-sm px-2">{i18next.t("profile-edit.cover-image")}</label>
             <InputGroup
-              className="mb-3"
+              className="mb-1"
               append={
                 <ImageUploadButton
                   onBegin={() => setUploading(true)}
@@ -176,8 +176,12 @@ export function ProfileEdit() {
                 placeholder="https://"
                 maxLength={500}
                 aria-invalid={!!errors.cover_image}
+                aria-describedby="profile-edit-cover-hint"
               />
             </InputGroup>
+            <p id="profile-edit-cover-hint" className="text-xs text-gray-500 dark:text-gray-400 px-2 mb-3">
+              {i18next.t("profile-edit.cover-image-hint")}
+            </p>
             {errors.cover_image && (
               <div className="text-red text-xs px-2 mt-1">{errors.cover_image.message}</div>
             )}
